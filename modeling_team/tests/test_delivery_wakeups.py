@@ -632,6 +632,61 @@ def _dsh_wire(kind, data):
             'sessionId': 'session-1', 'event': {'type': kind, 'seq': 12, 'data': data}}}}}
 
 
+@pytest.mark.parametrize('source,data', [
+    ('dsh-dispatch.jsonl', {'event': 'queued', 'runtime': 'dsh', 'agent_id': 'modeling',
+                          'dispatch_id': 'dispatch-1', 'message_id': 'message-1'}),
+    ('dsh-handoff.jsonl', {'kind': 'artifact', 'state': 'received', 'handoff_id': 'artifact-1',
+                         'run_id': 'run', 'material_ref': {'material_id': 'material-1'}}),
+    *[('dsh-handoff.jsonl', {'kind': 'public-input', 'state': state,
+                           'handoff_id': 'public-1', 'run_id': 'run',
+                           'dispatch_id': 'dispatch-1', 'recipient_id': 'modeling',
+                           'material_ref': {'material_id': 'material-1'}})
+      for state in ('queued', 'claimed', 'settled')],
+])
+def test_successful_dsh_handoff_bookkeeping_is_retained_without_waking(tmp_path, source, data):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    raw = observation()
+    event = {'source': source, 'byte_offset': 0, 'data': data}
+    raw['runs']['run']['events'] = _events_page([event], next_cursor='handoff')
+    assert not host.record_observation(raw)
+    assert json.loads((host.session_root / 'observation.json').read_text())['data'] == raw
+
+
+@pytest.mark.parametrize('data', [
+    {'kind': 'public-input', 'state': 'unknown', 'handoff_id': 'h1', 'run_id': 'run'},
+    {'kind': 'public-input', 'state': 'failed', 'handoff_id': 'h1', 'run_id': 'run'},
+    {'kind': 'public-input', 'state': 'canceled', 'handoff_id': 'h1', 'run_id': 'run'},
+    {'kind': 'public-input', 'state': 'pending', 'handoff_id': 'h1', 'run_id': 'run'},
+    {'kind': 'artifact', 'state': 'received', 'handoff_id': 'h1', 'run_id': 'run',
+     'error': 'target could not be verified'},
+    {'kind': 'future-kind', 'state': 'settled', 'handoff_id': 'h1', 'run_id': 'run'},
+    {'kind': 'public-input', 'state': 'settled'},
+])
+def test_dsh_handoff_errors_pending_and_unknown_shapes_still_wake(tmp_path, data):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    raw = observation()
+    raw['runs']['run']['events'] = _events_page([
+        {'source': 'dsh-handoff.jsonl', 'byte_offset': 0, 'data': data}], next_cursor='error')
+    assert host.record_observation(raw)
+
+
+@pytest.mark.parametrize('text', ['Error: tool rejected', '{"ok":true}'])
+def test_native_tool_error_flag_stays_visible_even_with_success_shaped_body(tmp_path, text):
+    from modeling_team.tests.test_delivery_decision_input import ack
+
+    host = session(tmp_path)
+    host.record_observation(observation())
+    ack(host)
+    raw = observation()
+    raw['runs']['run']['events'] = _events_page([_dsh_wire('tool/result', {'message': {
+        'isError': True, 'content': [{'type': 'text', 'text': text}]}})], next_cursor='error')
+    assert host.record_observation(raw)
+    payload = host._model_observation()
+    assert changed_events(payload)['data']['events'][0]['data']['runtime_state']['tool_error'] is True
+
+
 @pytest.mark.parametrize('frame', [
     {'jsonrpc': '2.0', 'id': 1, 'result': {'messageId': 'message-1'}},
     {'jsonrpc': '2.0', 'id': 2, 'result': {}},

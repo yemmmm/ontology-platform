@@ -393,14 +393,28 @@ class DshRuntimeAdapter(RuntimeAdapter):
         instructions += json.dumps(
             {key: {k: v for k, v in item.items() if k != "file"} for key, item in manifest.items()}
         )
+        recipients = sorted(recipient for sender, recipient
+                            in self._run.configuration.profile.communication
+                            if sender == agent.agent_id)
         instructions += (
+            "\nYour Profile-authorized Team Transport recipient IDs: "
+            + json.dumps(recipients) + ". Host is not a teammate endpoint; do not guess host or "
+            "host_agent recipients. Use reply_to_delivery_id only for a still-active incoming "
+            "request with expects_reply=true from that recipient; omit it for a new notification "
+            "or an already-settled request. Runner public-input notices are not reply slots. "
+            "Do not send a progress-only message to a teammate that already accepted terminal; "
+            "retain that disclosure in your final artifacts/report for Host review. "
             "\nDSH runtime: no shell or general filesystem tool is available. "
             "For Coordinator scenario-map artifacts, use write_handoff_output with "
-            "scenario-map/ relative paths; the tool automatically transfers your exact bytes "
+            "scenario-map/scenario-map.json, scenario-map/topology-decision.json or "
+            "scenario-map/protection-iri-suggestions.json only. Put final status in the existing "
+            "map/report, not a new scenario-map/production-status.json. The tool transfers exact bytes "
             "to the existing Runner paths and returns runner_receipt (retry the same write "
             "on recoverable transfer errors). Receive dynamic public CQ projections and true freeze "
             "confirmation through runner cq-public-input messages. Read their fixed material_ref "
-            "with list/read_handoff_material; compare version and projection_digest so a late old "
+            "with list/read_handoff_material. Use an exact member path from the listing, not "
+            "the original Runner path; omit path for a single-file package. Compare version and "
+            "projection_digest so a late old "
             "notice is not mistaken for the latest projection. Queueing is not consumption; "
             "do not guess material IDs or request manual Host copying. "
             "If terminal reporting says native input is pending, naturally end this activity "

@@ -195,6 +195,8 @@ def test_cq_evaluation_uses_snapshot_stem_and_binds_the_real_freeze(
                 "freeze_digest": snapshot["snapshot_digest"],
                 "executed_question_ids": ["cq-1"],
                 "unexecuted_question_ids": [],
+                "blind_status": {"blind_status": "non-blind-regression",
+                                 "exposed_question_ids": ["PRIVATE-EXPOSURE-ID"]},
                 "verdicts": [{"verdict": "pass"}],
                 "sessions": {"model_profile": "openai-sol-medium"},
             }
@@ -206,6 +208,8 @@ def test_cq_evaluation_uses_snapshot_stem_and_binds_the_real_freeze(
     )
     assert status["report_status"] == "new_report_bound"
     assert status["report_binding"]["valid"] is True
+    assert status["report_binding"]["summary"]["blind_status"] == "non-blind-regression"
+    assert "PRIVATE-EXPOSURE-ID" not in json.dumps(status["report_binding"]["summary"])
 
 
 def test_cq_batch_identity_does_not_guess_between_snapshots(tmp_path: Path) -> None:

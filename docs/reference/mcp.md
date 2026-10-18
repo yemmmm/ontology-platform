@@ -359,6 +359,17 @@ Delivery 本地新增 `yield_delivery`，必填 `input_id`、`phase`、`waiting_
 首次启动不再附整份 config；明确选取的 `task_context` 保留 task/profile/scope、获准资料
 与执行约束，未知余额不由 start limit 推算。
 
+`task_context`也保留宿主实际配置的`delivery_objective`、`authorization_budget`、
+`initial_run_id`与`freeze_started_at`，用于准确传入任务限制、启动身份及起点。
+额度是配置时快照，不能当实时余额或读文件授权。完整`delivery_objective`在bootstrap／
+恢复时传入；后续正文更新走`changes`，不变正文不重复注入，coverage注明
+`unchanged_delivery_objective`，原snapshot仍可沿journal引用定位。
+
+DSH正常排队回执、已接收地图以及公开输入的queued／claimed／settled记录保留原件，
+不单独触发模型决策；pending、错误／unknown、损坏或不识别的形状继续可见。
+原生`tool/result.message.isError=true`始终作为错误，元数据带`tool_error=true`，
+即使正文碰巧为成功形状JSON，也不会按普通成功过滤。
+
 `get_run_status`、`get_pending_actions`、`get_evaluation_status`、`get_request_result`
 仅在 Delivery 模型边界返回 `delivery-tool-view/v1` 简明结果；原始结果先存入
 `delivery_tool_result` journal，以 `evidence` 及字段省略 coverage 定位。底层 Host 公开
@@ -371,6 +382,13 @@ Delivery 本地新增 `yield_delivery`，必填 `input_id`、`phase`、`waiting_
 `read_delivery_artifact` 的原权限、selection 和16,384-byte上限，同 session 的原始
 `conversation-events.jsonl`可按需读取。coverage 指投影／所选页，不表示全源或业务完成。
 unknown 输入只重送事实，依赖状态的动作核对 `current_state` 指向的新绑定。
+
+原件补读使用返回的`path`／`source_ref`／`selection`或`continuation`，不猜测路径。
+bytes的`length`是精确区间而非页面大小；省略length可读捕获原件的剩余区间，
+`max_bytes`才限制每页体积。动态observation的旧摘要不适合反复追读，优先使用
+不可变session journal范围或当前状态窄查询，既有权限、摘要及完整性校验保持。
+CQ验收状态的`report_binding.summary.blind_status`仅返回原报告资格字符串或null，
+不展开私有exposure明细；question_visibility=hidden不自动表示盲评。
 
 本批只实现 F1＋F2。F3换线程未实施／默认关闭，F4连续动作另行分项实施；F5真实token
 对照与A6独立语义需另获运行授权。离线检查不证明真实等待行为、token或费用下降。

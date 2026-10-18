@@ -191,6 +191,9 @@ def _dsh_wire_noise(data: dict) -> bool:
                 and all(isinstance(item, dict) and isinstance(item.get("id"), str)
                         and item["id"] for item in payload["inserted"]))
     if kind == "tool/result":
+        message = payload.get("message")
+        if isinstance(message, dict) and message.get("isError") is True:
+            return False
         values = _dsh_tool_results(payload)
         return (values is not None and not _event_needs_action(values)
                 and not any(isinstance(value, dict) and (
@@ -253,6 +256,9 @@ def _dsh_wire_metadata(data: dict) -> dict:
         if isinstance(item, dict) and isinstance(item.get("chunk"), dict):
             collect(item["chunk"].get("reason"))
     if native.get("type") == "tool/result":
+        message = payload.get("message")
+        if isinstance(message, dict) and message.get("isError") is True:
+            state["tool_error"] = True
         for result in _dsh_tool_results(payload) or []:
             if isinstance(result, dict):
                 if (_event_needs_action(result) or result.get("isError") is True
@@ -275,6 +281,19 @@ def _is_decision_event_noise(event: Any) -> bool:
     # Explicit errors/unknown outcomes override otherwise routine activity.
     if _event_needs_action(data):
         return False
+    if source == "dsh-dispatch.jsonl":
+        return (data.get("event") == "queued" and data.get("runtime") == "dsh"
+                and all(isinstance(data.get(key), str) and data[key]
+                        for key in ("agent_id", "dispatch_id", "message_id")))
+    if source == "dsh-handoff.jsonl":
+        normal = (data.get("kind") == "artifact" and data.get("state") == "received"
+                  or data.get("kind") == "public-input"
+                  and data.get("state") in {"queued", "claimed", "settled"})
+        material = data.get("material_ref")
+        return (normal and all(isinstance(data.get(key), str) and data[key]
+                               for key in ("run_id", "handoff_id"))
+                and isinstance(material, dict) and isinstance(material.get("material_id"), str)
+                and bool(material["material_id"]))
     if source == "dsh-wire.jsonl":
         return _dsh_wire_noise(data)
     if source == "app-server-events.jsonl":
@@ -759,10 +778,23 @@ _LOCAL_SPECS = [
          "reply_to_message_ids": {"type": "array", "items": {"type": "string"}},
          "resolved_question_ids": {"type": "array", "items": {"type": "string"}}}, "required": ["kind", "text"],
          "additionalProperties": False}},
-    {"name": "read_delivery_artifact", "description": "Read approved sources or bound private run evidence.",
+    {"name": "read_delivery_artifact", "description": (
+        "Read approved sources or bound private run evidence using a supplied reference. "
+        "Do not guess authorization/ledger/Host-result paths. Copy the returned selection or "
+        "continuation; for remaining bytes use selection={kind:'bytes',offset:0} without length. "
+        "length is an exact interval, not a page size; max_bytes caps a page. "
+        "Prefer the immutable session-events.jsonl evidence range over a stale observation.json."),
      "inputSchema": {"type": "object", "properties": {
-         "path": {"type": "string"}, "source_ref": {"type": "object"},
-         "selection": {"type": "object"},
+         "path": {"type": "string"},
+         "source_ref": {"type": "object", "description": "Copy the source identity; requires selection."},
+         "selection": {"type": "object", "properties": {
+             "kind": {"type": "string", "enum": ["bytes", "json"]},
+             "offset": {"type": "integer", "minimum": 0},
+             "length": {"type": "integer", "minimum": 0,
+                        "description": "Exact byte interval; omit for remaining bytes, never guess a page size."},
+             "paths": {"type": "array", "description": "Literal JSON key/index paths for kind=json.",
+                       "items": {"type": "array", "items": {"type": ["string", "integer"]}}}},
+             "required": ["kind"], "additionalProperties": False},
          "max_bytes": {"type": "integer", "minimum": 1, "maximum": 16384}},
          "required": ["path"], "additionalProperties": False}},
     {"name": "finish_delivery", "description": "Record verified result and limits, then retain this Delivery and the existing Team in standby. Only explicit user/Host stop destroys them.",
@@ -2520,7 +2552,9 @@ class DeliverySession:
 
     def _task_context(self) -> dict:
         context = {key: self.config[key] for key in (
-            "objective", "goal", "task", "profile", "scope", "task_overlay", "allowed_sources",
+            "objective", "goal", "delivery_objective", "authorization_budget",
+            "initial_run_id", "freeze_started_at",
+            "task", "profile", "scope", "task_overlay", "allowed_sources",
             "readback_scope", "readback_scopes",
             "model_profile", "evaluation_model_profile", "evaluation_runtime", "business_input_role",
             "production_start_limit", "incremental_request_id", "incremental_run_id",
@@ -2871,6 +2905,12 @@ class DeliverySession:
                                for key, envelope in snapshot.get("operations", {}).items()},
                 "first_blockers": first_blockers,
                 "deadline_events": snapshot.get("deadline_events", [])}
+        objective_in_snapshot = "delivery_objective" in core.get("task_context", {})
+        if not bootstrap and objective_in_snapshot:
+            # The full Host task is supplied at bootstrap/recovery. Later
+            # changes carry any updates; do not repeat its stable body.
+            core["task_context"] = {key: value for key, value in core["task_context"].items()
+                                    if key != "delivery_objective"}
         unresolved = []
         def add(kind, value, path, **identity):
             if isinstance(value, dict):
@@ -2927,7 +2967,9 @@ class DeliverySession:
                    "delivery_status": item["delivery_status"],
                    "raw_observation": snapshot.get("raw_observation"),
                    "coverage": {"complete": True, "source_complete": False,
-                       "omitted_sections": ["settled_history"] + ([] if bootstrap else ["unchanged_snapshot"]),
+                       "omitted_sections": ["settled_history"] + ([] if bootstrap else
+                           ["unchanged_snapshot"] + (["unchanged_delivery_objective"]
+                                                     if objective_in_snapshot else [])),
                        "collections": {name: {
                            "total": len(snapshot.get(name, {})) + histories.get(name, {}).get("total", 0),
                            "returned": len(snapshot.get(name, {})) if bootstrap else 0,

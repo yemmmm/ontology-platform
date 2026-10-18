@@ -328,6 +328,31 @@ text can be incomplete; concatenate selected pages before interpreting it.
 whole source. Other fields and later JSONL appends are outside that coverage.
 Path-only full reads remain available within their existing response bound.
 
+Read the Host's `core.task_context.delivery_objective` at bootstrap/recovery and
+apply subsequent task-context changes. Preserve its exact operation names/prefix,
+timeout, model, scope and close-on-completion instructions instead of inventing defaults.
+`authorization_budget` is the Host-configured starting snapshot, not a live balance;
+account for actual modeling rounds since that snapshot through the existing ledger.
+An authorization reference or ledger_reference is provenance, not a file-read grant.
+Use supplied artifact/Host-result references; do not guess authorization.json,
+round-ledger.json or user-input.jsonl paths. Empty recovery user_messages means there
+is no earlier user input to fetch, not that a missing file must be found.
+
+For a supplied evidence reference copy its path, source_ref and selection together.
+For a new bytes selection, `length` is an exact interval, never a requested page size:
+use `selection={kind:"bytes",offset:0},max_bytes:4096` to read the remaining source
+in bounded pages. Continue with the returned continuation. Avoid re-reading a stale
+observation.json identity; the immutable session-events.jsonl packet range is the
+preferred evidence for that observation, while current status comes from the narrow queries.
+The unchanged Delivery objective is omitted after bootstrap and remains available
+in the retained snapshot; changes contain any objective updates, and recovery supplies it again.
+
+For CQ acceptance report the exact `report_binding.summary.blind_status` label.
+Hidden question visibility alone does not mean blind acceptance; if the label is
+missing, keep blind qualification unknown. Do not fetch private exposure details
+to improve a public description. `finish_delivery` records standby, while actual
+stop/exit/resource/key receipts establish closure; describe each accurately.
+
 Oversized decision inputs explicitly paginate; read the referenced packet or
 collect its input pages before decisions that depend on unreturned collections.
 Large changed values remain in explicit body pages. Unresolved identities carry

@@ -1215,6 +1215,9 @@ def _report_binding_errors(record: Mapping[str, Any], report: Mapping[str, Any])
 
 def _report_summary(mode: str, report: Mapping[str, Any]) -> dict[str, Any]:
     if mode == "cq-acceptance":
+        blind_status = report.get("blind_status")
+        if isinstance(blind_status, Mapping):
+            blind_status = blind_status.get("blind_status")
         executed = report.get("executed_question_ids")
         verdicts = report.get("verdicts")
         executed_ids = list(executed) if isinstance(executed, list) else []
@@ -1227,6 +1230,7 @@ def _report_summary(mode: str, report: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "status": report.get("status"),
             "full_pass": report.get("full_pass"),
+            "blind_status": blind_status if isinstance(blind_status, str) else None,
             "executed_question_ids": executed_ids,
             "executed_question_count": len(executed_ids),
             "verdict_count": len(verdict_list),

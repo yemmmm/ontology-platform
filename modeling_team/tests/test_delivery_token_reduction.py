@@ -20,6 +20,46 @@ def yield_args(input_id):
                                   "source_references": ["user-test"], "replaces": []}]}
 
 
+def test_host_objective_and_round_snapshot_reach_bootstrap_and_resume(tmp_path):
+    host = session(tmp_path)
+    host.config.update(
+        delivery_objective="Use operation prefix chosen-by-host and timeout=900; close on completion.",
+        authorization_budget={"total_modeling_rounds": 3, "consumed": 0, "remaining": 3,
+                              "ledger_reference": "host-owned-authorization.json"},
+        initial_run_id="host-chosen-run",
+        freeze_started_at="2026-10-18T12:48:51+00:00",
+        provider_secret="NOT-FOR-THE-MODEL",
+    )
+    host.record_observation(observation(), force_delivery=True)
+    first = ack(host)
+    context = first["core"]["task_context"]
+    assert context["delivery_objective"] == host.config["delivery_objective"]
+    assert context["authorization_budget"]["remaining"] == 3
+    assert context["initial_run_id"] == "host-chosen-run"
+    assert context["freeze_started_at"] == "2026-10-18T12:48:51+00:00"
+    assert "NOT-FOR-THE-MODEL" not in json.dumps(first)
+    reopened = DeliverySession(repository_root=ROOT, session_root=host.session_root,
+                               config=host.config, resume=True)
+    reopened.record_observation(observation(), force_delivery=True)
+    assert ack(reopened)["core"]["task_context"] == context
+
+
+def test_unchanged_host_objective_is_not_resent_but_updates_are_delivered(tmp_path):
+    host = session(tmp_path)
+    host.config["delivery_objective"] = "STABLE-HOST-OBJECTIVE"
+    raw = observation()
+    host.record_observation(raw)
+    assert "STABLE-HOST-OBJECTIVE" in json.dumps(ack(host))
+    raw["runs"]["run"]["status"]["data"]["write_phase"] = "read-only"
+    host.record_observation(raw)
+    delta = ack(host)
+    assert "STABLE-HOST-OBJECTIVE" not in json.dumps(delta)
+    assert "unchanged_delivery_objective" in delta["coverage"]["omitted_sections"]
+    host.config["delivery_objective"] = "UPDATED-HOST-OBJECTIVE"
+    assert host.record_observation(raw)
+    assert "UPDATED-HOST-OBJECTIVE" in json.dumps(ack(host)["changes"])
+
+
 def test_yield_is_durable_but_does_not_ack_or_manufacture_a_wakeup(tmp_path):
     host = session(tmp_path)
     host.run_ids.add("run")
