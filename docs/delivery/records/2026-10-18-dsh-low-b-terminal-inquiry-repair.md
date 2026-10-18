@@ -63,3 +63,38 @@ Team 全量 **3317 passed、12 skipped、318 subtests passed**，492.37秒，退
 外层Host沿既有工具推进同一b2，不产生第三次semantic start，不改角色模型或业务内容。
 Delivery完整自主交付未通过。其finally撤回了原Runner继承的bootstrap key；
 Host仅恢复该同一key以继续获准live run，并记录必须最终撤回。
+
+## 最终结果与关闭
+
+第二轮使用本次修复，生产两个原子批次到revision2；完成治理读回、关联自查、资源关闭，
+Modeling及Coordinator均真实terminal_report_accepted。超过原空闲询问窗口后Runner仍存活，
+Host原complete_cq_handoff接收成功：ready=true、pending_writes=false、unknown_writes=[]、
+write_phase=read-only，正式进入acceptance_pending。场景地图、拓扑和运行期公开CQ/freeze
+沿035自动接线，Host没有手工复制或代写语义产物；两次实际私有CQ审核与宿主技术接续披露。
+
+显式runtime=dsh、dsh-acceptance-deepseek-flash-low，先公开组，再隐藏组三题，
+每题Consumer和两组Judge为独立只读会话。原报告均full_pass=true：**公开1/1、隐藏3/3**，
+无未执行题、model_state_drift或证据重验漂移，两组model_binding_digest相同。
+报告标为non-blind-regression；结论只适用于本人工最小链，不外推大业务、盲测或L2。
+原complete_cq_acceptance按隐藏报告绑定被源Runner接受；模型、冻结池、报告和首轮失败保留。
+
+用户要求的关闭已执行：源stop回执accepted/stopped，两run均CLEANED、PID退出、FIFO移除；
+两验收owner lifecycle=stopped且active/retained成员均空，原DSH Delivery亦已退出。
+收尾只读核对16个登记PID均不在/proc，DSH cleanup complete且无residual；
+12把登记临时key数据库读回均revoked，其中本次关闭补撤3把（恢复的原bootstrap及两个验收读key）。
+验收operation的外层status字段仍保留running旧值，不能仅靠它判存活；
+本次关闭结论依据owner停止、成员空和全部登记PID实际退出。
+
+**实际用2/3轮，fresh semantic starts=2；无额外实质修模轮，未用1轮已撤回。**
+沿原DeliverySession.apply_user_control撤回后续production/evaluation/repair准入；
+未启动新的原生推理，也未把原supervision_interrupted改写为自主finish_delivery成功。
+这次是**有宿主补位的有界独立语义PASS**，DSH Delivery完整自主交付仍未通过。
+窄修复提交`e463cd3`；既有其他工作区修改未纳入提交。
+
+完整原件位于gitignored `workspaces/minimal-chain-20261018-dsh-low-b/`：
+authorization.json、final-report-verification.json、acceptance-completion.json、
+final-lifecycle-verification.json、final-process-verification.json、final-key-verification.json
+及final-delivery-permission-closure.json。原生数值收集沿019既有usage_report生成器，
+见usage-scope.json、usage-report/report.json和report.md，包含两轮、失败Delivery及六个验收会话。
+Host/scoring/部分失败用量及账单缺口保留unknown，不声称全任务成本完整或真实净降耗。
+有效语义／技术／等待时间未可靠拆分，保留unknown；原始阶段UTC墙钟不冒充有效工作时间。
