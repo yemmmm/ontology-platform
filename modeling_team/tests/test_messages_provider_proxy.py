@@ -255,3 +255,88 @@ def test_blocked_collector_and_full_queue_do_not_block_requests():
     finally:
         blocked.set()
         session.stop()
+
+
+@pytest.mark.parametrize('error,reason', [
+    ({'type': 'invalid_request_error', 'message': 'maximum context length exceeded PRIVATE test-secret'},
+     'context_window_exceeded'),
+    ({'type': 'invalid_request_error', 'message': 'tool_result must follow tool_use PRIVATE'},
+     'invalid_tool_history'),
+    ({'type': 'PRIVATE-TYPE', 'message': 'PRIVATE test-secret'}, 'invalid_request'),
+    ({'type': ['PRIVATE-TYPE'], 'message': 'PRIVATE test-secret'}, 'invalid_request'),
+])
+def test_error_diagnostics_keep_safe_reason_and_request_shape_without_body(tmp_path, error, reason):
+    from modeling_team.usage_capture import NumericReceiptWriter
+    calls = []
+
+    class Connection:
+        sock = None
+
+        def __init__(self, *a, **k):
+            pass
+
+        def request(self, *a, **k):
+            calls.append(1)
+
+        def getresponse(self):
+            return Response(status=400, chunks=[json.dumps({'error': error}).encode()])
+
+        def close(self):
+            pass
+
+    writer = NumericReceiptWriter(tmp_path / 'receipts.jsonl')
+    session = MessagesProviderSession(b'test-secret', on_attempt=writer)
+    session.start()
+    payload = json.dumps({'model': 'deepseek-flash', 'max_tokens': 256000,
+                         'messages': [{'role': 'user', 'content': 'PRIVATE SOURCE'}],
+                         'tools': [{'name': 'PRIVATE TOOL'}]}).encode()
+    try:
+        with patch('modeling_team.messages_provider_proxy.http.client.HTTPSConnection', Connection):
+            status, headers, body = request(session, body=payload)
+        assert status == 400 and len(calls) == 1
+        result = json.loads(body)
+        assert result['error']['code'] == reason
+        assert result['request_shape'] == {'body_bytes': len(payload), 'message_count': 1,
+                                           'tool_count': 1, 'max_tokens': 256000}
+        assert headers['x-request-id'] == 'upstream-test'
+        session.stop()
+        evidence = writer.path.read_text()
+        assert 'PRIVATE' not in evidence + body.decode()
+        assert 'test-secret' not in evidence + body.decode()
+        usage = next(json.loads(row) for row in evidence.splitlines()
+                     if json.loads(row)['event'] == 'response_usage')
+        assert usage['provider_error']['reason_code'] == reason
+        assert usage['request_shape'] == result['request_shape']
+    finally:
+        session.stop()
+
+
+@pytest.mark.parametrize('chunks,broken', [
+    ([b'not-json PRIVATE'], False), ([b'x' * 10000], False), ([], True),
+])
+def test_unreadable_or_large_error_body_preserves_original_status_without_replay(chunks, broken):
+    class Connection:
+        sock = None
+
+        def __init__(self, *a, **k):
+            pass
+
+        def request(self, *a, **k):
+            pass
+
+        def getresponse(self):
+            return Response(status=400, chunks=chunks, broken=broken)
+
+        def close(self):
+            pass
+
+    session = MessagesProviderSession(b'test-secret')
+    session.start()
+    try:
+        with patch('modeling_team.messages_provider_proxy.http.client.HTTPSConnection', Connection):
+            status, _, body = request(session)
+        assert status == 400
+        assert json.loads(body)['error']['code'] == 'invalid_request'
+        assert b'PRIVATE' not in body and len(body) < 1000
+    finally:
+        session.stop()

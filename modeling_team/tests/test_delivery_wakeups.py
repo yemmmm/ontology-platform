@@ -623,3 +623,136 @@ def test_native_errors_real_limits_and_unrecognized_events_still_wake(tmp_path, 
     update = observation()
     update['runs']['run']['events'] = _events_page([{'source': 'app-server-events.jsonl', 'byte_offset': 0, 'data': data}], next_cursor='next')
     assert host.record_observation(update)
+
+
+def _dsh_wire(kind, data):
+    return {'source': 'dsh-wire.jsonl', 'byte_offset': 0, 'data': {
+        'agent_id': 'modeling', 'process_instance': 'process-1', 'session_id': 'session-1',
+        'frame': {'jsonrpc': '2.0', 'method': 'session.event', 'params': {
+            'sessionId': 'session-1', 'event': {'type': kind, 'seq': 12, 'data': data}}}}}
+
+
+@pytest.mark.parametrize('kind,data', [
+    ('step/start', {'turn': 1, 'step': 2}),
+    ('step/end', {'turn': 1, 'step': 2}),
+    ('assistant/message', {'message': {'role': 'assistant', 'content': [
+        {'type': 'reasoning', 'text': 'PRIVATE REASONING'}]}}),
+    ('user/message', {'content': [{'type': 'text', 'text': 'PRIVATE SOURCE'}]}),
+    ('tool/call', {'name': 'read_role_material', 'arguments': {'id': 'material-1'}}),
+    ('tool/result', {'message': {'content': [{'type': 'text', 'text': '{"ok":true}'}]}}),
+])
+def test_dsh_routine_wire_does_not_wake_or_enter_decision_input(tmp_path, kind, data):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    host._dispatch_observation(_StubNativeRuntime(), {
+        'kind': 'host_observation', 'data': host._model_observation()}, steer=False)
+    event = _dsh_wire(kind, data)
+    update = observation()
+    update['runs']['run']['events'] = _events_page([event], next_cursor='dsh-next')
+    assert not host.record_observation(update)
+    assert json.loads((host.session_root / 'observation.json').read_text())['data'] == update
+    update['runs']['run']['pending']['data']['items'][0]['id'] = 'new-question'
+    assert host.record_observation(update)
+    payload = host._model_observation()
+    assert 'dsh-wire.jsonl' not in json.dumps(payload['changes'])
+    assert payload['raw_observation']['excluded_noise_event_records'] == 1
+
+
+@pytest.mark.parametrize('event,status,extra', [
+    ('attempt_start', 'unfinished', {}),
+    ('attempt_end', 'completed', {'http_status': 200}),
+    ('response_usage', 'completed', {'http_status': 200, 'usage_complete': True,
+                                   'usage_issues': [], 'raw_usage': {'input_tokens': 50}}),
+])
+def test_dsh_numeric_activity_does_not_wake(tmp_path, event, status, extra):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    update = observation()
+    update['runs']['run']['events'] = _events_page([{
+        'source': 'dsh-provider.jsonl', 'byte_offset': 0, 'data': {
+            'schema_version': 'model-usage-capture/v1', 'event': event,
+            'status': status, 'http_status': None, **extra}}], next_cursor='next')
+    assert not host.record_observation(update)
+
+
+@pytest.mark.parametrize('kind,data', [
+    ('turn/end', {'turn': 1, 'reason': {'kind': 'completed'}}),
+    ('turn/end', {'turn': 1, 'reason': {'kind': 'error', 'error': {'code': 'INVALID_REQUEST'}}}),
+    ('assistant/attempt', {'stream': [{'chunk': {'type': 'finish', 'reason': {
+        'kind': 'error', 'failure': {'code': 'MALFORMED_RESPONSE', 'status': 400}}}}]}),
+    ('tool/result', {'message': {'content': [{'type': 'text', 'text':
+        '{"ok":false,"error":{"code":"scope_binding_required"}}'}]}}),
+    ('tool/result', {'message': {'content': [{'type': 'text', 'text': 'unrecognized result'}]}}),
+    ('tool/result', {'message': {'content': [{'type': 'text', 'text': '{"isError":true}'}]}}),
+    ('step/end', {'reason': {'kind': 'error'}}),
+    ('agent/inbox/spliced', {'target': 'next-turn', 'outcome': 'canceled'}),
+    ('future/event', {'status': 'unknown'}),
+])
+def test_dsh_decisions_keep_runtime_identity_and_typed_error_without_content(tmp_path, kind, data):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    host._dispatch_observation(_StubNativeRuntime(), {
+        'kind': 'host_observation', 'data': host._model_observation()}, steer=False)
+    update = observation()
+    event = _dsh_wire(kind, data)
+    update['runs']['run']['events'] = _events_page([event], next_cursor='next')
+    assert host.record_observation(update)
+    metadata = changed_events(host._model_observation())['data']['events'][0]['data']
+    assert metadata['runtime_state']['event_type'] == kind
+    assert metadata['runtime_state']['session_id'] == 'session-1'
+    assert metadata['process_instance'] == 'process-1'
+    assert metadata['content_reference']
+    for code in ['INVALID_REQUEST', 'MALFORMED_RESPONSE', 'scope_binding_required']:
+        if code in json.dumps(data):
+            assert code in json.dumps(metadata)
+    if kind == 'tool/result' and ('scope_binding_required' in json.dumps(data) or 'isError' in json.dumps(data)):
+        assert metadata['runtime_state']['tool_error'] is True
+
+
+@pytest.mark.parametrize('extra', [{'usage_complete': False}, {'usage_issues': ['truncated_sse_event']},
+                                {'status': 'http_error', 'http_status': 400}, {'corrupt': True}])
+def test_dsh_usage_anomalies_still_wake(tmp_path, extra):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    update = observation()
+    event = {'source': 'dsh-provider.jsonl', 'byte_offset': 0, 'data': {
+        'schema_version': 'model-usage-capture/v1', 'event': 'response_usage',
+        'status': 'completed', 'http_status': 200, 'usage_complete': True, 'usage_issues': []}}
+    if 'corrupt' in extra:
+        event.update(extra)
+    else:
+        event['data'].update(extra)
+    update['runs']['run']['events'] = _events_page([event], next_cursor='next')
+    assert host.record_observation(update)
+
+
+def test_dsh_tool_error_projection_does_not_copy_business_codes_or_source_text(tmp_path):
+    from modeling_team.delivery import _decision_event_metadata
+    event = _dsh_wire('tool/result', {'message': {'content': [{'type': 'text', 'text':
+        json.dumps({'ok': False, 'error': {'code': 'scope_binding_required', 'message': 'PRIVATE SOURCE'},
+                    'data': {'code': 'PRIVATE BUSINESS CODE'}})}]}})
+    metadata = _decision_event_metadata(event)
+    assert 'scope_binding_required' in json.dumps(metadata)
+    assert 'PRIVATE' not in json.dumps(metadata)
+
+
+def test_dsh_provider_failure_input_keeps_safe_cause_and_request_numbers():
+    from modeling_team.delivery import _decision_event_metadata
+    event = {'source': 'dsh-provider.jsonl', 'byte_offset': 0, 'data': {
+        'event': 'response_usage', 'status': 'http_error', 'http_status': 400,
+        'request_id': 'request-1', 'usage_complete': False,
+        'provider_error': {'reason_code': 'context_window_exceeded', 'provider_type': 'invalid_request_error'},
+        'request_shape': {'body_bytes': 1000, 'max_tokens': 256000},
+        'usage_issues': ['message_start_missing']}}
+    assert _decision_event_metadata(event)['data'] == event['data']
+
+
+@pytest.mark.parametrize('data', [{'frame': None}, {'frame': {'params': None}},
+                               {'frame': {'method': 'session.event', 'params': {'event': None}}}])
+def test_malformed_dsh_wire_stays_an_observable_decision(tmp_path, data):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    update = observation()
+    update['runs']['run']['events'] = _events_page([
+        {'source': 'dsh-wire.jsonl', 'byte_offset': 0, 'data': data}], next_cursor='next')
+    assert host.record_observation(update)

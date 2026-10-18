@@ -7915,13 +7915,18 @@ class TeamRunner:
             if self._staged_resolution_blocker() is not None
             else "confirmed_no_write"
         )
+        recovery_hint = {
+            "MALFORMED_RESPONSE": "inspect response or tool-input format; reconcile dispatched tools before bound recovery",
+            "INVALID_REQUEST": "inspect request parameters or history; correct the cause before bound recovery",
+            "CONTEXT_WINDOW_EXCEEDED": "inspect the context window and request reservation before bound recovery",
+        }.get(record.get("variant"), "external quota/balance/outage recovery needed")
         try:
             issue = self.transport.report_issue(
                 agent_id,
                 category="runtime_recovery",
                 summary=(
                     f"model provider wait: role {record.get('role')} is parked on "
-                    f"{record.get('variant')}; external quota/balance/outage recovery needed"
+                    f"{record.get('variant')}; {recovery_hint}"
                 ),
                 failing_operation="model-provider turn",
                 error=(

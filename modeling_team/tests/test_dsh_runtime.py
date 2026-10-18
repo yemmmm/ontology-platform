@@ -158,6 +158,9 @@ class LocalMessagesProvider:
         self.tool_name = "mcp__role_materials__read_role_material"
         self.tool_arguments = {"material_id": "material-1", "limit": 30}
         self.fail = False
+        self.failure_status = 402
+        self.failure_body = {'type': 'error', 'error': {'type': 'billing_error', 'message': 'HTTP 402'}}
+        self.invalid_tool_json = False
         self.hold = None
         self.server = None
         self.thread = None
@@ -186,11 +189,9 @@ class LocalMessagesProvider:
                 if owner.hold is not None:
                     owner.hold.wait(10)
                 if owner.fail:
-                    self.send_response(402)
+                    self.send_response(owner.failure_status)
                     self.end_headers()
-                    self.wfile.write(
-                        b'{"type":"error","error":{"type":"billing_error","message":"HTTP 402"}}'
-                    )
+                    self.wfile.write(json.dumps(owner.failure_body).encode())
                     return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -234,7 +235,7 @@ class LocalMessagesProvider:
                             "index": 0,
                             "delta": {
                                 "type": "input_json_delta",
-                                "partial_json": json.dumps(owner.tool_arguments),
+                                "partial_json": '{bad-json' if owner.invalid_tool_json else json.dumps(owner.tool_arguments),
                             },
                         },
                     )

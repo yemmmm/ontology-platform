@@ -79,6 +79,49 @@ def test_real_tools_json_call_identity_and_turn_end(runtime):
     assert len(requests) == 2  # no-change wait has no inference
 
 
+def test_provider_failure_is_failed_activity_and_exposes_safe_code(runtime):
+    runtime.provider.fail = True
+    runtime.send(json.dumps({'text': 'engineering failure'}))
+    events = settle(runtime)
+    error = next(event for event in events if event['event'] == 'provider_error')
+    assert error['code'] == 'QUOTA' and error['http_status'] == 402
+    ended = next(event for event in events if event['event'] == 'activity_ended')
+    assert ended['reason']['kind'] == 'error'
+    assert ended['status'] == 'failed'
+    assert len(runtime.provider.requests) == 1
+
+
+def test_context_error_classification_reaches_real_dsh_without_automatic_replay(runtime):
+    runtime.provider.fail = True
+    runtime.provider.failure_status = 400
+    runtime.provider.failure_body = {'type': 'error', 'error': {
+        'type': 'invalid_request_error', 'code': 'context_window_exceeded',
+        'message': 'DeepSeek HTTP 400: context window exceeded'}}
+    runtime.send(json.dumps({'text': 'engineering context failure'}))
+    events = settle(runtime)
+    error = next(event for event in events if event['event'] == 'provider_error')
+    assert error['code'] == 'CONTEXT_WINDOW_EXCEEDED' and error['http_status'] == 400
+    assert len(runtime.provider.requests) == 1
+
+
+def test_bad_tool_json_can_continue_original_dsh_session_after_explicit_correction(runtime):
+    calls = []
+    runtime.tool_handler = lambda *a, **k: calls.append(1)
+    runtime.provider.invalid_tool_json = True
+    identity = runtime.runtime_session_id
+    runtime.send(json.dumps({'text': 'engineering malformed tool arguments'}))
+    events = settle(runtime)
+    assert next(event for event in events if event['event'] == 'provider_error')['code'] == 'MALFORMED_RESPONSE'
+    assert not calls and len(runtime.provider.requests) == 1
+    runtime.provider.invalid_tool_json = False
+    runtime.provider.tool_calls = False
+    runtime.send(json.dumps({'text': 'explicit correction; continue the same goal'}))
+    events = settle(runtime)
+    assert runtime.runtime_session_id == identity
+    assert any(event['event'] == 'activity_ended' and event['status'] == 'ended' for event in events)
+    assert len(runtime.provider.requests) == 2 and not calls
+
+
 def test_active_steer_claims_next_step_and_keeps_original_source(runtime):
     provider = runtime.provider
     provider.hold = threading.Event()

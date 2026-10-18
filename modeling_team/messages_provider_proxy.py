@@ -7,6 +7,7 @@ import http.client
 import json
 import logging
 import queue
+import re
 import threading
 import secrets
 import ssl
@@ -18,6 +19,46 @@ from .dsh_usage import MessagesUsageObserver, safe_id
 from .usage_capture import identity, utc_now
 
 LOG = logging.getLogger(__name__)
+
+
+def _provider_error(response, status):
+    """Inspect a bounded failure body, exporting only fixed categories, never its text."""
+    raw = bytearray()
+    try:
+        while len(raw) <= 4096:
+            chunk = response.read1(4097 - len(raw))
+            if not chunk:
+                break
+            raw.extend(chunk[:4097 - len(raw)])
+        value = json.loads(raw) if len(raw) <= 4096 else {}
+        error = value.get("error", {}) if isinstance(value, dict) else {}
+        if not isinstance(error, dict):
+            error = {}
+    except (ValueError, UnicodeError, OSError, http.client.HTTPException):
+        error = {}
+    provider_type = error.get("type")
+    allowed_types = {"invalid_request_error", "authentication_error", "permission_error",
+                     "rate_limit_error", "api_error", "overloaded_error", "billing_error"}
+    if not isinstance(provider_type, str) or provider_type not in allowed_types:
+        provider_type = None
+    detail = " ".join(str(error.get(key, "")) for key in ("code", "message")).lower()
+    if re.search(r"context[_ ](?:length|window).*(?:exceed|limit)|maximum context length|too many tokens", detail):
+        reason = "context_window_exceeded"
+    elif ("tool_result" in detail or "tool result" in detail) and (
+        "tool_use" in detail or "tool call" in detail
+    ):
+        reason = "invalid_tool_history"
+    elif status in {401, 403}:
+        reason = "authentication"
+    elif status == 402:
+        reason = "quota"
+    elif status == 429:
+        reason = "rate_limit"
+    elif status >= 500:
+        reason = "server"
+    else:
+        reason = "invalid_request"
+    return {"reason_code": reason, "provider_type": provider_type}
 
 
 class _MessagesHandler(BaseHTTPRequestHandler):
@@ -86,6 +127,13 @@ class _MessagesHandler(BaseHTTPRequestHandler):
         outcome = "transport_error"
         headers_at = provider_request_id = None
         client_write = False
+        diagnostic = None
+        request_shape = {
+            "body_bytes": len(body),
+            "message_count": len(request["messages"]) if isinstance(request.get("messages"), list) else None,
+            "tool_count": len(request["tools"]) if isinstance(request.get("tools"), list) else None,
+            "max_tokens": request.get("max_tokens") if type(request.get("max_tokens")) is int else None,
+        }
         try:
             headers.update(
                 {
@@ -103,6 +151,8 @@ class _MessagesHandler(BaseHTTPRequestHandler):
             provider_request_id = next((safe_id(value) for key, value in response.getheaders()
                                         if key.lower() in {"request-id", "x-request-id"}), None)
             outcome = "http_error" if status >= 400 else "stream_error"
+            if status >= 400:
+                diagnostic = _provider_error(response, status)
             self.send_response(status)
             for key, value in response.getheaders():
                 if key.lower() in {"content-type", "retry-after", "request-id", "x-request-id"}:
@@ -111,15 +161,18 @@ class _MessagesHandler(BaseHTTPRequestHandler):
             self.end_headers()
             started = True
             if status >= 400:
-                # Keep the first HTTP cause, never echo provider bodies or credentials.
+                # The SDK can classify the real failure without receiving private error text.
                 self.wfile.write(
                     json.dumps(
                         {
                             "type": "error",
                             "error": {
-                                "type": "provider_http_error",
-                                "message": f"DeepSeek HTTP {status}",
+                                "type": diagnostic["provider_type"] or "provider_http_error",
+                                "code": diagnostic["reason_code"],
+                                "message": f"DeepSeek HTTP {status}: "
+                                           + diagnostic["reason_code"].replace("_", " "),
                             },
+                            "request_shape": request_shape,
                         }
                     ).encode()
                 )
@@ -156,6 +209,8 @@ class _MessagesHandler(BaseHTTPRequestHandler):
                 "headers_at": headers_at, "provider_request_id": provider_request_id,
                 "end": end, "status": outcome, "http_status": status,
                 "time_basis": "usage_completion", "clock_ref": "host-utc",
+                **({"provider_error": diagnostic, "request_shape": request_shape}
+                   if diagnostic is not None else {}),
             })
             session.record_attempt(
                 {

@@ -483,6 +483,27 @@ def _runner_with_adapter(tmp_path: Path) -> tuple[_UnifiedRunner, _ProviderWaitA
     return staged, adapter, sink
 
 
+@pytest.mark.parametrize('variant,expected', [
+    ('MALFORMED_RESPONSE', 'response or tool-input format'),
+    ('INVALID_REQUEST', 'request parameters or history'),
+    ('CONTEXT_WINDOW_EXCEEDED', 'context window'),
+    ('rateLimitExceeded', 'quota/balance/outage'),
+])
+def test_provider_wait_issue_describes_actual_failure_class(tmp_path, variant, expected):
+    staged, adapter, sink = _runner_with_adapter(tmp_path)
+    try:
+        adapter.inject_wait('protocol', variant=variant)
+        _pump(staged.runner, sink)
+        issue = staged.runner.transport.issue_ledger.active_issue
+        assert expected in issue.summary
+        if variant in {'MALFORMED_RESPONSE', 'INVALID_REQUEST', 'CONTEXT_WINDOW_EXCEEDED'}:
+            assert 'quota/balance/outage' not in issue.summary
+        assert variant in issue.error
+        assert not adapter.recoveries
+    finally:
+        staged.cleanup()
+
+
 def test_coordinator_judged_recovery_resumes_the_same_thread(tmp_path: Path) -> None:
     staged, adapter, sink = _runner_with_adapter(tmp_path)
     runner = staged.runner

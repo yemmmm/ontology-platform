@@ -154,6 +154,22 @@ class NumericReceiptWriter:
             safe["usage_issues"] = sorted(set(event.get("usage_issues", [])) & allowed)
             for key in ("usage_complete", "message_stop"):
                 safe[key] = event.get(key) is True
+            if isinstance(event.get("provider_error"), dict):
+                diagnostic = event["provider_error"]
+                reasons = {"context_window_exceeded", "invalid_tool_history", "authentication",
+                           "quota", "rate_limit", "server", "invalid_request"}
+                types = {"invalid_request_error", "authentication_error", "permission_error",
+                         "rate_limit_error", "api_error", "overloaded_error", "billing_error"}
+                safe["provider_error"] = {
+                    "reason_code": diagnostic.get("reason_code") if diagnostic.get("reason_code") in reasons else None,
+                    "provider_type": diagnostic.get("provider_type") if diagnostic.get("provider_type") in types else None,
+                }
+                shape = event.get("request_shape") or {}
+                safe["request_shape"] = {
+                    key: value if type(value) is int and value >= 0 else None
+                    for key in ("body_bytes", "message_count", "tool_count", "max_tokens")
+                    for value in [shape.get(key)]
+                }
         if event.get("event") == "thread_usage":
             safe["total"], safe["invalid_fields"] = numeric_usage(event.get("total") or {})
             safe["present_fields"] = [

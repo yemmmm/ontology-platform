@@ -137,6 +137,113 @@ def _event_needs_action(value: Any) -> bool:
     return False
 
 
+def _dsh_tool_results(payload: dict) -> list | None:
+    """Decode the native tool envelope; unrecognized results remain decisions."""
+    message = payload.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list) or not content:
+        return None
+    values = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "text":
+            return None
+        try:
+            value = json.loads(block.get("text", ""))
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(value, (dict, list)):
+            return None
+        values.append(value)
+    return values
+
+
+def _dsh_wire_noise(data: dict) -> bool:
+    frame = data.get("frame", {})
+    if not isinstance(frame, dict):
+        return False
+    params = frame.get("params", {})
+    if not isinstance(params, dict):
+        return False
+    if frame.get("method") == "session.status":
+        return params.get("status") == "running"
+    if frame.get("method") != "session.event":
+        return False
+    native = params.get("event", {})
+    if not isinstance(native, dict) or not isinstance(native.get("data"), dict):
+        return False
+    kind, payload = native.get("type"), native["data"]
+    if kind == "tool/result":
+        values = _dsh_tool_results(payload)
+        return (values is not None and not _event_needs_action(values)
+                and not any(isinstance(value, dict) and (
+                    value.get("isError") is True or value.get("is_error") is True)
+                    for value in values))
+    reason = payload.get("reason")
+    if isinstance(reason, dict) and reason.get("kind") in {"error", "failed", "canceled", "max-tokens"}:
+        return False
+    # Inbox transitions, turn/end, attempts, errors and unknown event kinds stay visible.
+    return kind in {
+        "turn/start", "step/start", "step/end", "system/message", "user/message",
+        "assistant/message", "tool/call", "request/header", "request/context",
+    }
+
+
+def _dsh_wire_metadata(data: dict) -> dict:
+    """Keep actual activity/failure identity, without native prompts or tool bodies."""
+    frame = data.get("frame", {})
+    if not isinstance(frame, dict):
+        return {"malformed_frame": True}
+    params = frame.get("params", {})
+    if not isinstance(params, dict):
+        return {"method": frame.get("method"), "malformed_params": True}
+    native = params.get("event", {})
+    if not isinstance(native, dict):
+        native = {}
+    payload = native.get("data", {})
+    if not isinstance(payload, dict):
+        payload = {}
+    state = {"method": frame.get("method"), "session_id": params.get("sessionId"),
+             "event_type": native.get("type"), "seq": native.get("seq")}
+    for value in (params, payload):
+        state.update({key: item for key, item in value.items()
+                      if key in {"turn", "step", "status", "code", "http_status", "outcome"}
+                      and (item is None or type(item) in (str, int, bool))})
+    reason = payload.get("reason")
+    if isinstance(reason, dict):
+        state["reason_kind"] = reason.get("kind")
+    errors = []
+
+    def collect(value):
+        if isinstance(value, dict):
+            fields = {key: item for key, item in value.items()
+                      if key in {"code", "status", "http_status", "reason_code", "error_type"}
+                      and type(item) in (str, int, bool)}
+            if fields and fields not in errors:
+                errors.append(fields)
+            for item in value.values():
+                collect(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+
+    # Native failure codes occur in turn/end reasons, attempt finish chunks or RPC errors.
+    collect(frame.get("error"))
+    collect(payload.get("reason"))
+    for item in payload.get("stream", []) if isinstance(payload.get("stream"), list) else []:
+        if isinstance(item, dict) and isinstance(item.get("chunk"), dict):
+            collect(item["chunk"].get("reason"))
+    if native.get("type") == "tool/result":
+        for result in _dsh_tool_results(payload) or []:
+            if isinstance(result, dict):
+                if (_event_needs_action(result) or result.get("isError") is True
+                        or result.get("is_error") is True):
+                    state["tool_error"] = True
+                collect(result.get("error"))
+    if errors:
+        state["diagnostics"] = errors
+    return state
+
+
 def _is_decision_event_noise(event: Any) -> bool:
     if not isinstance(event, dict):
         return False
@@ -148,6 +255,8 @@ def _is_decision_event_noise(event: Any) -> bool:
     # Explicit errors/unknown outcomes override otherwise routine activity.
     if _event_needs_action(data):
         return False
+    if source == "dsh-wire.jsonl":
+        return _dsh_wire_noise(data)
     if source == "app-server-events.jsonl":
         method = data.get("method")
         if method == "mcpServer/startupStatus/updated":
@@ -217,7 +326,7 @@ def _is_decision_event_noise(event: Any) -> bool:
             "read_handoff_material", "inspect_handoff_material",
             "list_handoff_materials", "get_run_status",
         }
-    if event.get("source") != "provider-attempts.jsonl":
+    if source not in {"provider-attempts.jsonl", "dsh-provider.jsonl"}:
         return False
     receipt = event.get("data")
     if not isinstance(receipt, dict) or receipt.get("schema_version") != "model-usage-capture/v1":
@@ -228,6 +337,10 @@ def _is_decision_event_noise(event: Any) -> bool:
     if receipt.get("event") == "attempt_start":
         return receipt.get("status") == "unfinished" and receipt.get("http_status") is None
     status = receipt.get("http_status")
+    if source == "dsh-provider.jsonl" and receipt.get("event") == "response_usage":
+        return (receipt.get("status") == "completed" and type(status) is int
+                and 200 <= status < 300 and receipt.get("usage_complete") is True
+                and receipt.get("usage_issues") == [])
     return (receipt.get("event") == "attempt_end" and receipt.get("status") == "completed"
             and type(status) is int and 200 <= status < 300)
 
@@ -265,6 +378,13 @@ def _decision_event_metadata(event: Any) -> Any:
     projected = {key: value for key, value in data.items() if key in _EVENT_METADATA_KEYS}
     if isinstance(projected.get("result"), (dict, list)):
         projected.pop("result")
+    if source == "dsh-provider.jsonl":
+        projected.update({key: data[key] for key in (
+            "http_status", "usage_complete", "usage_issues", "provider_error", "request_shape",
+        ) if key in data})
+    if source == "dsh-wire.jsonl":
+        projected.update({key: data[key] for key in ("session_id", "process_instance") if key in data})
+        projected["runtime_state"] = _dsh_wire_metadata(data)
     if source == "app-server-events.jsonl" and isinstance(data.get("params"), dict):
         params = data["params"]
         anomaly = {key: value for key, value in params.items()

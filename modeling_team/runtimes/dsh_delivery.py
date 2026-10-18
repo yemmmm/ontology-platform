@@ -259,10 +259,13 @@ class DSHDeliveryRuntime:
                         reason = event["data"]["reason"]
                         kind = reason.get("kind") if isinstance(reason, dict) else reason
                         self._events.put({"event": "activity_ended", "reason": reason,
-                                          "status": "failed" if kind in {"failed", "blocked", "max-tokens"} else "ended",
+                                          "status": "failed" if kind in {"error", "failed", "blocked", "max-tokens"} else "ended",
                                           **self.identity})
                 elif value.get("method") == "host/provider-error":
-                    self._events.put({"event": "provider_error", "status": "failed", **self.identity})
+                    params = value.get("params", {})
+                    self._events.put({"event": "provider_error", "status": "failed",
+                                      "code": params.get("code"),
+                                      "http_status": params.get("http_status"), **self.identity})
                 elif "id" in value:
                     self._write({"jsonrpc": "2.0", "id": value["id"], "error": {
                         "code": -32601, "message": "undeclared Delivery callback"}})
