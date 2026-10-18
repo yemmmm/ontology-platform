@@ -30,6 +30,7 @@ from .formal_runs import (
     load_formal_run_configuration,
 )
 from .model_routing import load_team_model_profile
+from .runtimes.dsh import DshRuntimeError
 from .handoff import publish_offline_scope_handoff
 from .monitor_handoff import (
     HANDOFF_CONTRACT_RELATIVE_PATH,
@@ -1877,7 +1878,9 @@ def _cq_cleanup_acceptance_resources(
              and item.get("private_root_removed") is True and item.get("socket_root_removed") is True
              and item.get("destroy_error") is None)
             or (item.get("consumer_retained") is True and item.get("task_closed") is True
-                and item.get("child_alive") is True and item.get("thread_id")
+                and item.get("child_alive") is True and (item.get("thread_id") or (
+                    item.get("runtime") == "dsh" and item.get("runtime_session_id")
+                    and item.get("process_instance")))
                 and item.get("owner_pid") and item.get("report_sink_stopped") is True)
             for item in children
         ),
@@ -1897,7 +1900,9 @@ def _cq_typed_failure(exc: BaseException) -> dict[str, object]:
     typed = as_dict() if callable(as_dict) else None
     if isinstance(typed, dict):
         return typed
-    return {"status": "FAILED", "reason": str(exc) or type(exc).__name__}
+    return {"status": "FAILED", "reason": str(exc) or type(exc).__name__,
+            **({"failure_layer": exc.category, "reason_code": exc.reason_code}
+               if isinstance(exc, DshRuntimeError) else {})}
 
 
 def _cq_failure_summary(typed: Mapping[str, object]) -> str:
@@ -2269,7 +2274,7 @@ def _cq_read_tools(binding: dict[str, object]) -> list[str]:
     return list(tools)
 
 
-def _cq_judge_input_packets(packet, *, input_failures=None, soft_target_bytes=524_288):
+def _cq_judge_input_packets(packet, *, input_failures=None, soft_target_bytes=524_288, runtime="codex"):
     """Group by actual serialized input volume before the native hard limit."""
     def size(candidate):
         return len(_v3_acceptance_first_turn_text(candidate, _CQ_JUDGE_ROLE_INSTRUCTIONS))
@@ -2277,8 +2282,11 @@ def _cq_judge_input_packets(packet, *, input_failures=None, soft_target_bytes=52
     def volume(candidate):
         return len(_v3_acceptance_first_turn_text(candidate, _CQ_JUDGE_ROLE_INSTRUCTIONS).encode("utf-8"))
 
-    soft_target_bytes = min(soft_target_bytes, _CODEX_MAX_INPUT_TEXT_CHARS // 2)
-    if volume(packet) <= soft_target_bytes and size(packet) <= _CODEX_MAX_INPUT_TEXT_CHARS:
+    # Preserve 007 grouping volume without imposing Codex's native turn limit on DSH.
+    max_chars = _CODEX_MAX_INPUT_TEXT_CHARS if runtime == "codex" else None
+    if max_chars is not None:
+        soft_target_bytes = min(soft_target_bytes, max_chars // 2)
+    if volume(packet) <= soft_target_bytes and (max_chars is None or size(packet) <= max_chars):
         return [packet]
     payload = _unfreeze_packet(packet.payload)
 
@@ -2307,16 +2315,16 @@ def _cq_judge_input_packets(packet, *, input_failures=None, soft_target_bytes=52
     current = []
     for question in payload["questions"]:
         candidate = subset([*current, question])
-        if (volume(candidate) > soft_target_bytes or size(candidate) > _CODEX_MAX_INPUT_TEXT_CHARS) and current:
+        if (volume(candidate) > soft_target_bytes or (max_chars is not None and size(candidate) > max_chars)) and current:
             groups.append(subset(current))
             current = []
             candidate = subset([question])
-        if size(candidate) > _CODEX_MAX_INPUT_TEXT_CHARS:
+        if (max_chars is not None and size(candidate) > max_chars):
             failure = {"reason_code": "judge-input-too-large",
                        "failure_layer": "runtime/infrastructure",
                        "question_ids": [question["question_id"]],
                        "input_chars": size(candidate),
-                       "max_chars": _CODEX_MAX_INPUT_TEXT_CHARS}
+                       "max_chars": max_chars}
             if input_failures is None:
                 raise ExaminerRuntimeBlocked(
                     "runtime-infrastructure", role="acceptance", evidence=failure,
@@ -2381,12 +2389,20 @@ def _cq_platform_packet(contract, questions, binding, observed, read_tools):
     )
 
 
+def _cq_runtime_adapter(args, root):
+    runtime = getattr(args, "runtime", "codex")
+    if runtime == "codex":
+        return CodexRuntimeAdapter(repository_root=root)
+    from .runtimes.acceptance import acceptance_runtime
+    return acceptance_runtime(runtime, repository_root=root)
+
+
 def _cq_run_platform_session(
     args, root, artifacts, profile, packet, reports, read_key,
     forwarder, observables, ontology_ids, teardown,
 ):
     """Reuse the v3 Examiner runtime and persistence for formal or early reads."""
-    adapter = CodexRuntimeAdapter(repository_root=root)
+    adapter = _cq_runtime_adapter(args, root)
     adapter._run_root = artifacts
     adapter.bind_acceptance_model_profile(profile)
     return list(adapter.run_v3_acceptance_child(
@@ -2416,6 +2432,8 @@ def _cq_run_platform_questions(
             "question_content_version": question["content_version"],
             "batch_id": binding["batch_id"], "freeze_digest": binding["freeze_digest"],
             "packet_digest": packet.canonical_digest,
+            "runtime": getattr(args, "runtime", "codex"),
+            "model_profile_digest": profile.digest,
             "model_binding_digest": content_digest(observed),
             "started_at": datetime.now(UTC).isoformat(),
             "started_offset_seconds": time.monotonic() - started,
@@ -2439,8 +2457,9 @@ def _cq_run_platform_questions(
                 finished_at=datetime.now(UTC).isoformat(),
                 finished_offset_seconds=time.monotonic() - started,
                 reports=len(reports), teardown=teardown,
+                runtime_identity={key: teardown.get(key) for key in ("runtime", "runtime_session_id", "process_instance")},
                 model_usage=teardown.get("model_usage"),
-                usage_gap=("native-metrics-only; absent fields may be normalized to zero; "
+                usage_gap=teardown.get("usage_gap") or ("native-metrics-only; absent fields may be normalized to zero; "
                            "provider cost not reconciled" if teardown.get("model_usage")
                            else "no-native-usage-observation"),
             )
@@ -2515,6 +2534,8 @@ def _cq_execute_batch(
         )
     profile_id = getattr(args, "model_profile", None) or _CQ_DEFAULT_MODEL_PROFILE_ID
     profile = load_team_model_profile(root, profile_id)
+    from .runtimes.acceptance import validate_acceptance_profile
+    validate_acceptance_profile(getattr(args, "runtime", "codex"), profile)
     read_tools = _cq_read_tools(binding)
     forwarder = forwarder_factory(
         repository_root=root, read_key=read_key,
@@ -2795,14 +2816,14 @@ def _cq_execute_batch(
                     **({"collaboration_context": collaboration} if collaboration is not None else {}),
                 )
                 judge_packets = _cq_judge_input_packets(
-                    judge_packet, input_failures=input_failures,
+                    judge_packet, input_failures=input_failures, runtime=getattr(args, "runtime", "codex"),
                 )
                 transport_statistics = _cq_judge_transport_statistics(judge_packet, judge_packets)
                 for question_id in input_failures:
                     judging_skips[question_id] = "judge-input-too-large"
                 judgeable = [qid for qid in judgeable if qid not in input_failures]
                 if judge_packets:
-                    adapter = CodexRuntimeAdapter(repository_root=root)
+                    adapter = _cq_runtime_adapter(args, root)
                     adapter._run_root = artifacts
                     adapter.bind_acceptance_model_profile(profile)
                 judge_stage = "acceptance-judge-session"
@@ -2858,7 +2879,7 @@ def _cq_execute_batch(
                             )
                             group["status"] = "complete"
                         except (ExaminerRuntimeBlocked, ChildRuntimeError,
-                                CodexRuntimeError, TeamConfigurationError) as exc:
+                                CodexRuntimeError, TeamConfigurationError, DshRuntimeError) as exc:
                             failure = _cq_typed_failure(exc)
                             group.update({"status": "runtime-incomplete", "failure": failure})
                             lifecycle_errors.append({
@@ -2878,6 +2899,7 @@ def _cq_execute_batch(
                 ExaminerRuntimeBlocked,
                 ChildRuntimeError,
                 CodexRuntimeError,
+                DshRuntimeError,
                 TeamConfigurationError,
             ) as exc:
                 judge_typed = _cq_typed_failure(exc)
@@ -2957,7 +2979,9 @@ def _cq_execute_batch(
         "timing": {"started_at": batch_started_at,
                    "finished_at": datetime.now(UTC).isoformat(),
                    "wall_seconds": time.monotonic() - batch_started},
+        "runtime": getattr(args, "runtime", "codex"),
         "model_profile": profile_id,
+        "model_profile_digest": profile.digest,
         "batch_model_binding": pre_binding,
         "post_batch_model_binding": post_binding,
         "pre_batch_model_state_drift": pre_drift,
@@ -2987,6 +3011,7 @@ def _cq_execute_batch(
             "rejected_refs": rejected_refs[:20],
         },
     }
+    report["runtime"] = getattr(args, "runtime", "codex")
     report["full_pass"] = (
         batch_report_is_full_pass(report) and not lifecycle_errors and not cleanup_failed
     )
@@ -3351,11 +3376,11 @@ def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
     record = {"run_id": run_root.name, "checkpoint_id": args.checkpoint_id,
               "freeze_id": args.freeze_id, "question_ids": list(args.question_id),
               "purpose": "public-nonblind-production-feedback", "status": "not-executed",
+              "runtime": getattr(args, "runtime", "codex"),
               "formal_acceptance": False, "reports": [], "first_failure": None}
     forwarder = None
-    teardown = {}
+    child_teardowns = []
     reports = []
-    observables = {}
     stage = "checkpoint-binding"
     try:
         captured = load_feedback_checkpoint(
@@ -3381,6 +3406,8 @@ def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
             raise TeamConfigurationError("public_feedback_credentials_missing: " + _CQ_PLATFORM_READ_KEY_ENV)
         profile = load_team_model_profile(root, getattr(args, "model_profile", None)
                                           or _CQ_DEFAULT_MODEL_PROFILE_ID)
+        from .runtimes.acceptance import validate_acceptance_profile
+        validate_acceptance_profile(getattr(args, "runtime", "codex"), profile, judge=False)
         record["effective_model_profile_digest"] = profile.digest
         binding = {"schema_version": "r3-0-011-model-binding/v1",
                    "batch_id": freeze["batch_id"], "freeze_digest": freeze["snapshot_digest"],
@@ -3400,17 +3427,25 @@ def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
         record["packet_digest"] = packet.canonical_digest
         stage = "platform-examiner-session"
         record["executed"] = True
-        try:
-            reports = _cq_run_platform_session(
-                args, root, output_root, profile, packet, reports,
-                read_key, forwarder, observables, graph_sets, teardown)
-        except (ExaminerRuntimeBlocked, ChildRuntimeError, CodexRuntimeError,
-                TeamConfigurationError) as exc:
-            record["first_failure"] = {"stage": stage, "failure": _cq_typed_failure(exc)}
-        # Retain the actual response binding before post-state checks, so a
-        # failed observation never discards answers or their receipt locators.
-        responses, rejected = _cq_collect_platform_read_responses(
-            reports, observables.get("receipts") or [], output_root, tools)
+        results, wall_seconds = _cq_run_platform_questions(
+            args, root, output_root, profile, {"run_id": record["run_id"]},
+            captured["questions"], binding, before, tools, read_key, forwarder, graph_sets, output_root,
+        )
+        reports = [report for _, accepted, _, _ in results for report in accepted]
+        child_teardowns.extend(result[3] for result in results)
+        record["consumer_tasks"] = [task for task, _, _, _ in results]
+        record["consumer_wall_seconds"] = wall_seconds
+        failures = sorted((task for task, _, _, _ in results if task.get("failure")),
+                          key=lambda task: task["finished_offset_seconds"])
+        if failures:
+            record["first_failure"] = {"stage": stage, "failure": failures[0]["failure"]}
+        # Resolve each child's local p0 against only that question's receipts.
+        responses, rejected = {}, []
+        for task, accepted, obs, _ in results:
+            current_responses, current_rejections = _cq_collect_platform_read_responses(
+                accepted, obs.get("receipts") or [], output_root, tools)
+            responses.update(current_responses)
+            rejected.extend(current_rejections)
         record["platform_read_responses"] = responses
         record["rejected_evidence_refs"] = rejected
         stage = "post-feedback-state"
@@ -3439,7 +3474,7 @@ def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
         record["feedback_summary"] = "公开作答与读取已保留；覆盖/缺口由宿主按公开题意审核，原因不足保留未确定。"
         record["next_route"] = "Coordinator/Modeling/Protocol: existing review, dry-run/apply and readback"
     except (TeamConfigurationError, CheckpointError, CQContractError, ChildRuntimeError,
-            CodexRuntimeError, ExaminerRuntimeBlocked, OSError, ValueError) as exc:
+            CodexRuntimeError, DshRuntimeError, ExaminerRuntimeBlocked, OSError, ValueError) as exc:
         if record["first_failure"] is None:
             record["first_failure"] = {"stage": stage, "failure": _cq_typed_failure(exc)}
         if record.get("executed"):
@@ -3448,7 +3483,7 @@ def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
         record["reports"] = [dict(item) for item in reports]
         record["examiner_first_failure"] = _cq_first_examiner_failure(reports, None)
         record["cleanup"] = _cq_cleanup_acceptance_resources(
-            forwarder, [teardown] if teardown else [])
+            forwarder, child_teardowns)
         if not record["cleanup"]["forwarder_stopped"] or not record["cleanup"]["children_destroyed"]:
             if record["status"] == "observed":
                 record["status"] = "partial"
@@ -3647,6 +3682,12 @@ def _run_checkpoint_resume_acceptance(
                 file=sys.stderr,
             )
             return 2
+        selected_runtime = getattr(args, "runtime", "codex")
+        prior_runtime = (plan.complete_report.get("runtime", "codex")
+                         if plan.complete_report is not None else None)
+        if plan.complete_report is not None and prior_runtime != selected_runtime:
+            plan.complete_report = None
+            plan.complete_report_path = None
         output_root = runs_root / plan.new_run_id
         # The origin lands before any execution, so a continuation that dies
         # mid-flight still leaves the machine-checkable reference to its
@@ -3656,6 +3697,8 @@ def _run_checkpoint_resume_acceptance(
         source_run_id = str(plan.origin.get("source_run_id"))
         record = {
             "schema_version": ACCEPTANCE_CONTINUATION_SCHEMA,
+            "runtime": selected_runtime,
+            "prior_complete_report_runtime": prior_runtime,
             "source_run_id": source_run_id,
             "checkpoint_id": plan.checkpoint_id,
             "new_run_id": plan.new_run_id,
@@ -3715,6 +3758,7 @@ def _run_checkpoint_resume_acceptance(
         # are unchanged; a prior partial/fail keeps its own attempt on the
         # source run and this attempt starts from the full denominator.
         cq_args = argparse.Namespace(
+            runtime=getattr(args, "runtime", "codex"),
             run_root=source_root,
             # The digest-verified snapshot file (the Runner names it
             # freeze-NNNN; the handoff's freeze_id is the batch id).
@@ -3893,6 +3937,7 @@ def main() -> int:
     cq_acceptance.add_argument("--freeze-id", required=True)
     cq_acceptance.add_argument("--model-handoff", required=True, type=Path)
     cq_acceptance.add_argument("--question-visibility", choices=["hidden", "public"], default="hidden")
+    cq_acceptance.add_argument("--runtime", choices=["codex", "dsh"], default="codex")
     cq_acceptance.add_argument("--model-profile", default=None)
     cq_acceptance.add_argument("--session-timeout", type=float, default=300.0)
     cq_acceptance.add_argument("--owner-root", type=Path)
@@ -3906,6 +3951,7 @@ def main() -> int:
     feedback.add_argument("--checkpoint-id", required=True)
     feedback.add_argument("--freeze-id", required=True)
     feedback.add_argument("--question-id", required=True, action="append")
+    feedback.add_argument("--runtime", choices=["codex", "dsh"], default="codex")
     feedback.add_argument("--model-profile", default=None)
     feedback.add_argument("--session-timeout", type=float, default=300.0)
     checkpoint = subparsers.add_parser("checkpoint")
@@ -3945,6 +3991,7 @@ def main() -> int:
             "checkpoint (production resume or acceptance-only continuation)"
         ),
     )
+    checkpoint_resume.add_argument("--runtime", choices=["codex", "dsh"], default="codex", help="acceptance-mode runtime; independent of production")
     checkpoint_resume.add_argument("--run-id", required=True)
     checkpoint_resume.add_argument(
         "--checkpoint-id",
@@ -4067,6 +4114,9 @@ def main() -> int:
         if args.checkpoint_command == "settle-source":
             # Outside the run loader: it only writes the host-owned record.
             return _run_checkpoint_settle_source(args, repository_root())
+        if args.mode != "acceptance" and args.runtime != "codex":
+            print("checkpoint failed: --runtime is acceptance-only", file=sys.stderr)
+            return 2
         if args.mode == "acceptance":
             if args.fork_reason is not None:
                 print("checkpoint failed: fork requires production mode", file=sys.stderr)

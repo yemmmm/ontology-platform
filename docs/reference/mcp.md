@@ -329,6 +329,16 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 | `read_platform_record` | batch／session／ontology_batches 的 ID 与精确 project／ontology scope | 既有只读读回；返回记录与读取次数，无 apply/delete |
 | `reconcile_write_state` | 本次 run、project／ontology scope | 既有写者证据与 Batch／Attempt／资源／回执对账；不补做隐藏根因查询 |
 
+R4.3-033 为 `start_evaluation` 和
+`resume_from_checkpoint(mode="acceptance")` 增加可选 `runtime: codex | dsh`，省略为
+`codex`，不从生产或 Delivery 推断；CLI 对应 `--runtime`，覆盖正式 CQ、公开早期反馈
+及只读验收接续。DSH 须显式选择含实际验收角色的模型 Profile，例如
+`dsh-acceptance-deepseek-flash-low`；缺角色或不兼容模型返回可修正错误，不读取真凭据或
+启动模型任务。DSH 的 `service_tier=fast` 不受支持，unset/default 移除本子进程的
+Codex fast 继承。operation 请求和新报告绑定 runtime；旧报告缺字段仅按 Codex 读取，
+不能匹配 DSH 请求。Delivery 用 `evaluation_runtime`／`evaluation_model_profile` 固定所选
+验收绑定，模型工具不能自行改选。权限、冻结、治理读回、完整分母和独立语义裁决保持原合同。
+
 ### R4.3-030 首批：按需决策与 v2 模型视图
 
 Delivery 本地新增 `yield_delivery`，必填 `input_id`、`phase`、`waiting_for`、

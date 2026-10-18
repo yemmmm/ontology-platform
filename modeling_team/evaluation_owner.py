@@ -48,6 +48,7 @@ class EvaluationOwner:
     def _identity(self, resource):
         packet = resource.spec.get("_packet")
         return {"role": resource.spec.get("v3_role"), "thread_id": resource.thread_id,
+                **(resource.identity if getattr(resource, "runtime", None) == "dsh" else {"runtime": "codex"}),
                 "question_ids": [q["question_id"] for q in getattr(packet, "payload", {}).get("questions", ())],
                 "pid": getattr(resource.process, "pid", None),
                 "alive": resource.process.poll() is None if resource.process else False,
@@ -87,10 +88,14 @@ class EvaluationOwner:
             sink.flow_confirmation = lambda arguments: self.confirm(resource, arguments)
         if self.pending_pause and self._flow_message:
             receipt = self.receipts[self._flow_message["request_id"]]
-            receipt.setdefault("target_threads", []).append(resource.thread_id)
+            receipt.setdefault("target_threads", []).append(self._member_id(resource))
             receipt["status"] = "dispatch_started"
             self._dispatch_control(resource, self._flow_message)
         self._save()
+
+    @staticmethod
+    def _member_id(resource):
+        return resource.identity["process_instance"] if getattr(resource, "runtime", None) == "dsh" else resource.thread_id
 
     @_serialized
     def confirm(self, resource, arguments):
@@ -125,15 +130,17 @@ class EvaluationOwner:
         # question is still working. Drain it without waiting for global idle.
         for resource in self.retained:
             adapter = resource.spec["_owner_adapter"]
-            for message in adapter.receive_messages():
-                if message.agent_id == resource._child_agent.agent_id and message.text.strip():
+            native = getattr(resource, "runtime", None) == "dsh"
+            messages = resource.messages() if native else adapter.receive_messages()
+            for message in messages:
+                if (native or message.agent_id == resource._child_agent.agent_id) and message.text.strip():
                     try:
                         confirmation = json.loads(message.text).get("flow_confirmation")
                         if confirmation is not None:
                             self.confirm(resource, confirmation)
                     except (ValueError, AttributeError):
                         pass
-                    self.consult_replies.append({"role": "consumer", "thread_id": resource.thread_id, "text": message.text})
+                    self.consult_replies.append({**self._identity(resource), "text": message.text})
                     self._save()
         if select.select([self.fifo], [], [], 0)[0]:
             self.fifo.read_ready()
@@ -159,10 +166,10 @@ class EvaluationOwner:
                 self.receipts[identity]["status"] = "stopping"
                 self._save()
                 raise EvaluationStopped("explicit evaluation stop")
-            resources = list(self.active) or self.retained[:1]
+            resources = list(self.active) + list(self.retained) if action in {"pause", "resume"} else list(self.active) or self.retained[:1]
             if action == "consult":
                 resources = resources[:1]
-            self.receipts[identity]["target_threads"] = [r.thread_id for r in resources]
+            self.receipts[identity]["target_threads"] = [self._member_id(r) for r in resources]
             if action in {"pause", "resume"}:
                 self._flow_message = message
             if action == "pause":
@@ -183,6 +190,24 @@ class EvaluationOwner:
         """Called under the owner lock; release it across native dispatch."""
         identity = message["request_id"]
         action = message["action"]
+        if getattr(resource, "runtime", None) == "dsh":
+            try:
+                # Process control is confirmed by actual PIDs, never model prose.
+                evidence = resource.control(message)
+                receipt = self.receipts[identity]
+                receipt.setdefault("member_results", {})[self._member_id(resource)] = evidence
+                if action in {"pause", "resume"}:
+                    confirmed = receipt.setdefault("confirmed_threads", [])
+                    if self._member_id(resource) not in confirmed:
+                        confirmed.append(self._member_id(resource))
+                    if set(confirmed) == set(receipt.get("target_threads", confirmed)):
+                        receipt["status"] = "effective"
+                        self.pending_pause = identity if action == "pause" else None
+                else:
+                    receipt["status"] = evidence["status"]
+            except Exception as exc:
+                self.receipts[identity].update(status="unknown", detail=str(exc))
+            return
         adapter = resource.spec["_owner_adapter"]
         agent = resource._child_agent
         # Reuse the native dispatch contract on the SAME thread.  Unknown RPC receipts
@@ -271,7 +296,7 @@ class EvaluationOwner:
                     adapter._stop_standalone_provider_sessions()
                 self.retained.remove(resource)
             except Exception as exc:
-                failures.append({"thread_id": resource.thread_id, "cleanup_error": str(exc)})
+                failures.append({**self._identity(resource), "cleanup_error": str(exc)})
         forwarder = getattr(self, "forwarder", None)
         try:
             if forwarder is not None:

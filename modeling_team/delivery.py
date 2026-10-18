@@ -2152,6 +2152,10 @@ class DeliverySession:
                     if args.get("task_overlay") != self.config.get("task_overlay"):
                         raise ValueError("task_overlay differs from the authorized launch configuration")
             if name == "start_evaluation" or (name == "resume_from_checkpoint" and args.get("mode") == "acceptance"):
+                selected_runtime = self.config.get("evaluation_runtime", "codex")
+                if args.get("runtime", selected_runtime) != selected_runtime:
+                    raise ValueError("evaluation runtime differs from the selected binding")
+                args["runtime"] = selected_runtime
                 selected = self.config.get("evaluation_model_profile", self.config["model_profile"])
                 if args.get("model_profile", selected) not in {None, selected}:
                     raise ValueError("evaluation model profile differs from the selected binding")
@@ -2378,7 +2382,7 @@ class DeliverySession:
         context = {key: self.config[key] for key in (
             "objective", "goal", "task", "profile", "scope", "task_overlay", "allowed_sources",
             "readback_scope", "readback_scopes",
-            "model_profile", "evaluation_model_profile", "business_input_role",
+            "model_profile", "evaluation_model_profile", "evaluation_runtime", "business_input_role",
             "production_start_limit", "incremental_request_id", "incremental_run_id",
             "deadline", "model_context_window", "model_auto_compact_token_limit",
         ) if key in self.config}

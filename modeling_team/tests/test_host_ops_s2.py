@@ -957,6 +957,7 @@ def test_lifecycle_and_checkpoint_consumption_evidence_is_declared():
         "--enable-outer-input-fifo",
     }
     assert set(host_ops.CHECKPOINT_RESUME_FLAGS) == {
+        "--runtime",
         "--run-id",
         "--checkpoint-id",
         "--new-run-id",

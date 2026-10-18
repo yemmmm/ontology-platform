@@ -1065,6 +1065,7 @@ def _evaluation_request(
     question_ids: list[str],
     model_profile: str | None,
     repository_root: Path | None,
+    runtime: str = "codex",
 ) -> dict[str, Any]:
     freeze = _freeze_expectation(
         run_root,
@@ -1087,10 +1088,12 @@ def _evaluation_request(
         "question_ids": list(question_ids),
         "question_visibility": question_visibility,
         "model_profile": model_profile,
+        "runtime": runtime,
         "report_expectations": {
             **freeze,
             "checkpoint_id": checkpoint_id,
             "question_visibility": question_visibility,
+            "runtime": runtime,
             "model_profile": expected_model_profile,
             "model_profile_digest": model_profile_digest,
         },
@@ -1119,6 +1122,12 @@ def _report_binding_errors(record: Mapping[str, Any], report: Mapping[str, Any])
     expected = request.get("report_expectations")
     expected = expected if isinstance(expected, Mapping) else {}
     errors: list[str] = []
+    expected_runtime = expected.get("runtime", request.get("runtime", "codex"))
+    observed_runtime = report.get("runtime")
+    if observed_runtime is None and expected_runtime == "codex":
+        observed_runtime = "codex"  # Historical Codex evidence remains readable.
+    if observed_runtime != expected_runtime:
+        errors.append("runtime_mismatch")
 
     if expected.get("freeze_snapshot_error"):
         errors.append("freeze_snapshot_unreadable")
@@ -1378,6 +1387,23 @@ def _refresh_evaluation_record(record: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
+def validate_evaluation_runtime(runtime, model_profile, service_tier, *, mode, repository_root):
+    from .model_routing import load_team_model_profile, TeamModelProfileError
+    from .runtimes.acceptance import validate_acceptance_profile
+
+    try:
+        if runtime not in {"codex", "dsh"}:
+            raise TeamModelProfileError("runtime must be codex or dsh")
+        if runtime == "dsh":
+            if not model_profile:
+                raise TeamModelProfileError("acceptance-model-binding-missing: explicit DSH model_profile required")
+            profile = load_team_model_profile(_root(repository_root), model_profile)
+            validate_acceptance_profile(runtime, profile, judge=mode != "public-feedback", service_tier=service_tier)
+    except TeamModelProfileError as exc:
+        raise HostOpError("evaluation_runtime_invalid", str(exc), obj="runtime/model_profile/service_tier",
+            retryable=True, next_action="correct the explicit acceptance runtime and role bindings") from exc
+
+
 def start_evaluation(
     *,
     run_id: str,
@@ -1389,6 +1415,7 @@ def start_evaluation(
     question_ids: list[str] | None = None,
     question_visibility: str | None = None,
     model_profile: str | None = None,
+    runtime: str = "codex",
     session_timeout: float | int | None = None,
     service_tier: str = "unset",
     repository_root: Path | None = None,
@@ -1410,6 +1437,7 @@ def start_evaluation(
     run_root, _runs_root = resolve_run_root(run_id, repository_root=repository_root)
     timeout = _validate_timeout(session_timeout)
     _validate_service_tier(service_tier)
+    validate_evaluation_runtime(runtime, model_profile, service_tier, mode=mode, repository_root=repository_root)
     if model_profile is not None:
         model_profile = _safe_ref(model_profile, "model_profile")
     if question_visibility is None and mode == "cq-acceptance":
@@ -1500,6 +1528,7 @@ def start_evaluation(
         argv.extend(["--checkpoint-id", str(checkpoint_id)])
         for question_id in question_ids or []:
             argv.extend(["--question-id", question_id])
+    argv.extend(["--runtime", runtime])
     if model_profile is not None:
         argv.extend(["--model-profile", model_profile])
     if timeout is not None:
@@ -1514,6 +1543,7 @@ def start_evaluation(
         checkpoint_id=checkpoint_id,
         question_ids=list(question_ids or []),
         model_profile=model_profile,
+        runtime=runtime,
         repository_root=repository_root,
     )
     request.update(
@@ -1531,6 +1561,7 @@ def start_evaluation(
         request=request,
         service_tier=service_tier,
         launcher=launcher,
+        launch_env=_child_env("default" if runtime == "dsh" else service_tier),
     )
     record = _read_record(operation_id, repository_root)
     result["initial_report_count"] = len(record.get("initial_reports") or {})

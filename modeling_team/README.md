@@ -27,7 +27,7 @@ python -m modeling_team validate \
 授权，并显式传入上述 Profile／Task／model-profile、获准 scope、run ID 和 freeze 时间。
 运行时与 provider 分别选择；当前 DSH 仅接 `deepseek-official`／`deepseek-flash` 原生
 low／high／max，配置不会更名旧模型、改 effort 或回退订阅。所提供的 low 配置不是调用授权。
-Delivery 可按下节独立选择；独立验收仍沿既有 Codex 路径，033／034不属于031交付。
+Delivery 及独立验收可分别按下节选择；默认 Codex，034全链切换仍单独验证。
 
 本地使用设计冻结的 `/home/yangxiang/deepseek-harness` 提交
 `687f282e8625c6b8d11ff58211a90524be2e4317` 及其实际已构建依赖、Node 和 bubblewrap。
@@ -85,3 +85,31 @@ Delivery 独立进程只装载原 instructions、required skill 与获准 Host �
 Codex 读取，不能把旧 Codex session 热迁为 DSH。finish_delivery 仍保留 standby。
 
 工程结果及真实运行边界见[032开发测试记录](../docs/delivery/records/2026-10-18-r4-3-032-implementation-test-record.md)。
+
+
+## R4.3-033：独立验收 DSH 子任务
+
+`cq-acceptance`、`public-feedback` 及 `checkpoint resume --mode acceptance` 可显式传
+`--runtime dsh --model-profile dsh-acceptance-deepseek-flash-low`；省略 runtime 保持 Codex。
+Host `start_evaluation`／`resume_from_checkpoint(mode="acceptance")` 对应可选字段为
+`runtime`。Delivery 配置通过 `evaluation_runtime: dsh` 与
+`evaluation_model_profile: dsh-acceptance-deepseek-flash-low` 单独绑定，与 Delivery 和生产
+runtime 无关。Profile 只声明 Consumer 的 `platform-examiner` 和 Judge 的 `acceptance`，
+不继承031生产三角色模型。公开早期反馈只要求 Consumer binding，不调用 Judge。
+DSH 显式 `service_tier=fast` 返回可修正错误；unset/default 不继承 Codex fast 环境。
+
+每题 Consumer、每组 Judge 各有私有进程、原生 session、只读输入与工具清单；沿原
+三题并发、后置 Judge、完整分母、真实治理响应重验和冻结原文读取。DSH 报告由原 sink
+接纳，格式错误可在同 session 纠正；入队、活动结束或进程退出都不是报告。
+报告完成的 Consumer 可由原 owner 保留只读咨询，原报告入口关闭；暂停实际冻结当前及
+保留进程和后代，继续使用原 session。新题及晚绑定成员受同一 owner 准入控制。
+
+`<attempt-root>/acceptance-runtime/<process-instance>/` 保留 Host 私有构建、工具、模型、
+材料摘要、原始事件、接纳报告摘要与原生 session 历史。读响应仍沿原 attempt 路径留存，
+本地 `p0` 仅在本题解析。收尾仅清理本次进程、shim、socket和随机代理凭据；真实 key
+不进入子进程。缺失用量保持 unknown，034另做归一化与整任务对账。
+原 session 存活时可暂停／继续及只读追问；进程失效不自动恢复或重放未知请求。
+既有只读接续创建独立的新 attempt，保留源输入与失败原件，不启动生产。
+
+上述配置不授予真实模型调用权限。工程及本机确定性测试不等于真实 L0 或独立 L1，
+详见[033开发测试记录](../docs/delivery/records/2026-10-18-r4-3-033-implementation-test-record.md)。

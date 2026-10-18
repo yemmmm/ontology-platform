@@ -176,6 +176,7 @@ RUN_SUBCOMMAND_FLAGS = (
     "--enable-outer-input-fifo",
 )
 CHECKPOINT_RESUME_FLAGS = (
+    "--runtime",
     "--run-id",
     "--checkpoint-id",
     "--new-run-id",
@@ -3671,6 +3672,7 @@ def resume_from_checkpoint(
     freeze_started_at: str | None = None,
     session_timeout: float | int | None = None,
     model_profile: str | None = None,
+    runtime: str = "codex",
     question_visibility: str = "hidden",
     request_id: str | None = None,
     repository_root: Path | None = None,
@@ -3687,6 +3689,12 @@ def resume_from_checkpoint(
     credential never spawns a subprocess.
     """
 
+    if mode == "acceptance":
+        from .delivery_ops import validate_evaluation_runtime
+        validate_evaluation_runtime(runtime, model_profile, service_tier, mode="cq-acceptance", repository_root=repository_root)
+    elif runtime != "codex":
+        raise HostOpError("launch_arguments_invalid", "runtime is an acceptance-only option", obj="runtime", retryable=True,
+                          next_action="select runtime only for acceptance continuation")
     _require_host_credential()
     _validate_request_id(request_id)
     if not isinstance(checkpoint_id, str) or not checkpoint_id.strip():
@@ -3824,6 +3832,8 @@ def resume_from_checkpoint(
         argv.extend(["--session-timeout", str(session_timeout)])
     if question_visibility != "hidden":
         argv.extend(["--question-visibility", question_visibility])
+    if mode == "acceptance" and runtime != "codex":
+        argv.extend(["--runtime", runtime])
     if model_profile is not None:
         argv.extend(["--model-profile", model_profile])
     argv.append("--enable-outer-input-fifo")
@@ -3831,7 +3841,7 @@ def resume_from_checkpoint(
         run_id=new_run_id,
         kind="checkpoint_resume",
         argv=argv,
-        service_tier=service_tier,
+        service_tier="default" if runtime == "dsh" else service_tier,
         repository_root=repository_root,
         launcher=launcher,
         host_session_ref=host_session_ref,
@@ -3845,6 +3855,7 @@ def resume_from_checkpoint(
         "checkpoint_id": checkpoint_id,
         "write_tail_run_id": write_tail_run_id,
         "mode": mode,
+        "runtime": runtime,
         "semantic_starts_note": (
             "production resume consumes 1 semantic start and an acceptance-only "
             "continuation consumes 0; the 015 inspection result is authoritative"

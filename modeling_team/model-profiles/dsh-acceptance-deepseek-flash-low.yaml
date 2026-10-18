@@ -1,0 +1,11 @@
+schema_version: 1
+model_profile_id: dsh-acceptance-deepseek-flash-low
+roles:
+  platform-examiner:
+    model_provider: deepseek-official
+    model: deepseek-flash
+    model_reasoning_effort: low
+  acceptance:
+    model_provider: deepseek-official
+    model: deepseek-flash
+    model_reasoning_effort: low
