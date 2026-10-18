@@ -299,6 +299,7 @@ def test_imported_private_cq_material_is_readable_but_not_routable(tmp_path: Pat
     delivery.authorization = "auth-cq"
     delivery.repair_task_files = set()
     delivery.allowed_operations = {"repair"}
+    delivery.activity = "active"
     delivery.handoff_materials = session_store
     delivery._run_material_imports = {
         ("run-one", ref["material_id"], None): {

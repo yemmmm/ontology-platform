@@ -35,7 +35,8 @@ from .model_routing import (
     ProviderSessionManager, load_team_model_profile, preflight_profile_credentials,
     resolve_delivery_model_binding, uses_external_credential_session,
 )
-from .runtimes.delivery import DeliveryRuntime, DeliveryRuntimeError
+from .runtimes.delivery import DeliveryRuntime, DeliveryRuntimeError, DeliveryRuntimeProtocol
+from .runtimes.dsh_delivery import DSHDeliveryRuntime, validate_delivery_runtime
 from .delivery_verification import start_verification, verification_status, stop_verification
 from .efficiency import begin_round, summarize_round
 from .delivery_conversation import ConversationLog, ConversationServer, ConversationError, now
@@ -682,6 +683,7 @@ class DeliverySession:
         self.repository_root = repository_root.resolve()
         self.session_root = session_root.resolve()
         self.config = copy.deepcopy(config)
+        self._state_lock = threading.RLock()
         self.project_id = config.get("project_id") or config.get("readback_scope", {}).get("project_id")
         self.authorization_valid_until = config.get("authorization_valid_until")
         self.activity = "active"
@@ -730,8 +732,19 @@ class DeliverySession:
         self.finished = False
         self.profile = load_team_model_profile(self.repository_root, config["model_profile"])
         self.binding, self.binding_source = resolve_delivery_model_binding(self.profile)
+        self.runtime_name = validate_delivery_runtime(config, self.binding)
+        self.runtime_identity = {"runtime": self.runtime_name}
+        self.runtime_task_binding = {key: config.get(key) for key in (
+            "task", "profile", "scope", "task_overlay", "objective", "goal", "allowed_sources",
+            "business_input_role")}
+        self.recovery_pending = self.runtime_name == "dsh" and resume
         if resume:
             previous = json.loads((self.session_root / "session.json").read_text())
+            if previous.get("runtime", "codex") != self.runtime_name:
+                raise ValueError("resumption cannot change original Delivery runtime; use an explicit handoff")
+            if self.runtime_name == "dsh" and previous.get("runtime_task_binding") != self.runtime_task_binding:
+                raise ValueError("resumption cannot change original DSH task/scope/source binding")
+            self.runtime_identity = previous.get("runtime_identity", self.runtime_identity)
             if previous["authorization_reference"] != self.authorization:
                 raise ValueError("resumption requires the original authorization reference")
             if previous["model_binding"] != self.binding.as_dict():
@@ -752,6 +765,8 @@ class DeliverySession:
             self.allowed_operations.intersection_update(previous["allowed_operations"])
             self.activity = previous.get("activity", "active")
             self.work_result = previous.get("work_result")
+            self.flow_confirmation = previous.get("flow_confirmation")
+            self.stop_pending = self.activity == "stopping"
         else:
             self.session_root.mkdir(parents=True, exist_ok=False, mode=0o700)
         self.handoff_materials = HandoffMaterials(
@@ -1532,6 +1547,10 @@ class DeliverySession:
         return resolved
 
     def _save(self, state: str, **extra: Any) -> None:
+        with self._state_lock:
+            self._save_state(state, **extra)
+
+    def _save_state(self, state: str, **extra: Any) -> None:
         record = {"schema_version": 1, "session_id": self.session_id,
                   "project_id": self.project_id, "activity": self.activity,
                   "work_result": self.work_result,
@@ -1549,8 +1568,11 @@ class DeliverySession:
                   "model_binding": self.binding.as_dict(),
                   "model_binding_source": self.binding_source,
                   "business_input_role": self.business_input_role,
+                  "flow_confirmation": self.flow_confirmation,
                   "supervisor_pid": os.getpid(),
                   "native_thread_id": getattr(self, "native_thread_id", None),
+                  "runtime": self.runtime_name, "runtime_identity": self.runtime_identity,
+                  "runtime_task_binding": self.runtime_task_binding,
                   "native_pid": getattr(self, "native_pid", None),
                   "allowed_operations": sorted(self.allowed_operations), **extra}
         temporary = self.session_root / "session.tmp"
@@ -1597,21 +1619,38 @@ class DeliverySession:
             self.flow_confirmation = message["message_id"]
             self.activity = "pause_pending" if message["action"] == "pause" else self.activity
             packet["flow_instruction"] = (
-                "Relay this user/Host instruction to the actual current Coordinator, or evaluation owner "
-                "and current Consumer/Judge. Agents stop continuing their tasks and acknowledge waiting. "
-                "Resume only on the explicit next instruction, using the original task/thread; do not use "
-                "pause_run/resume_live_run, revoke permissions, freeze processes or interrupt inference. "
-                "Record actual acknowledgements separately from mere delivery and disclose in-flight calls."
+                "Control each owner by its actual runtime. For DSH production use Host pause_run/"
+                "resume_live_run and read the Runner's actual process-control receipt. Keep Delivery "
+                "online. For Codex production and unmigrated evaluation relay the sourced instruction "
+                "and obtain actual acknowledgements. Record pending owners and in-flight calls separately."
             )
             self.conversation.append("control_result", message_id=message["message_id"],
                                      action=message["action"], status="pending", basis="awaiting_agent_confirmation")
             self._save("active")
         return packet
 
-    def apply_user_control(self, text: str) -> dict | None:
+    def apply_user_control(self, text: str, *, source_reference: str | None = None) -> dict | None:
         if text in {"暂停", "继续"}:
-            # Cooperative instructions are handled by Delivery, never a launch gate.
-            return None
+            # DSH production requires actual process control, while Codex and
+            # unmigrated evaluation retain their cooperative owner contract.
+            results = {}
+            for run_id in sorted(self.run_ids):
+                status = self.call_tool("get_run_status", {"run_id": run_id}, _model_view=False)
+                if status.get("data", {}).get("identity", {}).get("runtime") != "dsh":
+                    continue
+                name = "pause_run" if text == "暂停" else "resume_live_run"
+                try:
+                    results[run_id] = {"ok": True, "data": getattr(host_ops_mcp, name)(
+                        run_id=run_id, text=text, source_reference=source_reference,
+                        repository_root=self.repository_root)}
+                except HostOpError as exc:
+                    results[run_id] = {"ok": False, "error": exc.as_envelope()}
+            if not results:
+                return None
+            self.activity = "pause_pending" if text == "暂停" else "resume_pending"
+            self._save("active")
+            return {"control": text, "owner_results": results, "status": "pending",
+                    "limitations": "read actual DSH process-control receipts; other owners need acknowledgements"}
         if text not in {"取消", "撤回预算", "停止"}:
             return None
         # Business controls prevent new launches before the native model replies.
@@ -1836,6 +1875,11 @@ class DeliverySession:
         try:
             if name not in self._tools:
                 raise ValueError("undeclared Delivery tool")
+            if getattr(self, "recovery_pending", False) and self._permission(name) != "read":
+                raise ValueError("DSH recovery reconciliation pending; effectful tools closed")
+            if self.activity in {"pause_pending", "paused", "resume_pending"} and self._permission(name) in {
+                    "production", "evaluation", "repair"}:
+                raise ValueError("user pause pending/effective; no new work until confirmed resume")
             if name in HANDOFF_TOOL_NAMES:
                 return self._material_tool(name, arguments)
             try:
@@ -2768,7 +2812,50 @@ class DeliverySession:
             result["delivery_range"] = {"next_offset": len(encoded), "complete": True}
         return result
 
-    def _dispatch_observation(self, runtime: DeliveryRuntime, payload: dict, *, steer: bool) -> bool:
+    def record_native_consumption(self, rows: list[dict]) -> None:
+        """Reception offsets and native consumption are separate durable facts."""
+        previous = getattr(self, "_native_consumption", {})
+        for row in rows:
+            identity = row["dispatch_id"]
+            state = {key: value for key, value in row.items() if key != "payload"}
+            if previous.get(identity) == state:
+                continue
+            self._append("session-events.jsonl", {"event": "delivery_native_consumption", **state})
+            packet = row.get("payload", {})
+            message_id = packet.get("message_id")
+            if self.conversation and message_id:
+                self.conversation.append("native_consumption", message_id=message_id, native_receipt=state)
+            previous[identity] = state
+        self._native_consumption = previous
+
+    def reconcile_native_inputs(self, rows: list[dict]) -> None:
+        for row in rows:
+            if row["state"] not in {"queued", "claimed", "settled"}:
+                continue
+            packet = row.get("payload", {})
+            data = packet.get("observed_state", packet.get("data", packet))
+            item = next((item for item in self._pending_decisions
+                         if item["input_id"] == data.get("input_id")), None)
+            if item and data.get("delivery_range"):
+                received = data["delivery_range"]
+                if received["next_offset"] <= item["offset"]:
+                    continue
+                self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
+                    "input_id": item["input_id"], "status": "accepted", "native_receipt": {
+                        key: value for key, value in row.items() if key != "payload"},
+                    "view_schema_version": data["schema_version"], **received})
+                if received["complete"]:
+                    self._pending_decisions.remove(item)
+                else:
+                    item.update(offset=received["next_offset"], delivery_status="pending")
+            if self.conversation and packet.get("message_id"):
+                old = self.conversation.receipt(packet["message_id"])
+                if old and old["dispatch"] in {"unknown", "pending"}:
+                    self.conversation.append("dispatch_result", message_id=packet["message_id"],
+                        status="accepted_by_native", native_receipt={
+                            key: value for key, value in row.items() if key != "payload"})
+
+    def _dispatch_observation(self, runtime: DeliveryRuntimeProtocol, payload: dict, *, steer: bool) -> bool:
         data = payload.get("observed_state") if payload.get("kind") in {"delivery_start", "delivery_resume"} else payload.get("data")
         data = data or payload
         item = next((item for item in self._pending_decisions
@@ -2778,7 +2865,7 @@ class DeliverySession:
         self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
             "input_id": item["input_id"], "status": "attempted"})
         try:
-            (runtime.steer if steer else runtime.send)(json.dumps(payload, ensure_ascii=False))
+            receipt = (runtime.steer if steer else runtime.send)(json.dumps(payload, ensure_ascii=False))
         except DeliveryRuntimeError as exc:
             status = "rejected" if exc.category == "rejected" else "unknown"
             item["delivery_status"] = status
@@ -2789,6 +2876,7 @@ class DeliverySession:
         received = data["delivery_range"]
         self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
             "input_id": item["input_id"], "status": "accepted",
+            **({"native_receipt": receipt} if receipt else {}),
             "view_schema_version": data["schema_version"], **received})
         if received["complete"]:
             self._pending_decisions.remove(item)
@@ -2827,7 +2915,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
 
     try:
         base_url = None
-        if uses_external_credential_session(session.binding.provider_id):
+        if session.runtime_name == "codex" and uses_external_credential_session(session.binding.provider_id):
             selected = replace(session.profile, bindings={"delivery": session.binding})
             providers = ProviderSessionManager(preflight_profile_credentials(selected),
                 on_attempt=NumericReceiptWriter(session_root / "native" / "provider-attempts.jsonl",
@@ -2835,16 +2923,26 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                      "role": "delivery"}))
             providers.start()
             base_url = providers.base_url_for(session.binding.provider_id)
-        runtime = DeliveryRuntime(
-            binding=session.binding, home=session_root / "native", instructions=instructions,
-            usage_context={"session_id": config["session_id"], "phase": "supervision",
-                           "role": "delivery"},
-            tools=session.tool_specs(), tool_handler=session.call_tool,
-            service_tier=config.get("service_tier", "unset"), provider_base_url=base_url,
-            model_context_window=config.get("model_context_window", 544000),
-            model_auto_compact_token_limit=config.get("model_auto_compact_token_limit", 489600),
-        )
+        if session.runtime_name == "dsh":
+            runtime = DSHDeliveryRuntime(binding=session.binding, home=session_root / "native",
+                instructions=instructions, tools=session.tool_specs(), tool_handler=session.call_tool,
+                session_id=session.session_id, profile=session.profile, resume=resume,
+                repository_root=repository_root)
+        else:
+            runtime = DeliveryRuntime(
+                binding=session.binding, home=session_root / "native", instructions=instructions,
+                usage_context={"session_id": config["session_id"], "phase": "supervision",
+                               "role": "delivery"},
+                tools=session.tool_specs(), tool_handler=session.call_tool,
+                service_tier=config.get("service_tier", "unset"), provider_base_url=base_url,
+                model_context_window=config.get("model_context_window", 544000),
+                model_auto_compact_token_limit=config.get("model_auto_compact_token_limit", 489600),
+            )
         runtime.start()
+        session.runtime_identity = getattr(runtime, "identity", {"runtime": "codex"})
+        if session.runtime_name == "dsh" and resume:
+            session.reconcile_native_inputs(runtime.dispatch_status())
+        session.recovery_pending = False
         session.native_thread_id = runtime.thread_id
         session.native_pid = runtime.process.pid
         session._save("active", native_thread_id=runtime.thread_id,
@@ -2868,7 +2966,9 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         initial_packet = {"kind": "delivery_resume" if resume else "delivery_start",
                           "observed_state": observed_state,
                           "session_reference": str(session_root / "session.json")}
-        if session._pending_decisions:
+        if getattr(session, "stop_pending", False):
+            runtime.interrupt()
+        elif session._pending_decisions:
             session._dispatch_observation(runtime, initial_packet, steer=False)
         else:
             runtime.send(json.dumps(initial_packet, ensure_ascii=False))
@@ -2878,6 +2978,9 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         eof = False
         while not session.finished:
             observations = runtime.poll(0.1)
+            if session.runtime_name == "dsh":
+                session.runtime_identity = runtime.identity
+                session.record_native_consumption(runtime.dispatch_status())
             if any(item.get("status") == "failed" for item in observations):
                 raise RuntimeError("Delivery native turn failed")
             for message in session.drain_messages():
@@ -2907,17 +3010,19 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         else:
                             message = text
                         packet = session.sourced_packet(message)
-                        control_text = {"cancel": "取消", "revoke_budget": "撤回预算", "stop": "停止"}.get(message.get("action"), "")
+                        control_text = {"pause": "暂停", "resume": "继续", "cancel": "取消",
+                                        "revoke_budget": "撤回预算", "stop": "停止"}.get(message.get("action"), "")
                     else:
                         packet = session.accept_user_input(text)
                         control_text = text
-                    control = session.apply_user_control(control_text)
+                    control = session.apply_user_control(control_text, source_reference=packet.get("source_reference"))
                     if control is not None:
                         packet["host_control_result"] = control
                         if session.conversation:
                             session.conversation.append("control_result", message_id=packet["message_id"],
                                 action=message["action"], status="pending", basis="host_control_submitted")
-                        runtime.interrupt()
+                        if control_text in {"取消", "撤回预算", "停止"}:
+                            runtime.interrupt()
                     pending_input.append(packet)
                     if control_text == "停止":
                         session.stop_message_id = packet.get("message_id")
@@ -2954,7 +3059,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         session.conversation.append("dispatch_started", message_id=current["message_id"],
                             dispatch_attempt_id=__import__("uuid").uuid4().hex)
                     try:
-                        runtime.steer(json.dumps(current, ensure_ascii=False))
+                        receipt = runtime.steer(json.dumps(current, ensure_ascii=False))
                     except DeliveryRuntimeError as exc:
                         if session.conversation:
                             rejected = exc.category == "rejected"
@@ -2971,7 +3076,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         break
                     pending_input.pop(0)
                     if session.conversation:
-                        session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native")
+                        session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native",
+                            **({"native_receipt": receipt} if receipt else {}))
             # Continue program observation during an active inference too. Send
             # decisions on its current turn; a heartbeat never starts a turn.
             if runtime.busy and time.monotonic() >= next_observation:
@@ -2990,7 +3096,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         session.conversation.append("dispatch_started", message_id=current["message_id"],
                             dispatch_attempt_id=__import__("uuid").uuid4().hex)
                     try:
-                        runtime.send(json.dumps(current, ensure_ascii=False))
+                        receipt = runtime.send(json.dumps(current, ensure_ascii=False))
                     except DeliveryRuntimeError:
                         if session.conversation:
                             session.conversation.append("dispatch_result", message_id=current["message_id"], status="unknown", reason="native_receipt_unknown")
@@ -2998,7 +3104,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                             raise
                     else:
                         if session.conversation:
-                            session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native")
+                            session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native",
+                                **({"native_receipt": receipt} if receipt else {}))
                     steer_blocked_turn = None
                 elif session._pending_decisions:
                     packet = {"kind": "host_observation", "data": session._model_observation()}
@@ -3021,6 +3128,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         return 130
     except Exception as exc:
         session._save("supervision_interrupted", reason="Delivery runtime failure",
+                      **({"runtime_error": str(exc), "failure_layer": "runtime/infrastructure"}
+                         if isinstance(exc, DeliveryRuntimeError) else {}),
                       error_type=type(exc).__name__, observation=session.observe())
         raise
     finally:
@@ -3030,6 +3139,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
             runtime.close()
             session._append("session-events.jsonl", {
                 "event": "native_runtime_closed", "thread_id": runtime.thread_id,
+                "runtime_identity": session.runtime_identity,
                 "pid": runtime.process.pid if runtime.process is not None else None,
                 "exit_code": runtime.process.poll() if runtime.process is not None else None,
             })

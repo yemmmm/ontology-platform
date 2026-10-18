@@ -15,5 +15,7 @@ permissions:
 runtime:
   codex:
     sandbox: read-only
+  dsh:
+    sandbox: read-only
 task_input:
   required: [task, allowed_sources, roster]

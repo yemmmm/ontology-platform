@@ -37,6 +37,10 @@ try {
     reconnect: {enabled: false},
   });
   // Use the SDK server directly so Host-only inspection stays outside model tools.
+  if (config.deliveryTools) {
+    const { serveDelivery } = await import('./delivery.mjs');
+    await serveDelivery(ctx, config, mounted, load);
+  } else {
   const { HarnessSdkJsonRpcServer } = await load('@deepseek-ai/dsh-sdk-jsonrpc-server');
   const send = value => process.stdout.write(JSON.stringify(value) + '\n');
   ctx.on('agent/error', ({agent, error}) => send({jsonrpc:'2.0', method:'host/provider-error',
@@ -79,6 +83,7 @@ try {
   });
   inputs.on('close', () => { void ctx.fiber.dispose().finally(() => process.exit(0)); });
   process.on('SIGTERM', () => { void ctx.fiber.dispose().finally(() => process.exit(0)); });
+  }
 } catch (error) {
   process.stderr.write(`DSH composition failed: ${error.message}\n`);
   await ctx.fiber.dispose();

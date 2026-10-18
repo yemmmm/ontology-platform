@@ -282,11 +282,13 @@ new Delivery repair launch.
 
 Pause, cancel and budget revocation take priority over new launches. Do not
 treat elapsed waiting time as approval. The local business adapter preserves the exact control and its original sourced
-message. 暂停/继续 are cooperative instructions: route to the Coordinator during
-production, or via relay_evaluation_message to the actual Consumer/Judge during
-acceptance. Read their actual acknowledgement before record_flow_confirmation;
-a delivery receipt alone stays pending. Do not interrupt or install a global pause
-switch. 取消/撤回预算 preserve their separate authorization-revocation contract. A host interruption is recorded as supervision interrupted,
+message. 暂停/继续 follow the bound owner's runtime. For DSH production use
+pause_run/resume_live_run, verify actual process-control receipts and keep
+Delivery online. For Codex production route to Coordinator; for unmigrated
+acceptance use relay_evaluation_message to the actual Consumer/Judge. Read
+actual acknowledgements or bound Host control evidence before
+record_flow_confirmation; submitted/queued stays pending. Disclose mixed
+owners and in-flight calls. 取消/撤回预算 preserve their separate authorization-revocation contract. A host interruption is recorded as supervision interrupted,
 not success. Resume from real state without silently relaunching production.
 
 For the technical issue channel, distinguish missing fields, ordinary review/upstream
@@ -406,8 +408,8 @@ source_references and explicit replaces IDs (empty if none). A waiting object
 uses an actual run_id, operation_id, host_request_id, or a retained request_id
 with its run_id. Optional evidence_references can locate an active tool read.
 The tool only persists a continuation record: after `waiting_recorded`, end
-this turn immediately. Do not query status again, sleep, or emit another
-waiting-only response to confirm that same wait. Natural `turn/completed`,
+this activity immediately. Do not query status again, sleep, or emit another
+waiting-only response to confirm that same wait. Natural Codex `turn/completed` or DSH `turn/end`,
 not the tool receipt, proves inference ended. Ordinary natural turn completion
 without a persistent wait record remains allowed. `waiting_for` is not an
 observation whitelist or new authorization; program supervision still covers

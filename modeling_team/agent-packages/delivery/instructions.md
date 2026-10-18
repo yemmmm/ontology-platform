@@ -173,12 +173,16 @@ Use emit_user_message's reply_to_message_ids and resolved_question_ids for the
 actual messages/questions handled. Do not import private or historical messages into
 public history. Proactive supplements need no fabricated question ID.
 
-Pause/resume are cooperative messages, not a tool ban or forced runtime interrupt.
-In production forward to the original Coordinator; during evaluation use
+Pause/resume follow each owner's actual runtime. For DSH production use the
+Host pause_run/resume_live_run controls and verify the actual Runner process
+freeze/resume receipts; submitted or queued is still pending. Keep Delivery
+online to receive continue/revoke, and disclose Codex or unmigrated owners.
+For Codex production forward the sourced instruction to the original Coordinator; during evaluation use
 relay_evaluation_message on the bound operation's original owner, which targets the
 currently active Consumer or Judge. Do not pre-create a Judge for a pause. Read the
 actual role acknowledgement and remaining work from run/evaluation receipts before
-record_flow_confirmation; instruction_delivered alone means pause_pending. Disclose
+record_flow_confirmation with actual role acknowledgements or bound DSH Host
+control evidence; instruction_delivered alone means pause_pending. Disclose
 in-flight calls and partial acknowledgements. While awaiting user input, wait without
 new inference; resume only on explicit input, on the same thread and remaining task.
 Authorization expiry, cancellation and budget revocation remain separate controls.
@@ -361,8 +365,8 @@ source_references and explicit replaces IDs (empty if none). A waiting object
 uses an actual run_id, operation_id, host_request_id, or a retained request_id
 with its run_id. Optional evidence_references can locate an active tool read.
 The tool only persists a continuation record: after `waiting_recorded`, end
-this turn immediately. Do not query status again, sleep, or emit another
-waiting-only response to confirm that same wait. Natural `turn/completed`,
+this activity immediately. Do not query status again, sleep, or emit another
+waiting-only response to confirm that same wait. Natural Codex `turn/completed` or DSH `turn/end`,
 not the tool receipt, proves inference ended. Ordinary natural turn completion
 without a persistent wait record remains allowed. `waiting_for` is not an
 observation whitelist or new authorization; program supervision still covers

@@ -7,8 +7,9 @@ import os
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 from modeling_team.usage_capture import NumericReceiptWriter
 
@@ -26,6 +27,24 @@ class DeliveryRuntimeError(RuntimeError):
     def __init__(self, message: str, *, category: str = "unknown"):
         super().__init__(message)
         self.category = category
+
+
+class DeliveryRuntimeProtocol(Protocol):
+    """The existing Host loop's narrow runtime contract."""
+    process: subprocess.Popen | None
+    thread_id: str | None
+    @property
+    def busy(self) -> bool: ...
+    @property
+    def turn_id(self) -> str | None: ...
+    @property
+    def identity(self) -> dict: ...
+    def start(self) -> None: ...
+    def send(self, text: str) -> dict | None: ...
+    def steer(self, text: str) -> dict | None: ...
+    def poll(self, timeout: float = 0) -> list[dict]: ...
+    def interrupt(self) -> dict | None: ...
+    def close(self) -> None: ...
 
 
 # The installed Codex app-server (verified against /agent/bin/real-codex
@@ -116,6 +135,12 @@ class DeliveryRuntime:
         self._stderr = None
         self._observations: list[dict] = []
         self._turn_id: str | None = None
+        self.process_instance = uuid.uuid4().hex
+
+    @property
+    def identity(self) -> dict:
+        return {"runtime": "codex", "process_instance": self.process_instance,
+                "runtime_session_id": self.thread_id, "activity_id": self.turn_id}
 
     def start(self) -> None:
         if self.process is not None:

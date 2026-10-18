@@ -11,7 +11,7 @@ import threading
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
 MAX_MESSAGE_BYTES = 65536
@@ -142,8 +142,12 @@ def project_history(value: dict) -> dict:
             elif kind == "dispatch_result":
                 message["dispatch"] = event["status"]
                 message["dispatch_reason"] = event.get("reason")
+                if event.get("native_receipt"):
+                    message["native_receipt"] = event["native_receipt"]
             else:
                 message["control"] = {key: event.get(key) for key in ("action", "status", "basis")}
+        elif kind == "native_consumption" and identity in messages:
+            messages[identity]["native_receipt"] = event["native_receipt"]
         elif kind == "question_resolved":
             resolved.update(event["question_ids"])
         elif kind == "session_state":
