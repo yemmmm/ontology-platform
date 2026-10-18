@@ -1,0 +1,897 @@
+{
+  "collected_at": "2026-10-18T20:07:04.200195+00:00",
+  "method": "Native response_id deduplication; cached/reasoning are subsets. All bound runs, independent evaluations and final Codex Host tails included. Engineering is separate and root cutoff remains ongoing; interrupted usage and provider billing are unknown.",
+  "tasks": [
+    {
+      "index": 1,
+      "letter": "a",
+      "code_commit": "633c703 + 62f5dcc runbook correction",
+      "run_ids": [
+        "minimal-chain-20261019-token-opt-a-r1"
+      ],
+      "rounds": 1,
+      "fresh_starts": 1,
+      "independent_quality": {
+        "hidden": 3,
+        "public": 1
+      },
+      "report_refs": [
+        "workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+        "workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json"
+      ],
+      "closure": {
+        "acceptance_attempt_id": "attempt-0001",
+        "acceptance_phase": "acceptance_complete",
+        "batch_id": "cq-batch-0001",
+        "cq_verdict": "pass",
+        "freeze_digest": "sha256:38aa0999d861cde9efe5c194c47d100800b42ac48c0aef3ed709ccdd635c6873",
+        "freeze_id": "cq-batch-0001",
+        "recorded_at": "2026-10-18T18:48:20.156440+00:00",
+        "report_digest": "sha256:0695b6fd3d8d660ba2414b51d340e0f74179ea3d518b5b56d87764276389f6f7",
+        "report_directory": "acceptance-v3/reports/cq-batch-0001/attempt-0001"
+      },
+      "cleanup": {
+        "admin_key_id": "af5c597d-4e40-4a1d-a454-c320d0f9be9c",
+        "admin_revoked": true,
+        "read_keys": [
+          {
+            "key_id": "3da4595e-3c4c-4831-82c7-79f84489b814",
+            "revoked": true
+          }
+        ],
+        "recorded_at": "2026-10-18T18:52:30.542771+00:00"
+      },
+      "minutes_semantic_start_to_full_pass": 27.201577466666667,
+      "minutes_semantic_start_to_cleanup": 31.374682983333333,
+      "native_models": [
+        "glm-5.3-flash"
+      ],
+      "native_efforts": [
+        "low"
+      ],
+      "usage": {
+        "roles": {
+          "codex-host": {
+            "input_tokens": 12902877,
+            "cached_input_tokens": 12676096,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 34265,
+            "reasoning_output_tokens": 6233,
+            "total_tokens": 12937142,
+            "response_count": 82,
+            "responses_with_cached_input": 81,
+            "response_cache_hit_ratio": 0.9878048780487805,
+            "uncached_input_tokens": 226781,
+            "cached_input_ratio": 0.982423997376709
+          },
+          "competency-question": {
+            "input_tokens": 442636,
+            "cached_input_tokens": 417344,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 6631,
+            "reasoning_output_tokens": 1507,
+            "total_tokens": 449267,
+            "response_count": 25,
+            "responses_with_cached_input": 24,
+            "response_cache_hit_ratio": 0.96,
+            "uncached_input_tokens": 25292,
+            "cached_input_ratio": 0.9428604993719445
+          },
+          "consumer": {
+            "input_tokens": 334105,
+            "cached_input_tokens": 233088,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 3580,
+            "reasoning_output_tokens": 252,
+            "total_tokens": 337685,
+            "response_count": 22,
+            "responses_with_cached_input": 18,
+            "response_cache_hit_ratio": 0.8181818181818182,
+            "uncached_input_tokens": 101017,
+            "cached_input_ratio": 0.697648942697655
+          },
+          "coordinator": {
+            "input_tokens": 591363,
+            "cached_input_tokens": 550144,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 9855,
+            "reasoning_output_tokens": 3911,
+            "total_tokens": 601218,
+            "response_count": 26,
+            "responses_with_cached_input": 25,
+            "response_cache_hit_ratio": 0.9615384615384616,
+            "uncached_input_tokens": 41219,
+            "cached_input_ratio": 0.9302983108513722
+          },
+          "delivery": {
+            "input_tokens": 13865986,
+            "cached_input_tokens": 13604352,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 18306,
+            "reasoning_output_tokens": 2980,
+            "total_tokens": 13884292,
+            "response_count": 77,
+            "responses_with_cached_input": 76,
+            "response_cache_hit_ratio": 0.987012987012987,
+            "uncached_input_tokens": 261634,
+            "cached_input_ratio": 0.9811312372592905
+          },
+          "judge": {
+            "input_tokens": 926157,
+            "cached_input_tokens": 836608,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 7360,
+            "reasoning_output_tokens": 419,
+            "total_tokens": 933517,
+            "response_count": 21,
+            "responses_with_cached_input": 19,
+            "response_cache_hit_ratio": 0.9047619047619048,
+            "uncached_input_tokens": 89549,
+            "cached_input_ratio": 0.9033112096545186
+          },
+          "modeling": {
+            "input_tokens": 1064050,
+            "cached_input_tokens": 1011200,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 9228,
+            "reasoning_output_tokens": 2155,
+            "total_tokens": 1073278,
+            "response_count": 33,
+            "responses_with_cached_input": 32,
+            "response_cache_hit_ratio": 0.9696969696969697,
+            "uncached_input_tokens": 52850,
+            "cached_input_ratio": 0.9503312814247451
+          }
+        },
+        "recorded_modeling_chain": {
+          "input_tokens": 17224297,
+          "cached_input_tokens": 16652736,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 54960,
+          "reasoning_output_tokens": 11224,
+          "total_tokens": 17279257,
+          "response_count": 204,
+          "responses_with_cached_input": 194,
+          "response_cache_hit_ratio": 0.9509803921568627,
+          "uncached_input_tokens": 571561,
+          "cached_input_ratio": 0.9668165847349242
+        },
+        "recorded_chain_plus_codex_host": {
+          "input_tokens": 30127174,
+          "cached_input_tokens": 29328832,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 89225,
+          "reasoning_output_tokens": 17457,
+          "total_tokens": 30216399,
+          "response_count": 286,
+          "responses_with_cached_input": 275,
+          "response_cache_hit_ratio": 0.9615384615384616,
+          "uncached_input_tokens": 798342,
+          "cached_input_ratio": 0.9735009330778918
+        },
+        "response_conflicts": [],
+        "native_compaction_markers": []
+      },
+      "source_inventory": [
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/delivery-sessions/minimal-chain-20261019-token-opt-a/native/sessions/2026/10/19/rollout-2026-10-19T02-20-16-01a1503e-3629-75f1-9956-dd3182121caf.jsonl",
+          "role": "delivery",
+          "bytes": 3027196,
+          "sha256": "00c06ede12ad81ec6538c58dbba86db29c40b30bb2a62e92e755901b5ea06c63"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/evidence/child-sessions/acceptance-examiner-badecc53/2026/10/18/rollout-2026-10-18T18-44-54-01a15054-c074-7ae0-b446-5ad4f04c703a.jsonl",
+          "role": "judge",
+          "bytes": 133192,
+          "sha256": "0f42d8353eb4e3caa8d05f758627ea83d779c2ee223963b33b6eea662db0e1f2"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/evidence/child-sessions/acceptance-examiner-cd665f2c/2026/10/18/rollout-2026-10-18T18-45-18-01a15055-1e36-7ce1-a2ed-6fb9b0ecade2.jsonl",
+          "role": "judge",
+          "bytes": 388676,
+          "sha256": "d39ac90a71c333f92700ef35d495a6ea093f7f7be25b0e983062770275a15d26"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/evidence/child-sessions/platform-examiner-20762cf5/2026/10/18/rollout-2026-10-18T18-44-16-01a15054-2c14-7ba2-8c08-69631d5a1ebc.jsonl",
+          "role": "consumer",
+          "bytes": 137484,
+          "sha256": "852152f7a3775192a1e7f9789d555d697f7a478d68a67c6b3d851fbe79a760a3"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/evidence/child-sessions/platform-examiner-2c49a9fb/2026/10/18/rollout-2026-10-18T18-44-16-01a15054-2c1c-7432-8dd3-0e916093b361.jsonl",
+          "role": "consumer",
+          "bytes": 106592,
+          "sha256": "af408fd114c4ce9940602e6f0f9b3208f04bc96288064e0dba91a86e9d5cc71b"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/evidence/child-sessions/platform-examiner-6d33477a/2026/10/18/rollout-2026-10-18T18-44-15-01a15054-2b95-7d31-a8bc-4c061fdddbb8.jsonl",
+          "role": "consumer",
+          "bytes": 112569,
+          "sha256": "af0f2fe8243775106f225c1fabd2c16c44215e407c56582777df5eb6f08b8b08"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/evidence/child-sessions/platform-examiner-6ec969ff/2026/10/18/rollout-2026-10-18T18-44-16-01a15054-2c1a-7cc2-ba9a-205fdad31155.jsonl",
+          "role": "consumer",
+          "bytes": 122409,
+          "sha256": "0455ff1ce430ef56e0654a65d03ea884af2ccf813b3deb0fdd8e0c718790d036"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/runtime/competency-question/home/sessions/2026/10/18/rollout-2026-10-18T18-21-07-01a1503e-fc52-7c03-b8f2-e78058b385fa.jsonl",
+          "role": "competency-question",
+          "bytes": 328506,
+          "sha256": "86d1208c3a63a0a436923f33407941e6a98a1b9ae90e3917af17fbbc9c49a6b7"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/runtime/coordinator/home/sessions/2026/10/18/rollout-2026-10-18T18-21-06-01a1503e-f6be-7003-9253-547c6033d204.jsonl",
+          "role": "coordinator",
+          "bytes": 420854,
+          "sha256": "31025c4ef26ed32b60ee346275f43acf958c3f45283fc507ccb5d032925fddde"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-a-r1/runtime/modeling/home/sessions/2026/10/18/rollout-2026-10-18T18-21-06-01a1503e-f988-7890-ad8c-9128a6b25192.jsonl",
+          "role": "modeling",
+          "bytes": 619961,
+          "sha256": "c60b39ffccfb14d75aa9b9d26c2a941279c86b46bb9faf478e4d47f3d0bc0ea2"
+        },
+        {
+          "path": "/home/yangxiang/.codex/sessions/2026/10/19/rollout-2026-10-19T02-11-19-01a15035-f61e-7c23-a666-28e470f0a42e.jsonl",
+          "role": "codex-host",
+          "bytes": 1905446,
+          "sha256": "86b859711d96e1754f126cc6f333131561dca71281fa2d2bf9ec2f285bf28d5f"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "letter": "b",
+      "code_commit": "b0c9d25",
+      "run_ids": [
+        "minimal-chain-20261019-token-opt-b-r1",
+        "minimal-chain-20261019-token-opt-b-r2"
+      ],
+      "rounds": 3,
+      "fresh_starts": 2,
+      "independent_quality": {
+        "hidden": 3,
+        "public": 1
+      },
+      "report_refs": [
+        "workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+        "workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json"
+      ],
+      "closure": {
+        "acceptance_attempt_id": "attempt-0001",
+        "acceptance_phase": "acceptance_complete",
+        "batch_id": "cq-batch-0001",
+        "cq_verdict": "pass",
+        "freeze_digest": "sha256:4749b5aaf25f0b7ed47dc52c95b93a496bdb9bf453e9a58c0df160f45267d9e6",
+        "freeze_id": "cq-batch-0001",
+        "recorded_at": "2026-10-18T19:39:41.879515+00:00",
+        "report_digest": "sha256:9e14a10855b19c4cc0602db8f8bd8b9e3a85365fcee170491241caffeb0f335e",
+        "report_directory": "acceptance-v3/reports/cq-batch-0001/attempt-0001"
+      },
+      "cleanup": {
+        "admin_key_id": "d7e7f31c-dcc9-45dc-b88d-fe5de5648452",
+        "admin_revoked": true,
+        "read_keys": [
+          {
+            "key_id": "c1faa89e-e593-46f8-9535-7ad6b0af6c82",
+            "revoked": true
+          },
+          {
+            "key_id": "95fdfa1a-488d-4ea1-a6e7-87afba9876a5",
+            "revoked": true
+          }
+        ],
+        "recorded_at": "2026-10-18T19:43:24.641243+00:00"
+      },
+      "minutes_semantic_start_to_full_pass": 37.02578788333334,
+      "minutes_semantic_start_to_cleanup": 40.73848335,
+      "native_models": [
+        "glm-5.3-flash"
+      ],
+      "native_efforts": [
+        "low"
+      ],
+      "usage": {
+        "roles": {
+          "codex-host": {
+            "input_tokens": 10734879,
+            "cached_input_tokens": 10570432,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 18336,
+            "reasoning_output_tokens": 3561,
+            "total_tokens": 10753215,
+            "response_count": 87,
+            "responses_with_cached_input": 86,
+            "response_cache_hit_ratio": 0.9885057471264368,
+            "uncached_input_tokens": 164447,
+            "cached_input_ratio": 0.9846810569546243
+          },
+          "competency-question": {
+            "input_tokens": 421533,
+            "cached_input_tokens": 380544,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 6166,
+            "reasoning_output_tokens": 1347,
+            "total_tokens": 427699,
+            "response_count": 30,
+            "responses_with_cached_input": 28,
+            "response_cache_hit_ratio": 0.9333333333333333,
+            "uncached_input_tokens": 40989,
+            "cached_input_ratio": 0.9027620613332764
+          },
+          "consumer": {
+            "input_tokens": 607032,
+            "cached_input_tokens": 378368,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 6392,
+            "reasoning_output_tokens": 756,
+            "total_tokens": 613424,
+            "response_count": 40,
+            "responses_with_cached_input": 33,
+            "response_cache_hit_ratio": 0.825,
+            "uncached_input_tokens": 228664,
+            "cached_input_ratio": 0.6233081616784618
+          },
+          "coordinator": {
+            "input_tokens": 1458385,
+            "cached_input_tokens": 1389376,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 18242,
+            "reasoning_output_tokens": 7498,
+            "total_tokens": 1476627,
+            "response_count": 61,
+            "responses_with_cached_input": 61,
+            "response_cache_hit_ratio": 1.0,
+            "uncached_input_tokens": 69009,
+            "cached_input_ratio": 0.952681219293945
+          },
+          "delivery": {
+            "input_tokens": 24422158,
+            "cached_input_tokens": 23381568,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 23147,
+            "reasoning_output_tokens": 5122,
+            "total_tokens": 24445305,
+            "response_count": 108,
+            "responses_with_cached_input": 106,
+            "response_cache_hit_ratio": 0.9814814814814815,
+            "uncached_input_tokens": 1040590,
+            "cached_input_ratio": 0.9573915622034711
+          },
+          "judge": {
+            "input_tokens": 1178612,
+            "cached_input_tokens": 1005888,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 8997,
+            "reasoning_output_tokens": 221,
+            "total_tokens": 1187609,
+            "response_count": 30,
+            "responses_with_cached_input": 28,
+            "response_cache_hit_ratio": 0.9333333333333333,
+            "uncached_input_tokens": 172724,
+            "cached_input_ratio": 0.8534513478566313
+          },
+          "modeling": {
+            "input_tokens": 2855530,
+            "cached_input_tokens": 2712576,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 28301,
+            "reasoning_output_tokens": 7582,
+            "total_tokens": 2883831,
+            "response_count": 75,
+            "responses_with_cached_input": 73,
+            "response_cache_hit_ratio": 0.9733333333333334,
+            "uncached_input_tokens": 142954,
+            "cached_input_ratio": 0.9499378399106295
+          }
+        },
+        "recorded_modeling_chain": {
+          "input_tokens": 30943250,
+          "cached_input_tokens": 29248320,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 91245,
+          "reasoning_output_tokens": 22526,
+          "total_tokens": 31034495,
+          "response_count": 344,
+          "responses_with_cached_input": 329,
+          "response_cache_hit_ratio": 0.9563953488372093,
+          "uncached_input_tokens": 1694930,
+          "cached_input_ratio": 0.9452245643233985
+        },
+        "recorded_chain_plus_codex_host": {
+          "input_tokens": 41678129,
+          "cached_input_tokens": 39818752,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 109581,
+          "reasoning_output_tokens": 26087,
+          "total_tokens": 41787710,
+          "response_count": 431,
+          "responses_with_cached_input": 415,
+          "response_cache_hit_ratio": 0.962877030162413,
+          "uncached_input_tokens": 1859377,
+          "cached_input_ratio": 0.9553872247960076
+        },
+        "response_conflicts": [],
+        "native_compaction_markers": [
+          {
+            "path": "/home/yangxiang/ontology-platform/workspaces/delivery-sessions/minimal-chain-20261019-token-opt-b/native/sessions/2026/10/19/rollout-2026-10-19T03-02-30-01a15064-e047-7f21-a451-c602400472c7.jsonl",
+            "timestamp": "2026-10-18T19:30:48.955Z",
+            "type": "compacted"
+          }
+        ]
+      },
+      "source_inventory": [
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/delivery-sessions/minimal-chain-20261019-token-opt-b/native/sessions/2026/10/19/rollout-2026-10-19T03-02-30-01a15064-e047-7f21-a451-c602400472c7.jsonl",
+          "role": "delivery",
+          "bytes": 6287483,
+          "sha256": "42a399f1653b73777a699d58aa655709fbe5ee09f85e99c19a26a3a5d510cf30"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/evidence/child-sessions/acceptance-examiner-3d03599f/2026/10/18/rollout-2026-10-18T19-16-34-01a15071-be6b-7930-84ca-6eb450678477.jsonl",
+          "role": "judge",
+          "bytes": 137511,
+          "sha256": "b4f5fa4d1feb4619c678056451f2528e41f4f919b40fd84316133a5824f25d72"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/evidence/child-sessions/acceptance-examiner-ab280290/2026/10/18/rollout-2026-10-18T19-17-20-01a15072-75c1-7a01-8cc7-9375fcc795bc.jsonl",
+          "role": "judge",
+          "bytes": 327177,
+          "sha256": "da8c8bc7e6312d25b7584c3b1378ea733ac7372961607705839bc3a72d309f67"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/evidence/child-sessions/platform-examiner-1b591caf/2026/10/18/rollout-2026-10-18T19-16-10-01a15071-6273-7112-92e9-ee2edb2e886a.jsonl",
+          "role": "consumer",
+          "bytes": 145835,
+          "sha256": "dec3431c06c1c76e3a7e4ecc426c77611e45ff238f66c1f8237de9a46955fbc8"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/evidence/child-sessions/platform-examiner-657f3fc9/2026/10/18/rollout-2026-10-18T19-16-10-01a15071-6266-7643-a7ef-dea980f10a06.jsonl",
+          "role": "consumer",
+          "bytes": 113187,
+          "sha256": "dfbe3696140c491309dbf63061039a055e95daf0d061368249c7a6d42a10a6f8"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/evidence/child-sessions/platform-examiner-9374d69f/2026/10/18/rollout-2026-10-18T19-16-10-01a15071-6207-7513-8bd7-f30ad83c1270.jsonl",
+          "role": "consumer",
+          "bytes": 101827,
+          "sha256": "09aa6b6a028f52cf147f1d4941379a2ec939b46cfe4242ac120b483d5ac7ba95"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/evidence/child-sessions/platform-examiner-94b4fb7e/2026/10/18/rollout-2026-10-18T19-16-10-01a15071-6273-7410-918a-221721ef4074.jsonl",
+          "role": "consumer",
+          "bytes": 99669,
+          "sha256": "b666f76374f1f90aef4190334b92933d45a21eaffe16f48ce8a96adaf60593fd"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/runtime/competency-question/home/sessions/2026/10/18/rollout-2026-10-18T19-02-39-01a15065-046c-73c0-a010-ff6af95edc77.jsonl",
+          "role": "competency-question",
+          "bytes": 219899,
+          "sha256": "7b12b92381414f90db3cae6ad59d7083ecc39a884e164cfed198646e3b58f23c"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/runtime/coordinator/home/sessions/2026/10/18/rollout-2026-10-18T19-02-38-01a15064-ff7d-7542-8f8f-1278b7aad649.jsonl",
+          "role": "coordinator",
+          "bytes": 444129,
+          "sha256": "c2fa3fd3809f753fe7a8a297d24cb1c868cd2f43050831e51580898b852c8ea9"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/runtime/modeling/home/sessions/2026/10/18/rollout-2026-10-18T19-02-39-01a15065-0234-7f73-826e-ff1c4e759063.jsonl",
+          "role": "modeling",
+          "bytes": 650886,
+          "sha256": "feb7c3172325773af9740c8af7823ee5f8e41f8145e3c5275646261e591fbdc8"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/evidence/child-sessions/acceptance-examiner-caf3539f/2026/10/18/rollout-2026-10-18T19-37-34-01a15084-fa89-72b1-96bd-db82799103d5.jsonl",
+          "role": "judge",
+          "bytes": 150449,
+          "sha256": "d9f4244b5aefa314edbe4db26e23298f4abda1e3665304407d5a33c6a619f076"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/evidence/child-sessions/acceptance-examiner-e5763cd7/2026/10/18/rollout-2026-10-18T19-38-04-01a15085-6f89-7cf2-815d-96b9b0d15dce.jsonl",
+          "role": "judge",
+          "bytes": 406009,
+          "sha256": "78386643a5f7dcf9f674d9faf2bbb891309c82150b8d4a1fb1521637ce9b6ffa"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/evidence/child-sessions/platform-examiner-4e4af3a9/2026/10/18/rollout-2026-10-18T19-36-55-01a15084-6030-7b21-bca7-cafc1c23f933.jsonl",
+          "role": "consumer",
+          "bytes": 92580,
+          "sha256": "c389715bc93489bce0185f850ad76bb9975cfc9d47965424e84c7ab63d22ca02"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/evidence/child-sessions/platform-examiner-5c199821/2026/10/18/rollout-2026-10-18T19-36-55-01a15084-5ff6-7270-add1-e798f0467003.jsonl",
+          "role": "consumer",
+          "bytes": 128003,
+          "sha256": "bd0abdbb5cd47a3643876c4c82d8ef97604a54d0faf4df5f5af7ef4b2e23ca79"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/evidence/child-sessions/platform-examiner-7858e7de/2026/10/18/rollout-2026-10-18T19-36-55-01a15084-6027-7191-8d0f-e96a7d278c49.jsonl",
+          "role": "consumer",
+          "bytes": 132467,
+          "sha256": "be52c1ee7f48d586601f4aed0b91fe5a8393ed195bcbb4c2c8ad65523a32b6c6"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/evidence/child-sessions/platform-examiner-80dd7026/2026/10/18/rollout-2026-10-18T19-36-55-01a15084-6030-7632-8f75-5a36f4d467bb.jsonl",
+          "role": "consumer",
+          "bytes": 167364,
+          "sha256": "ee145a63b3f5fead38298025656b359ba9b8925b060765d03df8500ac340f537"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/runtime/competency-question/home/sessions/2026/10/18/rollout-2026-10-18T19-19-50-01a15074-be40-7141-af27-7a8033ed04dc.jsonl",
+          "role": "competency-question",
+          "bytes": 210780,
+          "sha256": "e0215ae9e4c490a719791c46a3a2bfa940c729e95f5f4644d9b6d7fe7d59ce25"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/runtime/coordinator/home/sessions/2026/10/18/rollout-2026-10-18T19-19-49-01a15074-b92c-72b2-b544-f37cbf119c47.jsonl",
+          "role": "coordinator",
+          "bytes": 483949,
+          "sha256": "b14d56395ea1b13f0ffa350bf8c308b2a44da3fdcd7fa185d977dacf3ad6486a"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r2/runtime/modeling/home/sessions/2026/10/18/rollout-2026-10-18T19-19-49-01a15074-bb9f-7e62-b275-ff1ab51005f5.jsonl",
+          "role": "modeling",
+          "bytes": 860120,
+          "sha256": "66f38d8624b95d6364b6aa5f9f64104c8b9986f5028458130fdbaed100f87b9c"
+        },
+        {
+          "path": "/home/yangxiang/.codex/sessions/2026/10/19/rollout-2026-10-19T03-00-50-01a15063-4b77-75b3-bb29-82fa77ebc166.jsonl",
+          "role": "codex-host",
+          "bytes": 1259582,
+          "sha256": "a4efb436c3116302bee656b98c9e404855d3ad8e36ce4f5e023017b3592f9eca"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "letter": "c",
+      "code_commit": "ffd55e7",
+      "run_ids": [
+        "minimal-chain-20261019-token-opt-c-r1"
+      ],
+      "rounds": 1,
+      "fresh_starts": 1,
+      "independent_quality": {
+        "hidden": 3,
+        "public": 1
+      },
+      "report_refs": [
+        "workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+        "workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json"
+      ],
+      "closure": {
+        "acceptance_attempt_id": "attempt-0001",
+        "acceptance_phase": "acceptance_complete",
+        "batch_id": "cq-batch-0001",
+        "cq_verdict": "pass",
+        "freeze_digest": "sha256:26df69476a866b562e3ba7dc7e4c911970fed898b29e61dab6fc810698327a79",
+        "freeze_id": "cq-batch-0001",
+        "recorded_at": "2026-10-18T19:59:45.469725+00:00",
+        "report_digest": "sha256:255590a3157b3511060a885adba17e73c172cbb3942c800880ccf84b5f746302",
+        "report_directory": "acceptance-v3/reports/cq-batch-0001/attempt-0001"
+      },
+      "cleanup": {
+        "admin_key_id": "231d7cef-523f-434b-913a-d453ee5fa73b",
+        "admin_revoked": true,
+        "read_keys": [
+          {
+            "key_id": "0cd87602-209f-4b5e-9f73-4231629c8192",
+            "revoked": true
+          }
+        ],
+        "recorded_at": "2026-10-18T20:01:13.326059+00:00"
+      },
+      "minutes_semantic_start_to_full_pass": 10.863124733333333,
+      "minutes_semantic_start_to_cleanup": 12.327396966666667,
+      "native_models": [
+        "glm-5.3-flash"
+      ],
+      "native_efforts": [
+        "low"
+      ],
+      "usage": {
+        "roles": {
+          "codex-host": {
+            "input_tokens": 6133809,
+            "cached_input_tokens": 5980992,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 11509,
+            "reasoning_output_tokens": 2199,
+            "total_tokens": 6145318,
+            "response_count": 51,
+            "responses_with_cached_input": 50,
+            "response_cache_hit_ratio": 0.9803921568627451,
+            "uncached_input_tokens": 152817,
+            "cached_input_ratio": 0.9750861169625595
+          },
+          "competency-question": {
+            "input_tokens": 137084,
+            "cached_input_tokens": 123520,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 2252,
+            "reasoning_output_tokens": 418,
+            "total_tokens": 139336,
+            "response_count": 11,
+            "responses_with_cached_input": 11,
+            "response_cache_hit_ratio": 1.0,
+            "uncached_input_tokens": 13564,
+            "cached_input_ratio": 0.9010533687374165
+          },
+          "consumer": {
+            "input_tokens": 191510,
+            "cached_input_tokens": 127168,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 2343,
+            "reasoning_output_tokens": 243,
+            "total_tokens": 193853,
+            "response_count": 14,
+            "responses_with_cached_input": 13,
+            "response_cache_hit_ratio": 0.9285714285714286,
+            "uncached_input_tokens": 64342,
+            "cached_input_ratio": 0.6640279880946165
+          },
+          "coordinator": {
+            "input_tokens": 507370,
+            "cached_input_tokens": 476928,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 8724,
+            "reasoning_output_tokens": 3668,
+            "total_tokens": 516094,
+            "response_count": 22,
+            "responses_with_cached_input": 22,
+            "response_cache_hit_ratio": 1.0,
+            "uncached_input_tokens": 30442,
+            "cached_input_ratio": 0.9400003941896447
+          },
+          "delivery": {
+            "input_tokens": 6919702,
+            "cached_input_tokens": 6751168,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 9481,
+            "reasoning_output_tokens": 1118,
+            "total_tokens": 6929183,
+            "response_count": 49,
+            "responses_with_cached_input": 49,
+            "response_cache_hit_ratio": 1.0,
+            "uncached_input_tokens": 168534,
+            "cached_input_ratio": 0.9756443268799726
+          },
+          "judge": {
+            "input_tokens": 495268,
+            "cached_input_tokens": 421568,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 2845,
+            "reasoning_output_tokens": 86,
+            "total_tokens": 498113,
+            "response_count": 15,
+            "responses_with_cached_input": 15,
+            "response_cache_hit_ratio": 1.0,
+            "uncached_input_tokens": 73700,
+            "cached_input_ratio": 0.8511916780409798
+          },
+          "modeling": {
+            "input_tokens": 1679681,
+            "cached_input_tokens": 1600256,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 12412,
+            "reasoning_output_tokens": 2210,
+            "total_tokens": 1692093,
+            "response_count": 43,
+            "responses_with_cached_input": 42,
+            "response_cache_hit_ratio": 0.9767441860465116,
+            "uncached_input_tokens": 79425,
+            "cached_input_ratio": 0.9527142356197397
+          }
+        },
+        "recorded_modeling_chain": {
+          "input_tokens": 9930615,
+          "cached_input_tokens": 9500608,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 38057,
+          "reasoning_output_tokens": 7743,
+          "total_tokens": 9968672,
+          "response_count": 154,
+          "responses_with_cached_input": 152,
+          "response_cache_hit_ratio": 0.987012987012987,
+          "uncached_input_tokens": 430007,
+          "cached_input_ratio": 0.9566988550054554
+        },
+        "recorded_chain_plus_codex_host": {
+          "input_tokens": 16064424,
+          "cached_input_tokens": 15481600,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 49566,
+          "reasoning_output_tokens": 9942,
+          "total_tokens": 16113990,
+          "response_count": 205,
+          "responses_with_cached_input": 202,
+          "response_cache_hit_ratio": 0.9853658536585366,
+          "uncached_input_tokens": 582824,
+          "cached_input_ratio": 0.9637195830986532
+        },
+        "response_conflicts": [],
+        "native_compaction_markers": []
+      },
+      "source_inventory": [
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/delivery-sessions/minimal-chain-20261019-token-opt-c/native/sessions/2026/10/19/rollout-2026-10-19T03-48-44-01a1508f-31d8-7ec1-8130-7eb4f9ad4a84.jsonl",
+          "role": "delivery",
+          "bytes": 1932521,
+          "sha256": "6bb3813be41ff546954acffa9cef7d90c5350904e791142ad23ef92e610f2de3"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/evidence/child-sessions/acceptance-examiner-15310254/2026/10/18/rollout-2026-10-18T19-57-42-01a15097-66fd-7763-869e-e5637ba3bdb3.jsonl",
+          "role": "judge",
+          "bytes": 132112,
+          "sha256": "d9450a790677a2430de99a6ad154d26e79b6d689cb6b74e663fb9df9c2c71ece"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/evidence/child-sessions/acceptance-examiner-72db9b2d/2026/10/18/rollout-2026-10-18T19-58-23-01a15098-0ad6-79c0-9a04-69d4062d0af5.jsonl",
+          "role": "judge",
+          "bytes": 305809,
+          "sha256": "2a5d0fcfac4c28ef22b74e868e60733358c785b0762797b37988d13cec8e032e"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/evidence/child-sessions/platform-examiner-5b99035a/2026/10/18/rollout-2026-10-18T19-57-27-01a15097-2c68-7e81-8f4d-2347e9de7277.jsonl",
+          "role": "consumer",
+          "bytes": 98136,
+          "sha256": "ebf115bf6efcf3d3e49ab4d481074e951c17799cc78022324118eb0c5d52136c"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/evidence/child-sessions/platform-examiner-9e4c4f00/2026/10/18/rollout-2026-10-18T19-57-26-01a15097-2c1b-7411-b84c-ab1318b76ec5.jsonl",
+          "role": "consumer",
+          "bytes": 91886,
+          "sha256": "1a45fc8f6072a59a3d4a87c846c6be3ebdf12ccf89a179e4a214b827ebb5dc36"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/evidence/child-sessions/platform-examiner-b1184389/2026/10/18/rollout-2026-10-18T19-57-27-01a15097-2c6f-7121-88b3-ad8703527f46.jsonl",
+          "role": "consumer",
+          "bytes": 121675,
+          "sha256": "01a75994dd4e0b3686fd07217e529d56eecbb73d95b21008e67c22b4b3e9e649"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/evidence/child-sessions/platform-examiner-ead7be21/2026/10/18/rollout-2026-10-18T19-57-27-01a15097-2c6f-7752-8791-f3756dcc4a4d.jsonl",
+          "role": "consumer",
+          "bytes": 90310,
+          "sha256": "ddfb6f1f76500da346c13a74ae0730d8145a660a32dd6826f37f1bc93aaefc04"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/runtime/competency-question/home/sessions/2026/10/18/rollout-2026-10-18T19-48-53-01a1508f-555e-7bf2-bb47-93e3517de983.jsonl",
+          "role": "competency-question",
+          "bytes": 171302,
+          "sha256": "0cdb46cca84de0861e909f3d123c136c6d8e572ee46c088a9314c1ee93d6fe4e"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/runtime/coordinator/home/sessions/2026/10/18/rollout-2026-10-18T19-48-51-01a1508f-5034-7870-ab6b-ad65e3d54ca8.jsonl",
+          "role": "coordinator",
+          "bytes": 402216,
+          "sha256": "785fa04bc22840bef5628bb4e1de9b79baf91d214816571d8c856942d82108a2"
+        },
+        {
+          "path": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261019-token-opt-c-r1/runtime/modeling/home/sessions/2026/10/18/rollout-2026-10-18T19-48-52-01a1508f-52b2-7360-980e-a7b1172e6d23.jsonl",
+          "role": "modeling",
+          "bytes": 775890,
+          "sha256": "90635566129b74f77e9230a79d5c5107d9d42bd23900111f3a64532adbe714b8"
+        },
+        {
+          "path": "/home/yangxiang/.codex/sessions/2026/10/19/rollout-2026-10-19T03-48-00-01a1508e-7bb2-7140-9837-17f1a0e51819.jsonl",
+          "role": "codex-host",
+          "bytes": 894675,
+          "sha256": "e8122243fb602d2fcb6a72d9da24e6e9f7d4df1402dcb78755ece8ee18204290"
+        }
+      ]
+    }
+  ],
+  "diagnostics": {
+    "a": {
+      "judge": {
+        "judge_submissions": 15,
+        "inline_submissions": 12,
+        "judge_nonempty_layer_rejections": 11,
+        "reference_submissions": 3
+      },
+      "outer_rejections": {
+        "cq_freeze_schema_mismatch": 2,
+        "cq_production_pending": 1
+      },
+      "terminal_agent_ids_in_actual_delivery_messages": []
+    },
+    "b": {
+      "judge": {
+        "judge_submissions": 20,
+        "inline_submissions": 17,
+        "judge_nonempty_layer_rejections": 8,
+        "reference_submissions": 3
+      },
+      "outer_rejections": {
+        "cq_production_pending": 2,
+        "instruction_recipient_terminal": 1,
+        "checkpoint_selector_required": 1,
+        "invalid_outer_input": 3
+      },
+      "terminal_agent_ids_in_actual_delivery_messages": []
+    },
+    "c": {
+      "judge": {
+        "judge_submissions": 4,
+        "reference_submissions": 4
+      },
+      "outer_rejections": {
+        "cq_production_pending": 1
+      },
+      "terminal_agent_ids_in_actual_delivery_messages": [
+        "coordinator",
+        "modeling"
+      ]
+    }
+  },
+  "engineering": {
+    "since": "2026-10-18T18:06:12.302Z",
+    "collected_at": "2026-10-18T20:06:33.022650+00:00",
+    "boundary": "One-time engineering/root supervision and helper costs, excluded from steady GLM task comparisons but explicitly included in this experiment cost ledger. Root is ongoing; responses after this cutoff and interrupted requests without numeric usage remain unknown. Cached/reasoning are subsets, not additions.",
+    "roles": {
+      "root": {
+        "models_in_thread": [
+          "gpt-6.1-sol"
+        ],
+        "usage_since_authorization": {
+          "input_tokens": 67955734,
+          "cached_input_tokens": 67205632,
+          "output_tokens": 229039,
+          "reasoning_output_tokens": 124156,
+          "total_tokens": 68184773,
+          "response_count": 373,
+          "uncached_input_tokens": 750102
+        }
+      },
+      "helper": {
+        "models_in_thread": [
+          "gpt-5.6-luna",
+          "gpt-6.1-sol"
+        ],
+        "usage_since_authorization": {
+          "input_tokens": 37781912,
+          "cached_input_tokens": 36455936,
+          "output_tokens": 183178,
+          "reasoning_output_tokens": 80695,
+          "total_tokens": 37965090,
+          "response_count": 302,
+          "uncached_input_tokens": 1325976
+        }
+      }
+    },
+    "recorded_total": {
+      "input_tokens": 105737646,
+      "cached_input_tokens": 103661568,
+      "output_tokens": 412217,
+      "reasoning_output_tokens": 204851,
+      "total_tokens": 106149863,
+      "response_count": 675,
+      "uncached_input_tokens": 2076078
+    },
+    "sources": [
+      {
+        "role": "root",
+        "path": "/home/yangxiang/.codex/sessions/2026/10/18/rollout-2026-10-18T23-43-06-01a14fae-511b-71a1-9e2f-11f29dbe732f.jsonl",
+        "bytes": 10009152,
+        "sha256": "44309753f2f5ed0f4e8a86c0028dd0774eeba3990c6751b91c0efed7687af51c"
+      },
+      {
+        "role": "helper",
+        "path": "/home/yangxiang/.codex/sessions/2026/10/19/rollout-2026-10-19T02-06-49-01a15031-e42f-7401-a3d0-997ac0ca83fa.jsonl",
+        "bytes": 14059851,
+        "sha256": "004673d83d4ae48701dafce57a5e2ee189959b0fb9c54225deafb3536b5d74c0"
+      }
+    ]
+  },
+  "recorded_experiment_at_engineering_cutoff": {
+    "input_tokens": 193607373,
+    "cached_input_tokens": 188290752,
+    "output_tokens": 660589,
+    "total_tokens": 194267962,
+    "uncached_input_tokens": 5316621
+  }
+}

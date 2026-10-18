@@ -125,3 +125,18 @@ GitNexus前台入口upstream LOW（2个依赖），事件投影入口未索引�
 避免旧inline说明覆盖默认材料引用。对应report-reference／acceptance回归86 passed，包含负面
 裁决及理由／failure_layer原样保留的新增socket回归；此组与前述333项有交叉，不相加冒充
 419个独立测试。两轮选择均exit0。只读审查最终无阻塞；所有实际提示面同步，评分器未变。
+
+## 第三组收尾及整轮复盘
+
+第三组采用ffd55e7，首次start即可完整独立4/4（非盲回归），实际两次原子batch、
+同revision治理读回无漂移，1/3建模机会。曾有一次正常cq_production_pending回执，
+角色完成后自主重检成功；不是零技术重试，无根Agent阶段纠偏／平台修复／实质修模。
+四次Judge均为首次report_ref提交，无重复裁决；真实Delivery输入保留双角色身份。
+正常Host两次私审和最终stop保留，所有owner／run／Delivery退出、key数据库撤回确认，
+外层Codex Host退出0后统一刷新原生用量。
+
+最终[三组复盘](../modeling-retrospectives/2026-10-19-three-task-token-optimization-retrospective.md)
+与数值证据区分各组、全部失败轮次、工程与监督投入。C对A的Delivery输入降低50.10%，
+全链加Host输入降低46.68%，缓存占比并未提升；不据此关闭030整条或宣称整实验费用下降。
+B首轮hidden owner退出1是保留的负面验收结果，其余最终验收owner退出0，均已实际退出；
+不可将“全部退出”误写为“所有历史验收退出0”。源码在C后未更改，仅补文档／证据。
