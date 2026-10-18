@@ -76,6 +76,15 @@ Delivery真实压缩响应`resp_2026101823173259520347e43f44b8`：输入632,016�
 输出1,215，已计在Delivery合计；占其未缓存输入74.25%，占全体已知未缓存55.44%。
 `compacted`事件23:17:51有真实response绑定，不能再额外加压缩成本。
 
+2026-10-19补查820条重复事件的文本体积：重组原生输入中的分页JSON，逐个按源文件
+offset绑定，820条均各出现一次；从实际输入文本移除对应完整事件包装后少528,821字节。
+使用本机缓存的Anthropic tokenizer作离线代理估算，事件正文约36,334 token，含路径、
+摘要、读取引用及分页字符串转义的实际输入增量约192,538 token（约19.3万）。
+这不是GLM tokenizer或供应商逐事件账单；只估首次注入文本，不含后续历史重复发送、
+压缩及推理变化，无法精确归因累计消耗或可节省量。632,016压缩输入不能全部归给这820条，
+也不能与该估算直接相加。脚本及逐输入差值留在同一私有核算目录的
+`estimate-repeat-event-text.py`、`repeat-event-text-estimate.json`，无模型调用。
+
 核算原件、冻结字节／摘要、线程明细及新报告位于gitignored：
 `workspaces/codex-flashx-retrospective-20261018/{scope.json,native-reconciliation.json,usage-report/}`。
 可复用既有离线工具对同scope另选不存在的输出目录复算：
