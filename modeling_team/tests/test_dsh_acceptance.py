@@ -141,6 +141,12 @@ def test_actual_isolated_loading_tools_and_process_pause(runtime, role):
         reports=[],
         **(options(packet) if role == "platform-examiner" else {}),
     )
+    registered = runtime.transport._provider.usage_bindings[child.agent.session_id]
+    assert registered["role"] == role
+    assert registered["batch_id"] == packet.batch_id
+    assert registered["run_id"] == packet.payload["run_id"]
+    assert registered["process_instance"] == child.agent.instance
+    assert "operation_id" not in registered  # A batch is not an operation identity.
     tools = {t["name"] for t in runtime.transport._rpc(child.agent, "host/inspect", {})["tools"]}
     assert not any(
         name in " ".join(tools).lower()

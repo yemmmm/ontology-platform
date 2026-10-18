@@ -113,3 +113,28 @@ DSH 显式 `service_tier=fast` 返回可修正错误；unset/default 不继承 C
 
 上述配置不授予真实模型调用权限。工程及本机确定性测试不等于真实 L0 或独立 L1，
 详见[033开发测试记录](../docs/delivery/records/2026-10-18-r4-3-033-implementation-test-record.md)。
+
+## R4.3-034：DSH整任务计量与切换边界
+
+生产、Delivery、Consumer和Judge的Messages代理已接入Host私有numeric-only采集；
+[离线报告](references/model-usage-report.md#dsh-usage)支持DSH／Codex
+混合scope、互斥输入桶、真实session、原生核对、压缩子集及缓存写入计价。
+
+另行获准026全链验证时，在新的现有Delivery配置中同时显式选择以下字段（其余业务
+授权／scope／资料／session字段沿原合同；示例不是调用授权）：
+
+```yaml
+runtime: dsh
+profile: modeling_team/profiles/r4-3-026-minimal-installation-chain-dsh.yaml
+task: modeling_team/tasks/r4-3-026-minimal-installation-chain.yaml
+model_profile: dsh-deepseek-flash-low
+evaluation_runtime: dsh
+evaluation_model_profile: dsh-acceptance-deepseek-flash-low
+```
+
+沿原`python -m modeling_team delivery --config <获准配置>`启动；公开反馈、完整验收和
+只读acceptance接续均沿显式evaluation选择。缺精确角色模型返回配置错误，不补模型。
+工程测试不改变标准新任务默认；真实L0／独立L1通过后才提交默认切换。必须核对实际
+进程／session和全部必经角色，Delivery或验收仍Codex则mixed；外层Host残余另列成本。
+[开发测试记录](../docs/delivery/records/2026-10-18-r4-3-034-implementation-test-record.md)
+分别跟踪工程、真实运行、独立质量、切换、净效果和账单，不互作证明。

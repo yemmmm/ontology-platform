@@ -16,6 +16,7 @@ IDENTITY_FIELDS = (
     "session_id",
     "run_id",
     "operation_id",
+    "batch_id",
     "round",
     "role",
     "phase",
@@ -26,6 +27,9 @@ IDENTITY_FIELDS = (
     "actual_model",
     "requested_effort",
     "effective_effort",
+    "runtime",
+    "runtime_session_id",
+    "process_instance",
     "thread_id",
     "turn_id",
     "usage_definition_ref",
@@ -111,7 +115,7 @@ class NumericReceiptWriter:
             value = event.get(key)
             if value is None or type(value) in (int, str):
                 safe[key] = value
-        if safe.get("event") not in ("thread_usage", "attempt_start", "attempt_end"):
+        if safe.get("event") not in ("thread_usage", "attempt_start", "attempt_end", "response_usage"):
             LOG.warning("usage_capture_incomplete")
             return
         if safe.get("status") not in (
@@ -124,6 +128,32 @@ class NumericReceiptWriter:
             "client_disconnected",
         ):
             safe["status"] = None
+        if event.get("event") == "response_usage":
+            from .dsh_usage import MESSAGES_FIELDS, safe_id
+            for key in ("response_id", "provider_request_id", "actual_model", "purpose",
+                        "usage_semantics", "adapter_definition_ref", "binding_evidence_ref",
+                        "time_basis", "clock_ref"):
+                safe[key] = safe_id(event.get(key))
+            raw = event.get("raw_usage") or {}
+            safe["raw_usage"] = {
+                key: value if type(value) is int and value >= 0 else None
+                for key in MESSAGES_FIELDS.values() for value in [raw.get(key)]
+            }
+            safe["present_fields"] = [key for key in MESSAGES_FIELDS.values()
+                                      if key in event.get("present_fields", [])]
+            safe["field_positions"] = {
+                key: value for key, value in (event.get("field_positions") or {}).items()
+                if key in MESSAGES_FIELDS.values() and type(value) is int and value >= 0}
+            # Observer issue codes are fixed, not provider error strings.
+            allowed = {"event_too_large", "invalid_sse_event", "truncated_sse_event",
+                       "message_stop_missing", "final_output_missing", "usage_after_stop",
+                       "response_identity_conflict", "provider_stream_error", "message_start_missing",
+                       "duplicate_message_start"}
+            allowed |= {prefix + key for prefix in ("invalid_usage:", "usage_decreased:", "input_outside_start:")
+                        for key in MESSAGES_FIELDS.values()}
+            safe["usage_issues"] = sorted(set(event.get("usage_issues", [])) & allowed)
+            for key in ("usage_complete", "message_stop"):
+                safe[key] = event.get(key) is True
         if event.get("event") == "thread_usage":
             safe["total"], safe["invalid_fields"] = numeric_usage(event.get("total") or {})
             safe["present_fields"] = [
@@ -139,7 +169,9 @@ class NumericReceiptWriter:
         try:
             with self._lock:
                 self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                self.path.parent.chmod(0o700)
                 descriptor = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+                os.fchmod(descriptor, 0o600)
                 with os.fdopen(descriptor, "a", encoding="utf-8") as stream:
                     stream.write(json.dumps(safe, sort_keys=True) + "\n")
         except Exception:

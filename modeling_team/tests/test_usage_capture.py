@@ -94,3 +94,14 @@ def test_codex_production_and_standalone_keep_numeric_attempt_receipts(tmp_path)
     row = json.loads((runtime._run_root / "evidence" / "provider-attempts.jsonl").read_text())
     assert row["run_id"] == "run-id"
     assert "DO_NOT_STORE" not in json.dumps(row)
+
+
+def test_resumed_numeric_file_and_directory_remain_private(tmp_path):
+    parent = tmp_path / 'previous-evidence'
+    parent.mkdir(mode=0o755)
+    target = parent / 'dsh-provider.jsonl'
+    target.write_text('')
+    target.chmod(0o644)
+    NumericReceiptWriter(target)({'event': 'attempt_start', 'request_id': 'single-request'})
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert parent.stat().st_mode & 0o777 == 0o700

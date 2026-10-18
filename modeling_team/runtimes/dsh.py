@@ -31,6 +31,7 @@ from .role_isolation import namespace_base, stage_skills
 from ..capability_mcp import ROLE_MATERIAL_TOOL
 from ..deepseek_provider_proxy import preflight_deepseek_credential, read_deepseek_credential
 from ..messages_provider_proxy import MessagesProviderSession
+from ..usage_capture import NumericReceiptWriter
 from ..model_routing import validate_runtime_model_profile
 
 
@@ -112,6 +113,14 @@ class DshRuntimeAdapter(RuntimeAdapter):
         with self._lock, path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(value, ensure_ascii=False, default=str) + "\n")
 
+    def _register_usage(self, agent, binding, **context):
+        self._provider.register_usage_session(agent.session_id, {
+            "role": agent.package.role, "process_instance": agent.instance,
+            "provider": binding.provider_id, "requested_model": binding.model,
+            "requested_effort": binding.requested_effort,
+            "effective_effort": binding.effective_effort, **context,
+        }, evidence_ref="dsh-baseline.jsonl")
+
     @staticmethod
     def _socket(path, request):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
@@ -144,7 +153,7 @@ class DshRuntimeAdapter(RuntimeAdapter):
             read_deepseek_credential(run.provider_credential_bindings["deepseek-official"])
         )
         self._provider = self.provider_factory(
-            credential, on_attempt=lambda event: self._record("provider", event)
+            credential, on_attempt=NumericReceiptWriter(run.root / "evidence" / "dsh-provider.jsonl")
         )
         credential[:] = b"\0" * len(credential)
         try:
@@ -169,6 +178,7 @@ class DshRuntimeAdapter(RuntimeAdapter):
                 binding = run.team_model_profile.binding_for(
                     agent.package.package_id, semantic_role=agent.package.role
                 )
+                self._register_usage(agent, binding, run_id=run.run_id, phase="production")
                 result = self._rpc(
                     agent,
                     "initialize",
@@ -873,6 +883,7 @@ class DshRuntimeAdapter(RuntimeAdapter):
         binding = self._run.team_model_profile.binding_for(
             agent.package.package_id, semantic_role=agent.package.role
         )
+        self._register_usage(agent, binding, run_id=self._run.run_id, phase="production")
         try:
             self._rpc(
                 agent,

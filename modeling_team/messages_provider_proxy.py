@@ -5,11 +5,19 @@ from __future__ import annotations
 import hmac
 import http.client
 import json
+import logging
+import queue
+import threading
 import secrets
 import ssl
+import uuid
 from http.server import BaseHTTPRequestHandler
 
 from .deepseek_provider_proxy import ResponsesProviderSession
+from .dsh_usage import MessagesUsageObserver, safe_id
+from .usage_capture import identity, utc_now
+
+LOG = logging.getLogger(__name__)
 
 
 class _MessagesHandler(BaseHTTPRequestHandler):
@@ -34,7 +42,9 @@ class _MessagesHandler(BaseHTTPRequestHandler):
             return
         body = self.rfile.read(size)
         try:
-            json.loads(body)
+            request = json.loads(body)
+            if not isinstance(request, dict):
+                raise ValueError
         except (ValueError, UnicodeError):
             self.send_error(400)
             return
@@ -51,12 +61,31 @@ class _MessagesHandler(BaseHTTPRequestHandler):
         response = None
         started = False
         status = None
+        observer = MessagesUsageObserver()
+        native_session = safe_id(self.headers.get("x-deepseek-harness-session-id"))
+        with session._lock:
+            binding = dict(session._usage_bindings.get(native_session, {}))
         receipt = {
+            **binding,
+            "runtime": "dsh",
+            "runtime_session_id": native_session,
+            "provider": session.provider_id,
+            "request_id": uuid.uuid4().hex,
+            "proxy_session_id": session._usage_session_id,
+            "attempt_index": 1,
+            "requested_model": safe_id(request.get("model")),
+            "purpose": "compaction" if self.headers.get("x-deepseek-harness-compact") == "1"
+                       else "assistant",
+            "start": utc_now(),
+            "status": "unfinished",
             "event": "attempt_start",
             "provider_id": session.provider_id,
             "usage_session_id": session._usage_session_id,
         }
         session.record_attempt(receipt)
+        outcome = "transport_error"
+        headers_at = provider_request_id = None
+        client_write = False
         try:
             headers.update(
                 {
@@ -70,6 +99,10 @@ class _MessagesHandler(BaseHTTPRequestHandler):
                 connection.sock.settimeout(session.read_timeout)
             response = connection.getresponse()
             status = response.status
+            headers_at = utc_now()
+            provider_request_id = next((safe_id(value) for key, value in response.getheaders()
+                                        if key.lower() in {"request-id", "x-request-id"}), None)
+            outcome = "http_error" if status >= 400 else "stream_error"
             self.send_response(status)
             for key, value in response.getheaders():
                 if key.lower() in {"content-type", "retry-after", "request-id", "x-request-id"}:
@@ -92,8 +125,20 @@ class _MessagesHandler(BaseHTTPRequestHandler):
                 )
             else:
                 while chunk := response.read1(65536):
+                    client_write = True
                     self.wfile.write(chunk)
                     self.wfile.flush()
+                    client_write = False
+                    # Observation never changes forwarded bytes or triggers another request.
+                    try:
+                        observer.feed(chunk)
+                    except Exception:
+                        observer.disabled = True
+                        observer.issues.add("invalid_sse_event")
+                outcome = "completed"
+        except (BrokenPipeError, ConnectionResetError):
+            outcome = "client_disconnected" if client_write else outcome
+            session._count("upstream_errors")
         except (OSError, http.client.HTTPException):
             session._count("upstream_errors")
             if not started:
@@ -105,12 +150,20 @@ class _MessagesHandler(BaseHTTPRequestHandler):
                 response.close()
             connection.close()
             session._count("requests")
+            end = utc_now()
+            session.record_attempt({
+                **receipt, **observer.finish(), "event": "response_usage",
+                "headers_at": headers_at, "provider_request_id": provider_request_id,
+                "end": end, "status": outcome, "http_status": status,
+                "time_basis": "usage_completion", "clock_ref": "host-utc",
+            })
             session.record_attempt(
                 {
                     **receipt,
                     "event": "attempt_end",
                     "http_status": status,
                     "stream_started": started,
+                    "headers_at": headers_at, "end": end, "status": outcome,
                 }
             )
 
@@ -124,6 +177,49 @@ class MessagesProviderSession(ResponsesProviderSession):
             credential, provider_id="deepseek-official", max_upstream_attempts=1, **kwargs
         )
         self.proxy_token = secrets.token_urlsafe(32)
+        self._usage_bindings = {}
+        self._capture_queue = queue.Queue(maxsize=1024)
+        self._capture_stop = threading.Event()
+        self._capture_thread = threading.Thread(target=self._write_usage, daemon=True,
+                                                name="messages-numeric-receipts")
+        self._capture_thread.start()
+
+    def record_attempt(self, event):
+        if self._capture_stop.is_set():
+            self._count("usage_capture_dropped")
+            LOG.warning("usage_capture_incomplete")
+            return
+        try:
+            self._capture_queue.put_nowait((self.on_attempt, dict(event)))
+        except queue.Full:
+            self._count("usage_capture_dropped")
+            LOG.warning("usage_capture_incomplete")
+
+    def _write_usage(self):
+        while not self._capture_stop.is_set() or not self._capture_queue.empty():
+            try:
+                callback, event = self._capture_queue.get(timeout=.1)
+            except queue.Empty:
+                continue
+            if callback is not None:
+                try:
+                    callback(event)
+                except Exception:
+                    LOG.warning("usage_capture_incomplete")
+
+
+
+    def register_usage_session(self, runtime_session_id, context, *, evidence_ref):
+        """Host registers the actual session before admitting model input; never guesses."""
+        if not safe_id(runtime_session_id) or not evidence_ref:
+            LOG.warning("usage_capture_incomplete")
+            return False
+        with self._lock:
+            self._usage_bindings[runtime_session_id] = {
+                **identity(context), "binding_evidence_ref": evidence_ref,
+                "runtime": "dsh", "runtime_session_id": runtime_session_id,
+            }
+        return True
 
     def refresh_credential(self, credential):
         """Host-only key repair; keep the listening URL and role proxy token stable."""
@@ -138,3 +234,8 @@ class MessagesProviderSession(ResponsesProviderSession):
             return super().stop()
         finally:
             self.proxy_token = ""
+            self._capture_stop.set()
+            self._capture_thread.join(timeout=1)
+            if self._capture_thread.is_alive():
+                self._count("usage_capture_dropped")
+                LOG.warning("usage_capture_incomplete")

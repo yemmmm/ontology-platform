@@ -34,6 +34,7 @@ from ..acceptance_runtime import (
 )
 from ..deepseek_provider_proxy import read_deepseek_credential
 from ..messages_provider_proxy import MessagesProviderSession
+from ..usage_capture import NumericReceiptWriter
 from ..model_routing import preflight_profile_credentials
 from ..read_proxy_mcp import _v3_child_tool_schema
 from ..report_sink_mcp import native_report_tool_specs
@@ -280,7 +281,7 @@ class DshAcceptanceRuntime:
             )
             try:
                 transport._provider = transport.provider_factory(
-                    credential, on_attempt=lambda event: transport._record("provider", event)
+                    credential, on_attempt=NumericReceiptWriter(evidence_root / "evidence" / "dsh-provider.jsonl")
                 )
             finally:
                 credential[:] = b"\0" * len(credential)
@@ -295,6 +296,9 @@ class DshAcceptanceRuntime:
             agent = child.agent = _DshAgent(
                 role, package, private, "acceptance-" + instance, instance=instance
             )
+            transport._register_usage(agent, binding,
+                run_id=packet.payload["run_id"], batch_id=packet.batch_id,
+                phase="evaluation")
             agent.projection = DispatchProjection(agent.session_id)
             transport.agents[role] = agent
             kind = "platform" if platform else "acceptance"

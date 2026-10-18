@@ -52,6 +52,10 @@ def test_runtime_selection_defaults_and_precise_setting_errors():
 
 def test_real_tools_json_call_identity_and_turn_end(runtime):
     calls = []
+    registered = runtime.provider.usage_bindings[runtime.runtime_session_id]
+    assert registered["role"] == "delivery"
+    assert registered["session_id"] == "engineering-delivery"
+    assert registered["process_instance"] == runtime.process_instance
     handler = runtime.tool_handler
     runtime.tool_handler = lambda name, args, **kw: (calls.append((name, args, kw)) or handler(name, args))
     receipt = runtime.send(json.dumps({"kind": "user_input", "message_id": "user-1", "text": "test"}))

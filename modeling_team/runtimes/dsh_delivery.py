@@ -20,6 +20,7 @@ from .dsh_events import DispatchProjection
 from .role_isolation import namespace_base
 from ..deepseek_provider_proxy import read_deepseek_credential
 from ..messages_provider_proxy import MessagesProviderSession
+from ..usage_capture import NumericReceiptWriter
 from ..model_routing import preflight_profile_credentials
 
 
@@ -133,7 +134,14 @@ class DSHDeliveryRuntime:
             credential.extend(read_deepseek_credential(
                 preflight_profile_credentials(selected)["deepseek-official"]))
         self.provider = self.provider_factory(credential,
-            on_attempt=lambda event: self._record("provider", event=event))
+            on_attempt=NumericReceiptWriter(self.home / "dsh-provider.jsonl"))
+        self.provider.register_usage_session(self.runtime_session_id, {
+            "session_id": self.session_id, "role": "delivery", "phase": "supervision",
+            "process_instance": self.process_instance, "provider": self.binding.provider_id,
+            "requested_model": self.binding.model,
+            "requested_effort": self.binding.requested_effort,
+            "effective_effort": self.binding.effective_effort,
+        }, evidence_ref="dsh-baseline.jsonl")
         credential[:] = b"\0" * len(credential)
         try:
             self.provider.start()

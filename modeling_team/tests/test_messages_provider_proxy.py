@@ -146,3 +146,112 @@ def test_host_key_repair_preserves_proxy_address_and_role_credential():
     finally:
         session.stop()
     assert session.secret_snapshot() == b""
+
+
+def test_numeric_capture_registration_unique_requests_and_failure_do_not_change_stream(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from modeling_team.usage_capture import NumericReceiptWriter
+    from modeling_team.tests.test_dsh_usage import stream
+
+    calls = []
+
+    class Connection:
+        sock = None
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def request(self, method, path, body, headers):
+            calls.append(1)
+            # Native headers are consumed locally, never expand upstream tracing.
+            assert 'x-deepseek-harness-session-id' not in headers
+
+        def getresponse(self):
+            return Response(chunks=tuple(bytes([value]) for value in stream()))
+
+        def close(self):
+            pass
+
+    writer = NumericReceiptWriter(tmp_path / 'receipts.jsonl')
+    session = MessagesProviderSession(b'test-secret', on_attempt=writer)
+    session.register_usage_session('native-1', {
+        'role': 'delivery', 'session_id': 'delivery-business-session',
+        'process_instance': 'process-1'}, evidence_ref='dsh-baseline.jsonl')
+    session.start()
+    try:
+        def run(native):
+            return request(session, **{'x-deepseek-harness-session-id': native,
+                                      'x-deepseek-harness-compact': '1'})
+        with patch('modeling_team.messages_provider_proxy.http.client.HTTPSConnection', Connection):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(run, ['native-1', 'unregistered']))
+            assert all(result[2] == stream() for result in results)
+            # Broken collector cannot break, close or replay the model stream.
+            session.on_attempt = lambda event: (_ for _ in ()).throw(OSError('PRIVATE-ERROR'))
+            assert run('native-1')[2] == stream()
+        assert len(calls) == 3
+        session.stop()  # Close and drain the bounded numeric side channel before reading.
+        rows = [json.loads(line) for line in writer.path.read_text().splitlines()]
+        usage = [row for row in rows if row['event'] == 'response_usage']
+        assert len(usage) == 2
+        assert len({row['request_id'] for row in usage}) == 2
+        bound = next(row for row in usage if row['runtime_session_id'] == 'native-1')
+        assert bound['role'] == 'delivery'
+        assert bound['session_id'] == 'delivery-business-session'
+        assert bound['process_instance'] == 'process-1'
+        assert bound['purpose'] == 'compaction'
+        assert bound['usage_complete'] is True
+        assert bound['raw_usage']['input_tokens'] == 40
+        assert bound['raw_usage']['output_tokens'] == 20
+        assert bound['raw_usage']['reasoning_tokens'] is None
+        assert bound['provider_request_id'] == 'upstream-test'
+        assert bound['start'] <= bound['headers_at'] <= bound['end']
+        unknown = next(row for row in usage if row['runtime_session_id'] == 'unregistered')
+        assert unknown.get('role') is None
+        assert 'thread_id' not in bound
+        assert 'PRIVATE' not in writer.path.read_text()
+        assert 'test-secret' not in writer.path.read_text()
+    finally:
+        session.stop()
+
+
+def test_blocked_collector_and_full_queue_do_not_block_requests():
+    import threading
+    from modeling_team.tests.test_dsh_usage import stream
+
+    blocked = threading.Event()
+    entered = threading.Event()
+
+    def collector(event):
+        entered.set()
+        blocked.wait(5)
+
+    class Connection:
+        sock = None
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def request(self, *args, **kwargs):
+            pass
+
+        def getresponse(self):
+            return Response(chunks=[stream()])
+
+        def close(self):
+            pass
+
+    session = MessagesProviderSession(b'test-key', on_attempt=collector)
+    session.start()
+    try:
+        session.record_attempt({'event': 'attempt_start'})
+        assert entered.wait(1)
+        for index in range(1100):
+            session.record_attempt({'event': 'attempt_start', 'request_id': str(index)})
+        with patch('modeling_team.messages_provider_proxy.http.client.HTTPSConnection', Connection):
+            assert request(session)[2] == stream()
+        assert session.snapshot()['usage_capture_dropped'] > 0
+        assert session._capture_queue.qsize() <= 1024
+    finally:
+        blocked.set()
+        session.stop()

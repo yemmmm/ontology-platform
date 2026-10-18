@@ -131,6 +131,7 @@ class LocalMessagesProvider:
     def __init__(self, credential, **kwargs):
         self.proxy_token = "engineering-only-proxy-token"
         self.requests = []
+        self.usage_bindings = {}
         self.tool_calls = True
         self.tool_name = "mcp__role_materials__read_role_material"
         self.tool_arguments = {"material_id": "material-1", "limit": 30}
@@ -138,6 +139,9 @@ class LocalMessagesProvider:
         self.hold = None
         self.server = None
         self.thread = None
+
+    def register_usage_session(self, session_id, context, *, evidence_ref):
+        self.usage_bindings[session_id] = {**context, "evidence_ref": evidence_ref}
 
     @property
     def base_url(self):
@@ -268,6 +272,12 @@ def test_real_enqueue_tool_result_and_settled_are_separate_from_business_report(
     adapter, run, broker = local_roster
     adapter.provider_factory = LocalMessagesProvider
     adapter.start_roster(run, run.configuration.profile.agents)
+    assert set(adapter._provider.usage_bindings) == {a.session_id for a in adapter.agents.values()}
+    for agent in adapter.agents.values():
+        registered = adapter._provider.usage_bindings[agent.session_id]
+        assert registered["role"] == agent.package.role
+        assert registered["process_instance"] == agent.instance
+        assert registered["run_id"] == run.run_id
     receipt = adapter.send_message(
         "modeling", RuntimeDelivery("coordinator", "modeling", "peer", "engineering task")
     )

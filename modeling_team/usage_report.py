@@ -16,11 +16,17 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .dsh_usage import (
+    DSH_SEMANTICS, MESSAGES_FIELDS, NATIVE_FIELDS, PROJECTION_FIELDS,
+    native_numeric_event, normalize_dsh_usage,
+)
 from .usage_capture import IDENTITY_FIELDS, TOKEN_FIELDS, identity, numeric_usage
 
 FIELDS = (*TOKEN_FIELDS, "uncached_input_tokens")
 REQUIRED = TOKEN_FIELDS[:4]
 GROUP = (
+    "runtime",
+    "runtime_session_id",
     "provider",
     "account_ref",
     "key_ref",
@@ -35,7 +41,7 @@ GROUP = (
     "role",
     "phase",
 )
-SOURCE_KINDS = {"rollout", "app_server", "capture", "receipts", "timing", "metrics", "batch_report"}
+SOURCE_KINDS = {"rollout", "app_server", "capture", "receipts", "timing", "metrics", "batch_report", "dsh_capture", "dsh_native"}
 
 
 class ScopeError(ValueError):
@@ -133,12 +139,23 @@ def validate_scope(scope):
     return scope
 
 
+def _session_key(record):
+    runtime = record.get("runtime") or "codex"
+    return runtime, record.get("runtime_session_id") if runtime != "codex" else (
+        record.get("runtime_session_id") or record.get("thread_id"))
+
+
 def _binding(scope, source_id, record, issues, locator):
     matches = []
     for b in scope.get("bindings", []):
         if b["source_id"] != source_id or not b.get("evidence_ref"):
             continue
         if b.get("thread_id") and record.get("thread_id") and b["thread_id"] != record["thread_id"]:
+            continue
+        if any(b.get(key) and record.get(key) and b[key] != record[key]
+               for key in ("runtime", "runtime_session_id", "process_instance")):
+            continue
+        if b.get("runtime") == "dsh" and not record.get("runtime_session_id"):
             continue
         if "response_ids" in b and record.get("response_id") not in b["response_ids"]:
             continue
@@ -166,12 +183,21 @@ def _binding(scope, source_id, record, issues, locator):
             result[key] = value
     if b.get("shared_thread") and not b.get("window") and not b.get("response_ids"):
         result["task_ref"] = None
+    if not result.get("runtime") and result.get("thread_id"):
+        result["runtime"] = "codex"
+        result["runtime_session_id"] = result["thread_id"]
+    if result.get("runtime") == "dsh":
+        if result.get("thread_id") or result.get("turn_id"):
+            _issue(issues, "dsh_codex_identity_not_applicable", locator)
+        result.pop("thread_id", None)
+        result.pop("turn_id", None)
     return result, b
 
 
 def _read_sources(scope, base, issues):
     receipts, cumulative, attempts, timings, compactions, sources = [], [], [], [], [], []
     snapshots = []
+    native = []
     for spec in scope.get("sources", []):
         root = (base / spec.get("root", ".")).resolve()
         path = (root / spec["path"]).resolve()
@@ -277,8 +303,25 @@ def _read_sources(scope, base, issues):
                         "usage": (params.get("tokenUsage") or {}).get("total"),
                     }
                     mode = "thread_cumulative"
-                elif kind == "capture":
-                    if event.get("event") == "thread_usage":
+                elif kind == "dsh_native":
+                    record = native_numeric_event(event, spec.get("runtime_session_id"))
+                    mode = "dsh_native"
+                    if record:
+                        timestamp = record.get("timestamp", timestamp)
+                elif kind in ("capture", "dsh_capture"):
+                    if event.get("event") == "response_usage":
+                        record = {**identity(event), **{key: event.get(key) for key in (
+                            "response_id", "request_id", "status", "raw_usage", "purpose",
+                            "usage_semantics", "usage_complete", "present_fields", "usage_issues",
+                            "adapter_definition_ref", "provider_request_id", "field_positions")},
+                            "usage": {}, "request_started_at": event.get("start"),
+                            "billing_time_evidence_ref": event.get("binding_evidence_ref"),
+                            "unique_request_evidence_ref": event.get("binding_evidence_ref")}
+                        timestamp = event.get("end", timestamp)
+                        mode = "response"
+                        if not event.get("usage_complete") or event.get("status") != "completed":
+                            _issue(issues, "dsh_provider_usage_partial", locator)
+                    elif event.get("event") == "thread_usage":
                         record = {**identity(event), "usage": event.get("total")}
                         mode = "thread_cumulative"
                     elif event.get("event") in ("attempt_start", "attempt_end"):
@@ -321,6 +364,10 @@ def _read_sources(scope, base, issues):
                             )
                         },
                     }
+                    if event.get("usage_semantics") == DSH_SEMANTICS:
+                        record.update(raw_usage=event.get("raw_usage"),
+                                      usage_semantics=DSH_SEMANTICS,
+                                      usage={})
                     if event.get("compaction_response_id"):
                         compactions.append(
                             {
@@ -355,7 +402,7 @@ def _read_sources(scope, base, issues):
                     # Examiner TTFT can include tools: retain an explicit gap rather
                     # than interpreting it as provider timing or response usage.
                     _issue(issues, "metrics_not_response_usage_or_provider_ttft", locator)
-            except (AttributeError, TypeError, KeyError):
+            except (AttributeError, TypeError, KeyError, ValueError, OverflowError):
                 _issue(issues, "invalid_source_record", locator)
                 continue
             if record is None:
@@ -378,6 +425,10 @@ def _read_sources(scope, base, issues):
             if timestamp is not None and instant(timestamp) is None:
                 _issue(issues, "invalid_timestamp", locator)
                 timestamp = None
+            if record.get("runtime") == "dsh":
+                record["status"] = {"http_error": "failed", "stream_error": "failed",
+                                    "transport_error": "failed", "client_disconnected": "aborted"
+                                    }.get(record.get("status"), record.get("status"))
             if record.get("status") not in (None, "completed", "failed", "aborted", "unknown"):
                 _issue(issues, "invalid_status", locator)
                 record["status"] = None
@@ -386,11 +437,32 @@ def _read_sources(scope, base, issues):
                 _issue(issues, "usage_missing", locator)
                 continue
             bound, binding = _binding(scope, spec["id"], record, issues, locator)
-            usage, invalid = numeric_usage(record["usage"])
+            if record.get("usage_semantics") == DSH_SEMANTICS and not isinstance(record.get("raw_usage"), dict):
+                _issue(issues, "dsh_raw_usage_invalid", locator)
+                record["raw_usage"] = {}
+            if bound.get("runtime") == "dsh" and record.get("usage_semantics") != DSH_SEMANTICS:
+                _issue(issues, "dsh_definition_unknown", locator)
+                usage, invalid = dict.fromkeys(TOKEN_FIELDS), []
+            elif record.get("usage_semantics") == DSH_SEMANTICS:
+                usage, invalid = normalize_dsh_usage(record.get("raw_usage") or {},
+                                                     "native" if mode == "dsh_native" else "projection" if mode == "dsh_assistant_cumulative" else "messages")
+                if not bound.get("usage_definition_ref"):
+                    _issue(issues, "dsh_definition_unknown", locator)
+                    usage["input_tokens"] = None
+            else:
+                usage, invalid = numeric_usage(record["usage"])
+            invalid = sorted(set(invalid) | set(record.get("invalid_fields", [])))
             for field in invalid:
                 _issue(issues, "invalid_usage", locator, field=field)
             if kind == "capture" and event.get("invalid_fields"):
                 _issue(issues, "capture_invalid_usage", locator)
+            if record.get("usage_semantics") == DSH_SEMANTICS:
+                fields = (NATIVE_FIELDS if mode == "dsh_native" else
+                          PROJECTION_FIELDS if mode == "dsh_assistant_cumulative" else MESSAGES_FIELDS)
+                record["raw_usage"] = {
+                    key: value if type(value) is int and value >= 0 else None
+                    for key in fields.values() for value in [(record.get("raw_usage") or {}).get(key)]
+                }
             normalized = {
                 "schema_version": "model-usage-record/v1",
                 "binding_evidence_refs": [binding["evidence_ref"]]
@@ -411,14 +483,33 @@ def _read_sources(scope, base, issues):
                 },
                 "binding": binding,
                 "invalid_fields": invalid,
+                **{key: record.get(key) for key in (
+                    "raw_usage", "usage_semantics", "purpose", "usage_complete", "present_fields",
+                    "usage_issues", "adapter_definition_ref", "provider_request_id", "field_positions",
+                    "native_type", "native_seq", "native_turn", "native_step")
+                    if key in record},
             }
-            if mode == "thread_cumulative":
+            if kind in ("capture", "dsh_capture") and event.get("event") == "response_usage":
+                if normalized.get("response_id"):
+                    for timing_kind, start_field in (("request_completion", "start"),
+                                                     ("after_headers", "headers_at")):
+                        timings.append({**bound, "kind": timing_kind,
+                            "response_id": normalized["response_id"],
+                            "request_id": normalized.get("request_id"),
+                            "start": event.get(start_field), "end": event.get("end"),
+                            "clock_ref": event.get("clock_ref"), "status": normalized.get("status"),
+                            "binding_evidence_ref": binding.get("evidence_ref"),
+                            "start_source": "proxy_" + start_field, "end_source": "proxy_end",
+                            "source": locator})
+            if mode == "dsh_native":
+                native.append(normalized)
+            elif mode in ("thread_cumulative", "dsh_assistant_cumulative"):
                 cumulative.append(normalized)
             elif mode == "response":
                 receipts.append(normalized)
             else:
                 _issue(issues, "unsupported_record_mode", locator)
-    return receipts, cumulative, attempts, timings, compactions, sources, snapshots
+    return receipts, cumulative, attempts, timings, compactions, sources, snapshots, native
 
 
 def _read_consumer_snapshots(scope, spec, raw, issues):
@@ -602,6 +693,21 @@ def _deduplicate(receipts, issues):
             r[field] = next(iter(values)) if len(values) == 1 else None
             if len(values) > 1:
                 _issue(issues, "response_attribution_conflict", r["sources"][0], field=field)
+        if any(row.get("usage_semantics") == DSH_SEMANTICS for row in rows):
+            for field in ("purpose", "usage_semantics"):
+                values = {row.get(field) for row in rows} - {None}
+                r[field] = next(iter(values)) if len(values) == 1 else None
+                if len(values) > 1:
+                    _issue(issues, "dsh_definition_or_purpose_conflict", r["sources"][0])
+                    r["usage"] = with_derived(dict.fromkeys(TOKEN_FIELDS))
+            if len({row.get("usage_definition_ref") for row in rows} - {None}) > 1:
+                _issue(issues, "dsh_definition_or_purpose_conflict", r["sources"][0])
+                r["usage"] = with_derived(dict.fromkeys(TOKEN_FIELDS))
+            r["raw_usage"] = {}
+            for field in {key for row in rows for key in row.get("raw_usage", {})}:
+                values = {row.get("raw_usage", {}).get(field) for row in rows} - {None}
+                r["raw_usage"][field] = next(iter(values)) if len(values) == 1 else None
+            r["usage_complete"] = all(row.get("usage_complete") for row in rows)
         canonical.append(r)
     return canonical, ambiguous
 
@@ -613,11 +719,11 @@ def _account(canonical, cumulative, issues):
     for r in cumulative:
         b = r["binding"]
         segment = b.get("cumulative_segment") or {}
-        if not r.get("thread_id") or not segment.get("evidence_ref") or not segment.get("id"):
+        if not _session_key(r)[1] or not segment.get("evidence_ref") or not segment.get("id"):
             _issue(issues, "cumulative_baseline_unproven", r["sources"][0])
             observed.append(r)
             continue
-        segments[(r.get("provider"), r.get("key_ref"), r["thread_id"], segment["id"])].append(r)
+        segments[(r.get("provider"), r.get("key_ref"), _session_key(r), segment["id"])].append(r)
     accepted_windows = defaultdict(list)
     for rows in segments.values():
         # Event order is file order, not field-wise maxima. Copies are accepted
@@ -684,7 +790,7 @@ def _account(canonical, cumulative, issues):
             "request_id": None,
             "timestamp": None,
         }
-        thread_key = (last.get("provider"), last.get("key_ref"), last["thread_id"])
+        thread_key = (last.get("provider"), last.get("key_ref"), _session_key(last))
         begin, end = instant(segment["start"]), instant(segment["end"])
         if any(begin < b and a < end for a, b in accepted_windows[thread_key]):
             _issue(issues, "cumulative_segments_overlap", last["sources"][0])
@@ -693,7 +799,7 @@ def _account(canonical, cumulative, issues):
         details = [
             r
             for r in canonical
-            if r.get("thread_id") == last["thread_id"]
+            if _session_key(r) == _session_key(last)
             and r.get("provider") == last.get("provider")
             and r.get("key_ref") == last.get("key_ref")
             and window_contains(total["window"], r.get("timestamp"))
@@ -726,6 +832,90 @@ def _account(canonical, cumulative, issues):
         accepted_windows[thread_key].append((begin, end))
         units.append(total)
     return units, observed
+
+
+def _account_dsh_native(native, canonical, issues):
+    """Native history is a cross-check; absent provider originals allow only partial sums."""
+    sessions = defaultdict(list)
+    for row in native:
+        sessions[(row.get("provider"), row.get("key_ref"), _session_key(row))].append(row)
+    units, comparisons = [], []
+    for (provider, key_ref, session), rows in sessions.items():
+        by_seq = defaultdict(list)
+        for row in rows:
+            seq = row.get("native_seq")
+            if type(seq) is not int or seq < 0 or not session[1]:
+                _issue(issues, "dsh_native_identity_missing", row["sources"][0])
+                continue
+            by_seq[seq].append(row)
+        settled, slot = [], None
+        conflict = False
+        for seq in sorted(by_seq):
+            copies = by_seq[seq]
+            row = dict(copies[0])
+            def signature(r):
+                return (r.get("native_type"), r.get("native_turn"), r.get("native_step"), r["usage"])
+            if any(signature(other) != signature(row) for other in copies[1:]):
+                conflict = True
+                _issue(issues, "dsh_native_seq_conflict", row["sources"][0])
+                continue
+            row["sources"] = [source for copy in copies for source in copy["sources"]]
+            if len({copy.get("task_ref") for copy in copies}) > 1:
+                row["task_ref"] = None
+                _issue(issues, "dsh_native_attribution_conflict", row["sources"][0])
+            kind = row["native_type"]
+            current = (row.get("native_turn"), row.get("native_step"))
+            if kind == "llm/retry-started":
+                if slot and slot[:2] == current:
+                    slot = None
+                continue
+            if not row.get("raw_usage"):
+                continue
+            if kind == "compaction/summary":
+                row["purpose"] = "compaction"
+                settled.append(row)
+                continue
+            if None in current:
+                _issue(issues, "dsh_native_step_missing", row["sources"][0])
+                continue
+            row["purpose"] = "assistant"
+            if slot and slot[:2] == current:
+                index = slot[2]
+                settled[index] = row
+            else:
+                index = len(settled)
+                settled.append(row)
+            slot = (*current, index)
+        if conflict:
+            # Neither version of a conflicted sequence proves an accurate subtotal.
+            settled = []
+        provider_rows = [r for r in canonical if r.get("provider") == provider
+                         and r.get("key_ref") == key_ref and _session_key(r) == session]
+        ordinary = [r for r in provider_rows if r.get("purpose") == "assistant"]
+        native_ordinary = [r for r in settled if r.get("purpose") == "assistant"]
+        left, right = summarize(ordinary), summarize(native_ordinary)
+        comparisons.append({"runtime": session[0], "runtime_session_id": session[1],
+                            "provider_usage": left, "native_assistant_usage": right,
+                            "additive": False,
+                            "difference": {field: left["tokens"][field] - right["tokens"][field]
+                                if None not in (left["tokens"][field], right["tokens"][field])
+                                else None for field in FIELDS},
+                            "selected_source": "provider" if provider_rows else "partial_native"})
+        if provider_rows and native_ordinary and (
+            len(ordinary) != len(native_ordinary) or any(
+                right["tokens"][field] is not None
+                and left["tokens"][field] != right["tokens"][field]
+                for field in REQUIRED)
+        ):
+            _issue(issues, "dsh_native_provider_difference", native_ordinary[0]["sources"][0])
+        if not provider_rows and settled:
+            _issue(issues, "dsh_provider_original_missing", settled[0]["sources"][0])
+            for row in settled:
+                row["source_mode"] = "partial_dsh_native"
+                # No provider response ID is invented from session/seq/message IDs.
+                row["response_id"] = row["request_id"] = None
+            units.extend(settled)
+    return units, comparisons
 
 
 def _groups(units):
@@ -784,6 +974,18 @@ def _costs(units, prices):
                 unit = Decimal(str(p["unit_tokens"]))
                 if unit <= 0 or not unit.is_finite():
                     raise ValueError
+                charge_tokens = dict(r["usage"])
+                if r.get("usage_semantics") == DSH_SEMANTICS:
+                    if "input_tokens" in rates or "reasoning_output_tokens" in rates:
+                        raise ValueError  # overlapping categories need an explicit definition
+                    if "cache_write_tokens" in rates:
+                        uncached, write = (charge_tokens.get(key) for key in (
+                            "uncached_input_tokens", "cache_write_tokens"))
+                        if uncached is None or write is None or write > uncached:
+                            raise ValueError
+                        charge_tokens["uncached_input_tokens"] = uncached - write
+                    if not r.get("usage_definition_ref") or p.get("definition_ref") != r["usage_definition_ref"]:
+                        raise ValueError
                 amount = Decimal(0)
                 for field, rate in rates.items():
                     if field not in FIELDS or r["usage"].get(field) is None:
@@ -791,7 +993,7 @@ def _costs(units, prices):
                     rate = Decimal(str(rate))
                     if rate < 0 or not rate.is_finite():
                         raise ValueError
-                    amount += Decimal(r["usage"][field]) * rate / unit
+                    amount += Decimal(charge_tokens[field]) * rate / unit
                 if p.get("rounding_quantum"):
                     quantum = Decimal(p["rounding_quantum"])
                     mode = p.get("rounding_mode")
@@ -812,7 +1014,8 @@ def _costs(units, prices):
                     price_definition=p["definition_ref"],
                     rates=rates,
                     unit_tokens=p["unit_tokens"],
-                    formula="sum(tokens[category]*rate)/unit_tokens",
+                    formula="sum(charge_tokens[category]*rate)/unit_tokens",
+                    charge_tokens=charge_tokens,
                 )
             except (KeyError, ValueError, InvalidOperation, TypeError):
                 pass
@@ -849,7 +1052,7 @@ def _billing(scope, canonical, units, attempts, issues):
     for r in units:
         if any(r.get(k) != billing.get(k) for k in ("provider", "key_ref")):
             continue
-        if r.get("source_mode") == "partial_thread_snapshot":
+        if r.get("source_mode") in ("partial_thread_snapshot", "partial_dsh_native"):
             boundaries.append(r)
             continue
         if r.get("actual_model") != billing.get("model") or not r.get("actual_model"):
@@ -1175,11 +1378,31 @@ def _timing(canonical, timings, task_units, task_window):
 def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
     validate_scope(scope)
     issues = []
-    receipts, cumulative, attempts, timings, compactions, sources, snapshots = _read_sources(
+    receipts, cumulative, attempts, timings, compactions, sources, snapshots, native = _read_sources(
         scope, base, issues
     )
     canonical, ambiguous = _deduplicate(receipts, issues)
+    native_units, native_comparisons = _account_dsh_native(native, canonical, issues)
+    dsh_cumulative = [r for r in cumulative if r.get("source_mode") == "dsh_assistant_cumulative"]
+    cumulative = [r for r in cumulative if r not in dsh_cumulative]
     units, observed = _account(canonical, cumulative, issues)
+    units.extend(native_units)
+    dsh_deltas, dsh_observed = _account([], dsh_cumulative, issues)
+    observed.extend(dsh_observed)
+    for delta in dsh_deltas:
+        matching = [r for r in units if _session_key(r) == _session_key(delta)
+                    and r.get("provider") == delta.get("provider")
+                    and r.get("key_ref") == delta.get("key_ref")]
+        ordinary = [r for r in matching if r.get("purpose") == "assistant"]
+        native_comparisons.append({"runtime": "dsh",
+            "runtime_session_id": delta.get("runtime_session_id"),
+            "native_cumulative_delta": delta["usage"], "sources": delta["sources"],
+            "provider_usage": summarize(ordinary), "additive": False,
+            "selected_source": "bound_records" if matching else "partial_cumulative"})
+        if not matching:
+            _issue(issues, "dsh_provider_original_missing", delta["sources"][0])
+            delta.update(source_mode="partial_dsh_native", purpose="assistant")
+            units.append(delta)
     units, snapshot_comparisons = _reconcile_consumer_snapshots(units, snapshots, issues)
     task = []
     task_window = scope.get("task_window") or {}
@@ -1206,7 +1429,8 @@ def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
             _issue(issues, "task_timestamp_unknown", r["sources"][0])
         elif window_contains(task_window, r["timestamp"]):
             task.append(r)
-    compaction_rows = []
+    compaction_rows = [r for r in task if r.get("runtime") == "dsh"
+                       and r.get("purpose") == "compaction"]
     compaction_keys = set()
     for c in compactions:
         matched = [
@@ -1256,6 +1480,14 @@ def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
                 **summarize(rows),
             }
         )
+    matched_requests = {(r.get("provider"), r.get("request_id")) for r in canonical
+                        if r.get("request_id")}
+    unknown_dsh_attempts = {
+        (a.get("provider"), a.get("request_id")) for a in attempts
+        if a.get("runtime") == "dsh" and (a.get("provider"), a.get("request_id")) not in matched_requests
+    }
+    for provider, request_id in sorted(unknown_dsh_attempts, key=str):
+        _issue(issues, "dsh_attempt_usage_missing", request_id=request_id, provider=provider)
     summary = summarize(task)
     usage_complete = (
         bool(task)
@@ -1360,11 +1592,13 @@ def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
         "billing_status": reconciliation["status"],
         "unallocated": summarize(unallocated),
         "attempts": attempts,
+        "dsh_unknown_attempts": len(unknown_dsh_attempts),
         "responses": canonical,
         "ambiguous_responses": ambiguous,
         "cost_units": units,
         "observed_thread_totals": observed,
         "consumer_snapshot_comparisons": snapshot_comparisons,
+        "dsh_native_comparisons": native_comparisons,
         "usage_definitions": sorted(
             {r["usage_definition_ref"] for r in units if r.get("usage_definition_ref")}
         ),
@@ -1471,6 +1705,25 @@ def render_markdown(report):
             for layer in report["layers"]
         ],
     )
+    if report.get("dsh_native_comparisons"):
+        lines += ["", "## DSH native reconciliation (not additive)", ""]
+        lines += table(
+            ["Session", "Selected source", "Provider input", "Native input", "Input difference"],
+            [[row["runtime_session_id"], row["selected_source"],
+              row["provider_usage"]["tokens"]["input_tokens"],
+              row.get("native_assistant_usage", {}).get("tokens", {}).get("input_tokens",
+                  row.get("native_cumulative_delta", {}).get("input_tokens")),
+              row.get("difference", {}).get("input_tokens")]
+             for row in report["dsh_native_comparisons"]])
+    dsh_rows = [row for row in report["responses"] if row.get("runtime") == "dsh"]
+    if dsh_rows:
+        lines += ["", "## DSH provider buckets / presence", ""]
+        lines += table(["Response / request", "Session", "Raw buckets", "Present fields", "Definition"],
+            [[row.get("response_id") or row.get("request_id"), row.get("runtime_session_id"),
+              json.dumps(row.get("raw_usage", {}), sort_keys=True),
+              json.dumps(row.get("present_fields", [])), row.get("usage_definition_ref")]
+             for row in dsh_rows])
+        lines += ["", f"DSH attempts without numeric receipt: {report['dsh_unknown_attempts']}", ""]
     if report.get("consumer_snapshot_comparisons"):
         lines += ["", "## Consumer snapshot reconciliation", ""]
         lines += table(
