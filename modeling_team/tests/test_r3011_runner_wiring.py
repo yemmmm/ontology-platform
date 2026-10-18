@@ -226,6 +226,43 @@ def test_m5_cq_draft_publication_is_immutable_and_opens_a_review_window(cq_runne
     assert (cq_runner.run.root / "competency-questions" / "private" / "draft-0002.json").is_file()
 
 
+@pytest.mark.parametrize("phase", ["panorama-draft", "slice-draft", "awaiting-slices", "frozen"])
+def test_preparation_draft_is_saved_without_requesting_host_review(cq_runner, phase):
+    document = {**_draft([_question("cq-1")]), "phase": phase}
+    original_phase = cq_runner._cq_phase
+    result = cq_runner._publish_cq_question_draft(
+        {"cq_id": "competency-question", "draft": document}
+    )
+    assert result["ok"] is True
+    assert result["status"] == "preparation_saved"
+    expected_review_phase = {
+        "panorama-draft": "panorama-review", "slice-draft": "slice-review",
+    }.get(phase)
+    assert result["review_phase"] == expected_review_phase
+    assert cq_runner._cq_phase == original_phase
+    assert "republish" in result["next_action"]
+    assert "review_id" not in result
+    saved = cq_runner.run.root / result["draft_ref"]
+    original = saved.read_bytes()
+    assert saved.stat().st_mode & 0o777 == 0o440
+    assert not _read_evidence(cq_runner, "cq-review-request")
+    assert "cq-review-request" not in cq_runner._cq_wait_windows.open_kinds()
+    assert cq_runner._cq_pool_questions()[0] == []
+
+    # The same session can correct the phase; no artificial failed-run gate,
+    # fabricated approval or replacement of the retained preparation draft.
+    reviewed = cq_runner._publish_cq_question_draft(
+        {"cq_id": "competency-question", "draft": {
+            **document, "phase": result["review_phase"] or "panorama-review",
+        }}
+    )
+    assert reviewed["status"] == "awaiting_review"
+    assert reviewed["review_id"] == "cq-review-0001"
+    assert saved.read_bytes() == original
+    assert len(_read_evidence(cq_runner, "cq-review-request")) == 1
+    assert (cq_runner.run.root / "competency-questions" / "private" / "draft-0002.json").is_file()
+
+
 def test_m5_cq_draft_rejection_is_typed_and_local(cq_runner):
     broken = _draft([_question("cq-1")])
     broken["schema_version"] = "r3-0-011-cq-draft/v2"

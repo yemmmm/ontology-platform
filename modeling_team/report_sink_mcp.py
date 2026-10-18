@@ -497,6 +497,10 @@ def _v3_batch_report_schema(*, platform: bool) -> dict[str, Any]:
                 "omitted field (judge: only verdict pass and question-answer-review "
                 "may be empty; model-recall-insufficient and "
                 "platform-runtime-incomplete name one of the enum layers). "
+                "A pass verdict MUST keep the layer null/omitted. "
+                "If inline tool encoding does not preserve the empty value after correction, "
+                "publish the complete verdict JSON through the existing handoff tools and "
+                "submit only report_ref; do not resend the same rejected payload. "
                 "Never send a string such as \"None\" or \"\"."
             ),
         },

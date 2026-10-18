@@ -578,7 +578,11 @@ CAPABILITY_TOOL_SCHEMAS[CQ_OPERATION] = {
     "type": "object",
     "properties": {
         "cq_id": {"type": "string"},
-        "draft": {"type": "object"},
+        "draft": {"type": "object", "description": (
+            "Formal review uses phase panorama-review or slice-review. Preparation phases "
+            "panorama-draft/slice-draft save a private draft only and return preparation_saved; "
+            "republish with the returned review_phase before waiting for Host approval."
+        )},
         "body_ref": {"type": "object"},
         "material_refs": {"type": "array", "items": {"type": "object"}},
     },

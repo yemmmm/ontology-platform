@@ -4138,9 +4138,11 @@ class TeamRunner:
                 return text + (
                     "\nYou learn the approved slice set only from the Runner's direct "
                     "cq-slices-approved delivery; do not poll shared run paths and do not read "
-                    "production role artifacts. Publish every draft with the Runner-private "
-                    "cq_publish_question_draft capability and wait for the cq-review-decision "
-                    "delivery before any further draft. Keep hidden question text and answer "
+                    "production role artifacts. Request formal review with the Runner-private "
+                    "cq_publish_question_draft capability using panorama-review or slice-review, "
+                    "then wait for cq-review-decision before the next review draft. A "
+                    "preparation_saved result requires republishing in its returned review_phase; "
+                    "it does not request Host review. Keep hidden question text and answer "
                     "points out of your terminal `report_task_result` "
                     "message; report a status summary only."
                 ) + objective_suffix
@@ -8258,6 +8260,32 @@ class TeamRunner:
         draft_path = private_dir / f"draft-{ordinal:04d}.json"
         draft_path.write_bytes(canonical_json_bytes(document))
         os.chmod(draft_path, 0o440)
+        material_metadata = {}
+        if body_ref is not None or arguments.get("material_refs"):
+            material_metadata = {"body_ref": body_ref,
+                                 "material_refs": list(arguments.get("material_refs", []))}
+        if document["phase"] not in {"panorama-review", "slice-review"}:
+            # Preparation is retained, but must not solicit an approval that
+            # cannot enter the reviewed pool. Correcting the phase is local.
+            review_phase = {
+                "panorama-draft": "panorama-review", "slice-draft": "slice-review",
+            }.get(document["phase"])
+            result = {
+                "ok": True,
+                "status": "preparation_saved",
+                "phase": document["phase"],
+                "draft_ref": draft_path.relative_to(self.run.root).as_posix(),
+                "content_digest": document["content_digest"],
+                "review_phase": review_phase,
+                "next_action": (
+                    f"republish the draft with phase={review_phase} to request Host review"
+                    if review_phase else
+                    "republish with phase=panorama-review or slice-review to request Host review"
+                ),
+                **material_metadata,
+            }
+            self._append_evidence("cq-draft-prepared", result)
+            return result
         self._cq_review_sequence += 1
         review_id = f"cq-review-{self._cq_review_sequence:04d}"
         snapshot = {
@@ -8282,10 +8310,6 @@ class TeamRunner:
         now = self.monotonic_clock()
         self._cq_wait_windows.open_window("cq-review-request", now)
         self._cq_wait_windows.close_window("cq-interview-wait", now)
-        material_metadata = {}
-        if body_ref is not None or arguments.get("material_refs"):
-            material_metadata = {"body_ref": body_ref,
-                                 "material_refs": list(arguments.get("material_refs", []))}
         self._append_evidence(
             "cq-review-request",
             {

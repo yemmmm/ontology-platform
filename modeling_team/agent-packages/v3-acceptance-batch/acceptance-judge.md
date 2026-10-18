@@ -46,6 +46,11 @@ and no way to re-derive answers from a live system.
   `question-answer-review` — omit `failure_layer` from the payload or send the
   JSON literal `null`; never send the string `"None"` or an empty string. Every
   other verdict must name one of the four layer values.
+- If an inline submission is rejected because `pass` carries a nonempty
+  `failure_layer`, correct it to JSON `null` or omit it. If the next tool call
+  still cannot preserve that empty value, use the existing handoff tools to
+  publish your complete verdict JSON and submit only `report_ref`. Do not resend
+  the same rejected payload or alter the verdict to fit the tool encoding.
 - Name your basis in `note`: cite the relied-on evidence entry by `source` and
   `content_digest`, and the examiner `question_id` you judged. Use
   `conflicting_evidence` when the examiner answer and the approved material

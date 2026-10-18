@@ -28,7 +28,8 @@
         "superseded_draft_id",
         "note"
       ],
-      "transport": "Runner-private capability cq_publish_question_draft only; drafts are never written into a shared directory by the agent."
+      "transport": "Runner-private capability cq_publish_question_draft only; drafts are never written into a shared directory by the agent.",
+      "phase_rule": "Only panorama-review and slice-review request formal review. Other lifecycle phases only save an immutable private draft and return preparation_saved with a republish instruction, without changing the current CQ phase, opening a Host review request or entering the reviewed pool. For panorama-draft/slice-draft, review_phase names the corresponding formal phase; otherwise the Agent must choose the appropriate review phase."
     },
     "question": {
       "schema_version": "r3-0-011-cq-question/v1",
