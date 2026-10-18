@@ -25,12 +25,14 @@ try {
   await mount('@deepseek-ai/dsh-session-checkpoint-policy');
   await mount('@deepseek-ai/dsh-llm-deepseek-api-key', {
     baseURL: config.providerURL, apiKeyEnv: 'DSH_PROXY_TOKEN', streamIdleTimeoutMs: 120000,
+    ...(config.deliveryTools ? {reasoningEffort: config.reasoningEffort} : {}),
     // Unknown or partially streamed requests must await explicit Host recovery, never replay.
     retryPolicy: {mode: 'normal', maxRetries: 0},
   });
   await mount('@deepseek-ai/dsh-agent-loop', {agents: []});
   await mount('@deepseek-ai/dsh-llm-retry');
-  await mount('@deepseek-ai/dsh-compaction-basic');
+  if (config.deliveryTools) await mount('@deepseek-ai/dsh-token-meter');
+  await mount('@deepseek-ai/dsh-compaction-basic', config.deliveryTools ? {maxOverflowRetries: 0} : {});
   for (const server of config.servers) await mount('@deepseek-ai/dsh-mcp-client', {
     ...server, transport: 'stdio', command: '/usr/bin/python3', cwd: '/agent/work',
     toolCallTimeoutMs: 1200000, failOnStartupError: true,

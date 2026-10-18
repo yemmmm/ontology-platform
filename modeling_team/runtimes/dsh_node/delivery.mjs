@@ -38,7 +38,8 @@ export async function serveDelivery(ctx, config, mounted, load) {
         provider:params.provider, model:params.model, reasoningEffort:params.reasoningEffort,
       })};
     }
-    if (method === 'host/inspect') return {plugins:mounted, tools:ctx.tools.schemas()};
+    if (method === 'host/inspect') return {plugins:mounted, tools:ctx.tools.schemas(),
+      services:{tokenMeter:!!ctx.get('tokenMeter'), compaction:!!ctx.get('compaction')}};
     if (method === 'ontoweave/delivery/steer') {
       const agent = owned(params.sessionId);
       const message = createUserMessage({content:[{type:'text', text:params.text}], source:{kind:'user'}});

@@ -151,7 +151,8 @@ class DSHDeliveryRuntime:
             config = {"modules": {key: "/dsh/" + str(Path(path).relative_to(self.harness_root))
                       for key, path in self.build["modules"].items()},
                 "instructions": self.instructions, "providerURL": self.provider.base_url,
-                "servers": [], "deliveryTools": self.tools, "sessionId": self.runtime_session_id}
+                "servers": [], "deliveryTools": self.tools, "sessionId": self.runtime_session_id,
+                "reasoningEffort": self.binding.effective_effort}
             (self.home / "home/dsh.json").write_text(json.dumps(config))
             self._stderr = (self.home / "stderr.log").open("a")
             self.process = subprocess.Popen(self.namespace_command(), stdin=subprocess.PIPE,
@@ -171,7 +172,7 @@ class DSHDeliveryRuntime:
             expected = [{"name": t["name"], "description": t["description"],
                          "parameters": t["inputSchema"]} for t in self.tools]
             if (sorted(actual["tools"], key=lambda t: t["name"]) != sorted(expected, key=lambda t: t["name"])
-                    or set(actual["plugins"]) != set(PLUGINS) - {
+                    or set(actual["plugins"]) != (set(PLUGINS) | {"@deepseek-ai/dsh-token-meter"}) - {
                         "@deepseek-ai/dsh-sdk-jsonrpc-server", "@deepseek-ai/dsh-mcp-client"}):
                 raise DeliveryRuntimeError("dsh-tool-boundary-drift; correct composition and retry")
             baseline = {"build": self.build, "tools": actual, "binding": self.binding.as_dict(),

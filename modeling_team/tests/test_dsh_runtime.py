@@ -153,6 +153,7 @@ class LocalMessagesProvider:
     def __init__(self, credential, **kwargs):
         self.proxy_token = "engineering-only-proxy-token"
         self.requests = []
+        self.input_tokens = 1
         self.usage_bindings = {}
         self.tool_calls = True
         self.tool_name = "mcp__role_materials__read_role_material"
@@ -212,7 +213,7 @@ class LocalMessagesProvider:
                             "model": "deepseek-flash",
                             "content": [],
                             "stop_reason": None,
-                            "usage": {"input_tokens": 1, "output_tokens": 0},
+                            "usage": {"input_tokens": owner.input_tokens, "output_tokens": 0},
                         }
                     },
                 )

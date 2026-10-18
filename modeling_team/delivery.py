@@ -161,17 +161,35 @@ def _dsh_wire_noise(data: dict) -> bool:
     frame = data.get("frame", {})
     if not isinstance(frame, dict):
         return False
+    if (set(frame) == {"jsonrpc", "id", "result"} and frame["jsonrpc"] == "2.0"
+            and type(frame["id"]) in (str, int) and frame["id"] != ""):
+        result = frame["result"]
+        return isinstance(result, dict) and (not result or (
+            set(result) == {"messageId"} and isinstance(result["messageId"], str)
+            and bool(result["messageId"])))
     params = frame.get("params", {})
     if not isinstance(params, dict):
         return False
     if frame.get("method") == "session.status":
-        return params.get("status") == "running"
+        return params.get("status") in ("running", "idle")
     if frame.get("method") != "session.event":
         return False
     native = params.get("event", {})
     if not isinstance(native, dict) or not isinstance(native.get("data"), dict):
         return False
     kind, payload = native.get("type"), native["data"]
+    if kind == "agent/inbox/spliced":
+        # The runtime consumes these queue transitions independently. A normal
+        # splice does not ask Delivery to decide anything; cancellation/error
+        # and unfamiliar shapes remain visible through the original evidence.
+        return (set(payload) <= {"target", "start", "inserted", "removedCount"}
+                and payload.get("target") == "next-turn"
+                and type(payload.get("start")) is int and payload["start"] >= 0
+                and type(payload.get("removedCount", 0)) is int
+                and payload.get("removedCount", 0) >= 0
+                and isinstance(payload.get("inserted"), list)
+                and all(isinstance(item, dict) and isinstance(item.get("id"), str)
+                        and item["id"] for item in payload["inserted"]))
     if kind == "tool/result":
         values = _dsh_tool_results(payload)
         return (values is not None and not _event_needs_action(values)
@@ -181,7 +199,9 @@ def _dsh_wire_noise(data: dict) -> bool:
     reason = payload.get("reason")
     if isinstance(reason, dict) and reason.get("kind") in {"error", "failed", "canceled", "max-tokens"}:
         return False
-    # Inbox transitions, turn/end, attempts, errors and unknown event kinds stay visible.
+    if kind == "turn/end":
+        return isinstance(reason, dict) and reason.get("kind") == "completed"
+    # Attempts, abnormal activity endings and unknown event kinds stay visible.
     return kind in {
         "turn/start", "step/start", "step/end", "system/message", "user/message",
         "assistant/message", "tool/call", "request/header", "request/context",

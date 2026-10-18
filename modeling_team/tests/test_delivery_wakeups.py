@@ -632,9 +632,50 @@ def _dsh_wire(kind, data):
             'sessionId': 'session-1', 'event': {'type': kind, 'seq': 12, 'data': data}}}}}
 
 
+@pytest.mark.parametrize('frame', [
+    {'jsonrpc': '2.0', 'id': 1, 'result': {'messageId': 'message-1'}},
+    {'jsonrpc': '2.0', 'id': 2, 'result': {}},
+    {'jsonrpc': '2.0', 'method': 'session.status',
+     'params': {'sessionId': 'session-1', 'status': 'idle'}},
+])
+def test_successful_dsh_dispatch_ack_and_idle_do_not_wake_delivery(tmp_path, frame):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    raw = observation()
+    event = {'source': 'dsh-wire.jsonl', 'data': {'agent_id': 'modeling', 'frame': frame}}
+    raw['runs']['run']['events'] = _events_page([event], next_cursor='next')
+    assert not host.record_observation(raw)
+    assert json.loads((host.session_root / 'observation.json').read_text())['data'] == raw
+
+
+@pytest.mark.parametrize('frame', [
+    {'jsonrpc': '2.0', 'id': 1, 'error': {'message': 'dispatch failed'}},
+    {'jsonrpc': '2.0', 'id': 2, 'result': {'unexpected': 'future-result'}},
+    {'jsonrpc': '2.0', 'id': 3, 'result': {'messageId': None}},
+    {'jsonrpc': '2.0', 'id': None, 'result': {}},
+    {'jsonrpc': '2.0', 'method': 'session.status',
+     'params': {'sessionId': 'session-1', 'status': 'failed'}},
+    {'jsonrpc': '2.0', 'method': 'session.status',
+     'params': {'sessionId': 'session-1', 'status': []}},
+])
+def test_dsh_dispatch_errors_and_unknown_responses_still_wake(tmp_path, frame):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    raw = observation()
+    raw['runs']['run']['events'] = _events_page([
+        {'source': 'dsh-wire.jsonl', 'data': {'agent_id': 'modeling', 'frame': frame}},
+    ], next_cursor='next')
+    assert host.record_observation(raw)
+
+
 @pytest.mark.parametrize('kind,data', [
     ('step/start', {'turn': 1, 'step': 2}),
     ('step/end', {'turn': 1, 'step': 2}),
+    ('turn/end', {'turn': 1, 'reason': {'kind': 'completed'}}),
+    ('agent/inbox/spliced', {'target': 'next-turn', 'start': 0,
+                            'inserted': [{'id': 'message-1', 'content': []}]}),
+    ('agent/inbox/spliced', {'target': 'next-turn', 'start': 0,
+                            'removedCount': 1, 'inserted': []}),
     ('assistant/message', {'message': {'role': 'assistant', 'content': [
         {'type': 'reasoning', 'text': 'PRIVATE REASONING'}]}}),
     ('user/message', {'content': [{'type': 'text', 'text': 'PRIVATE SOURCE'}]}),
@@ -676,7 +717,6 @@ def test_dsh_numeric_activity_does_not_wake(tmp_path, event, status, extra):
 
 
 @pytest.mark.parametrize('kind,data', [
-    ('turn/end', {'turn': 1, 'reason': {'kind': 'completed'}}),
     ('turn/end', {'turn': 1, 'reason': {'kind': 'error', 'error': {'code': 'INVALID_REQUEST'}}}),
     ('assistant/attempt', {'stream': [{'chunk': {'type': 'finish', 'reason': {
         'kind': 'error', 'failure': {'code': 'MALFORMED_RESPONSE', 'status': 400}}}}]}),
@@ -687,6 +727,8 @@ def test_dsh_numeric_activity_does_not_wake(tmp_path, event, status, extra):
     ('step/end', {'reason': {'kind': 'error'}}),
     ('agent/inbox/spliced', {'target': 'next-turn', 'outcome': 'canceled'}),
     ('future/event', {'status': 'unknown'}),
+    ('agent/inbox/spliced', {'target': 'future-queue', 'start': 0, 'inserted': []}),
+    ('agent/inbox/spliced', {'target': 'next-turn', 'start': 0, 'inserted': 'bad'}),
 ])
 def test_dsh_decisions_keep_runtime_identity_and_typed_error_without_content(tmp_path, kind, data):
     host = session(tmp_path)

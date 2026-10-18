@@ -104,6 +104,57 @@ def test_context_error_classification_reaches_real_dsh_without_automatic_replay(
     assert len(runtime.provider.requests) == 1
 
 
+def test_delivery_instantiates_native_compaction_dependencies(runtime):
+    actual = runtime._rpc('host/inspect', {})
+    assert actual.get('services') == {'tokenMeter': True, 'compaction': True}
+
+
+def test_context_failure_after_history_does_not_start_summary_or_replay(runtime):
+    runtime.provider.tool_calls = False
+    runtime.send(json.dumps({'text': 'Prior authorized history. ' * 2_000}))
+    settle(runtime)
+    runtime.provider.fail = True
+    runtime.provider.failure_status = 400
+    runtime.provider.failure_body = {'type': 'error', 'error': {
+        'type': 'invalid_request_error', 'code': 'context_window_exceeded',
+        'message': 'context window exceeded'}}
+    runtime.send(json.dumps({'text': 'Continue the same task.'}))
+    events = settle(runtime)
+    assert next(e for e in events if e['event'] == 'provider_error')['code'] == 'CONTEXT_WINDOW_EXCEEDED'
+    assert len(runtime.provider.requests) == 2  # original history + failed request only
+
+
+def test_delivery_compacts_pressure_in_original_session_before_next_request(runtime):
+    runtime.provider.tool_calls = False
+    runtime.provider.input_tokens = 400_000
+    identity = runtime.runtime_session_id
+    history = 'COMPACT_OLD_HISTORY ' * 32_000
+    runtime.send(json.dumps({'kind': 'user_input', 'text': history}))
+    settle(runtime)
+    assert len(runtime.provider.requests) == 1
+    runtime.provider.input_tokens = 800_000
+    recent = 'RETAIN_LATEST_HISTORY ' * 30_000
+    runtime.send(json.dumps({'kind': 'user_input', 'text': recent}))
+    settle(runtime)
+    assert len(runtime.provider.requests) == 2
+    runtime.send(json.dumps({'kind': 'user_input', 'text': 'Continue the same authorized task.'}))
+    settle(runtime)
+    events = []
+    for line in (runtime.home / 'dsh-wire.jsonl').read_text().splitlines():
+        event = json.loads(line).get('frame', {}).get('params', {}).get('event', {})
+        if event.get('type', '').startswith('compaction/'):
+            events.append(event)
+    assert any(e['type'] == 'compaction/end' and not e['data'].get('error') for e in events)
+    assert runtime.runtime_session_id == identity
+    assert len(runtime.provider.requests) == 4  # two chats, native summary, next chat
+    assert 'COMPACT_OLD_HISTORY' not in json.dumps(runtime.provider.requests[-1])
+    assert 'RETAIN_LATEST_HISTORY' in json.dumps(runtime.provider.requests[-1])
+    assert len(json.dumps(runtime.provider.requests[-1])) < (len(history) + len(recent)) * .75
+    assert 'Continue the same authorized task.' in json.dumps(runtime.provider.requests[-1])
+    assert all(r['model'] == 'deepseek-flash' for r in runtime.provider.requests)
+    assert all(r.get('output_config', {}).get('effort') == 'low' for r in runtime.provider.requests)
+
+
 def test_bad_tool_json_can_continue_original_dsh_session_after_explicit_correction(runtime):
     calls = []
     runtime.tool_handler = lambda *a, **k: calls.append(1)
