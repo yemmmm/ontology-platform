@@ -3559,3 +3559,16 @@ Profile获准接收方／材料成员／输出文件指引，以及报告资格�
 Host补位事实或自主交付结论。重复上报已定位到冻结Profile缺CQ→Coordinator边而
 Runner每次drain仍重试；建议收窄重复升级，不扩大通信权限。本次仅复盘／文档更新，
 无代码修复、提示修改、额外运行或新授权；跨DSH对比不构成净降耗证据。
+
+
+### 2026-10-19 Codex输入构成及重复通知补查
+
+沿019／022／029／030继续只读复核同一Codex run，详见
+[输入大头补查](../delivery/modeling-retrospectives/2026-10-18-codex-flashx-low-retrospective.md#2026-10-19-输入大头补查)。
+实际保留107份逻辑observation，除820条升级，新增定位522条CQ切片通知失败：
+`cq_waiting_provider`未注册，错误构造触发AssertionError，失败后fingerprint清空导致
+每drain重投。该platform-contract缺陷不改变原provider首阻塞或有界四题质量结论。
+core／coverage及引用包装反复输入有离线文本证据，采用本地代理tokenizer，不作为GLM
+逐字段账单或真实净降耗；changes与其事件子集不相加。相关需求仍部分验证，净效果未证。
+用户认可尝试820条重复升级优化，沿原029／030记录；其他新增建议未据此授权实施，
+本次无代码修复、新模型／验收请求或额度变化，不启用F3／F4或恢复021。
