@@ -69,3 +69,39 @@ T0：未决输入保护确有必要，保留并收窄为可操作反馈；实际
 首轮15 passed，1条既有文案匹配失败。保留其unconsumed术语后，相关11 passed、
 5 deselected（32.13秒），包含该终态回归、事件身份和工具／原会话路径；5条此前通过
 且未受文案修正影响的测试未重复。Ruff／diff检查通过。原有未提交工作未改动。
+
+## 授权任务终局（2026-10-18）
+
+在同一三轮授权内，原r3失败现场保留；第二轮为
+`minimal-chain-20261018-dsh-low-r4`，06:07:03Z真实开始。完整全景／切片审核后
+冻结本轮独立题池，生产两批原子应用，原团队完成治理读回、关联检查和资源关闭。
+Modeling／Coordinator均真实报告completed，Host按原字节转存Coordinator最终地图，
+既有Runner发布正式只读handoff：ready=true、pending_writes=false、unknown_writes=[]。
+
+复用现有`start_evaluation`／`cq-acceptance`，显式runtime=dsh及
+`dsh-acceptance-deepseek-flash-low`，公开组先执行，再隐藏组三题，未超过三题并发。
+两组各自独立Consumer／Judge报告full_pass=true：**公开1/1、隐藏3/3**，均无未执行题，
+无实际coverage gap或model_state_drift，model binding digest相同。报告明确为
+`non-blind-regression`，不扩称大业务、盲测或L2通过。隐藏报告由原Host合同回交，
+06:15:24Z源Runner接受`cq_verdict=pass`、acceptance_complete。
+
+用户要求的关闭已完成：源Runner state=CLEANED、PID退出、FIFO移除；两验收owner
+lifecycle=stopped、无active／retained成员，记录的12个角色／owner PID均已退出，
+DSH cleanup complete且无residual。13把已登记临时key撤销已由数据库读回确认；
+各短Host操作另依原bootstrap finally撤销其临时admin。最终模型和历史失败证据保留。
+**用2/3轮，fresh semantic starts=2；两次pre-semantic失败不扣轮，未用1轮已收回。**
+
+实际生产/CQ及Consumer/Judge均验证deepseek-flash/low的DSH原生binding。
+原Delivery HTTP400及显式恢复失败、Host文件转存／流程控制／私审／技术修复均披露：
+本次是**有宿主补位的有界语义验收PASS**；DSH自主完整交付／034整条仍PARTIAL，
+未切换任何标准默认，未把native supervision_interrupted改写为finish_delivery成功。
+公开早期feedback／checkpoint acceptance continuation未触发，不冒称已执行。
+
+完整原件在gitignored `workspaces/minimal-chain-20261018-dsh-low/`：
+`authorization.json`、`final-report-verification.json`、`final-lifecycle-verification.json`、
+`final-process-runtime-verification.json`、`final-key-verification.json`及原run／operation记录。
+019现有离线报告已收集两轮、失败Delivery／恢复及六个验收原生session的数值原件，
+输出`usage-report/report.json`及`.md`；usage／attribution／timing均partial，账单未提供。
+Host及外部scoring用量不齐，不声称净降耗、完整费用或全任务token完整。
+有效语义／技术时间未可靠分摊，保持unknown；阶段墙钟见原始时间戳，不用等待时间
+冒充有效建模时间。没有继续扩展平台机制。
