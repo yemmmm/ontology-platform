@@ -1298,7 +1298,9 @@ def mcp_response(
                     "name": "report_issue",
                     "description": (
                         "Report one non-terminal typed issue to the Coordinator. "
-                        "Do not include credentials or platform write instructions."
+                        "If you are the Coordinator reporter, immediately call the "
+                        "bound issue_control pause. Do not include credentials or "
+                        "platform write instructions."
                     ),
                     "inputSchema": {
                         "type": "object",
@@ -1567,6 +1569,10 @@ def mcp_response(
                         code = "repair_rebind_required"
                 raise RoutingError(str(exc), code=code) from None
         elif action == "pause":
+            # ``reason`` is declared by the flat schema for abort.  It has no
+            # meaning for pause, so tolerate a non-null schema-declared value
+            # while retaining strict rejection of unknown/resolution fields.
+            args.pop("reason", None)
             if set(args) != {"issue_id", "reporter_id", "action", "control_epoch"}:
                 raise _issue_control_field_error(
                     "pause", args, {"issue_id", "reporter_id", "action", "control_epoch"}

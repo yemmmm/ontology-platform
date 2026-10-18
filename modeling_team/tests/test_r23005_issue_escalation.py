@@ -212,7 +212,7 @@ class IssueEscalationTests(unittest.TestCase):
                 mutation_state="not_started",
                 requested_action="clarify parse",
             )
-            nullable_optionals = {
+            pause_optionals = {
                 "resolution_type": None,
                 "resolution_text": None,
                 "repair_component": None,
@@ -220,7 +220,9 @@ class IssueEscalationTests(unittest.TestCase):
                 "after_digest": None,
                 "verification_reference": None,
                 "mutation_reconciliation": None,
-                "reason": None,
+                # Flat schema: reason is declared for abort and may be emitted
+                # on pause; the adapter drops it before action validation.
+                "reason": "pause requested",
             }
             pause = mcp_response(
                 {
@@ -232,7 +234,7 @@ class IssueEscalationTests(unittest.TestCase):
                             "reporter_id": "protocol",
                             "action": "pause",
                             "control_epoch": 1,
-                            **nullable_optionals,
+                            **pause_optionals,
                         },
                     },
                 },

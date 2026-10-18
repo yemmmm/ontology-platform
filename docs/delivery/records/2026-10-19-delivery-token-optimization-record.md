@@ -82,3 +82,46 @@ CLEANED、Delivery/native退出0及bootstrap-cleanup真实撤回管理/只读密
 GitNexus仍未索引CQ发布入口，impact UNKNOWN；按直接调用点及上述边界回归检查。
 工程结果不代替下一组真实效果。第二组必须维持同glm-flash-low及完整原四题范围，
 以第一组作同模型实测参照，覆盖全部失败、恢复、必要收尾和外层Host成本。
+
+## 第二组实证与第三组前窄修
+
+第二组采用b0c9d25，原完整公开1／隐藏3题及评分不变，全部运行和独立验收仍为
+Codex glm-5.3-flash low。初轮独立报告3/4，保留的负面裁决与其自身理由存在矛盾，
+不能由粗modeling-quality标签直接推导模型知识缺失；原报告未改写、未归一为PASS。
+Delivery已启动r2，仍如实扣账。r2自查另发现真实关系端点方向错误，经原流程授权，
+同run实质修模于2026-10-18T19:34:06.658Z开始，计第3轮；总3/3、fresh starts2。
+最终r2公开1/1、隐藏3/3独立非盲回归通过，同freeze、治理读回无漂移；不代替复杂业务
+验收。两个run CLEANED、四个evaluation owner退出及bootstrap凭据撤回已核验。
+完整成本在外层Codex Host复盘退出后再去重汇总，不只计算最后成功轮次。
+
+本组还暴露了可避免的协作／参数往返，第三组前仅作以下差异：
+
+- `team-transport-events.jsonl`的terminal_report_accepted已进入Delivery输入，
+  不是来源白名单丢事件。仅将其标量agent映射为agent_id，仍不注入私有report/body。
+  Delivery的两处实际指令明确：pending后新的生产角色完成回执触发同freeze、新request
+  的readiness检查，不等待额外run-settled信号；实际准入仍由原接口判断。
+- Judge每个最终裁决默认用现有完整JSON材料+report_ref，从首次提交保留null／省略层。
+  原评分、独立判定、字段校验及不可变性不变；消除“先提交占位裁决以后再改”的误解，
+  不自动更正、替换或奖励任何标签。材料输出仅经已有scoped handoff工具，消除旧说明中
+  要求发布文件却笼统禁止写文件的冲突。
+- T0复核：暂停顺序仍保护issue ledger和当前turn的协作边界；底层ledger也拒绝过早
+  resolution，前台重复门不是唯一写入安全保护。保留可恢复顺序反馈，reported时明确
+  `issue_pause_pending`、缺失的bound pause和下一动作，并写既有receipt；不自动代发pause。
+  flat MCP schema的reason只对abort有意义，pause携带该字段不保护任何硬门，故仅在
+  MCP适配层丢弃它。未知字段、resolution字段、内部控制对象、身份／epoch及resume／abort
+  保持严格。实际minimal-chain Coordinator与report_issue工具说明补self-reporter同turn pause。
+- 外层本地监督器遗漏Delivery已finish/read_only_wait通知，导致已授权收尾延迟。第三组复用
+  脚本仅补activity／结果存在性变化通知；普通心跳仍不唤醒模型，不新增平台运行框架。
+  Host必须核对实际role消费和pause回执，不以提交或派生状态文字当作成功。
+
+新增角色回执测试先红后绿；本批Delivery输入／唤醒／会话、前台stdin／FIFO、issue、真实
+socket恢复、CQ handoff及独立report runtime相关回归333 passed、28 subtests passed。
+初次命令含不存在的测试文件，exit4且未执行；修正路径后上述完整选择运行通过。
+前批3353项全量证据保留，本批不冒称重新全量。没有backend/frontend改动或应用重启。
+GitNexus前台入口upstream LOW（2个依赖），事件投影入口未索引为UNKNOWN，采用直接调用点
+与边界回归补证；不宣称完整图影响覆盖。F3/F4仍未实施／未启用，021继续暂停。
+
+审查补齐了Judge实际启动的两处提示（`_CQ_JUDGE_ROLE_INSTRUCTIONS`与acceptance/instructions-v3），
+避免旧inline说明覆盖默认材料引用。对应report-reference／acceptance回归86 passed，包含负面
+裁决及理由／failure_layer原样保留的新增socket回归；此组与前述333项有交叉，不相加冒充
+419个独立测试。两轮选择均exit0。只读审查最终无阻塞；所有实际提示面同步，评分器未变。

@@ -138,3 +138,15 @@ evaluation_model_profile: dsh-acceptance-deepseek-flash-low
 进程／session和全部必经角色，Delivery或验收仍Codex则mixed；外层Host残余另列成本。
 [开发测试记录](../docs/delivery/records/2026-10-18-r4-3-034-implementation-test-record.md)
 分别跟踪工程、真实运行、独立质量、切换、净效果和账单，不互作证明。
+
+### Recoverable issue control feedback
+
+A foreground/FIFO `issue_resolution` with a complete issue binding received while
+the issue is still `reported` returns `issue_pause_pending`, `retryable=true`,
+`issue_state=reported`, and the bound Coordinator `issue_control(action=pause)`
+next action. The existing `outer-input-receipts.jsonl` records the same code,
+detail and retry guidance. No resolution or runtime delivery occurs before the
+pause; resend after its actual dispatch. Other malformed/not-ready inputs retain
+their existing rejection contract. The flat MCP control adapter ignores its
+schema-declared `reason` on `pause` only; unknown fields, resolution fields,
+bindings/epoch/identity, and persisted resume/abort validation stay strict.

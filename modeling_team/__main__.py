@@ -235,26 +235,17 @@ _CQ_OUTER_ACTIONS = frozenset(
 )
 
 
-def _foreground_issue_resolution_is_ready(runner: object) -> bool:
-    """Check the cooperative issue gate without mutating Runner state.
+def _foreground_issue_resolution_state(runner: object) -> str | None:
+    """Read the issue pause boundary without changing the ledger.
 
-    An outer resolution can arrive while the Runner has only recorded the
-    Broker's ``reported`` callback.  Calling ``receive_outer`` in that window
-    would reject the resolution and, in the foreground CLI, tear down the
-    whole run.  The Coordinator pause is the boundary that makes the same
-    resolution actionable; all other receive paths remain unchanged and
-    retain their fatal-error behavior.
-
-    2026-09-11 auth006-start9: ``transport.issue_ledger`` is a bound method
-    on the Broker, so reading ``.state`` directly on it always returned None
-    and the FIFO gate rejected every outer resolution.  Call the accessor
-    first, then read the ledger state.
+    The Broker exposes issue_ledger as an accessor, not a ledger attribute.
+    A reported issue still needs its bound Coordinator pause before resolution.
     """
-
     transport = getattr(runner, "transport", None)
     accessor = getattr(transport, "issue_ledger", None)
     issue_ledger = accessor() if callable(accessor) else accessor
-    return getattr(issue_ledger, "state", None) in {"waiting_owner", "waiting_repair"}
+    state = getattr(issue_ledger, "state", None)
+    return state if isinstance(state, str) else None
 
 
 def _outer_input_receipt_recorder(runner, message):
@@ -403,14 +394,47 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
             receipt("rejected", code="invalid_outer_input")
         emit_outer_input_rejection()
         return []
-    if (
-        action == "issue_resolution"
-        and not _foreground_issue_resolution_is_ready(runner)
-    ):
-        if receipt is not None:
-            receipt("rejected", code="invalid_outer_input")
-        emit_outer_input_rejection()
-        return []
+    if action == "issue_resolution":
+        issue_state = _foreground_issue_resolution_state(runner)
+        binding_present = (
+            isinstance(message.get("issue_id"), str)
+            and bool(message.get("issue_id"))
+            and isinstance(message.get("reporter_id"), str)
+            and bool(message.get("reporter_id"))
+            and isinstance(message.get("control_epoch"), int)
+            and not isinstance(message.get("control_epoch"), bool)
+            and message.get("control_epoch") > 0
+        )
+        if issue_state == "reported" and binding_present:
+            detail = (
+                "issue resolution is pending the Coordinator's bound "
+                "issue_control pause"
+            )
+            next_action = (
+                "Coordinator must call issue_control(action=pause) with the exact "
+                "issue_id, reporter_id, and control_epoch, then resend this "
+                "issue_resolution after the pause is observed"
+            )
+            feedback = {
+                "code": "issue_pause_pending",
+                "detail": detail,
+                "next_action": next_action,
+                "issue_state": issue_state,
+            }
+            if receipt is not None:
+                receipt(
+                    "rejected",
+                    code=feedback["code"],
+                    detail=detail,
+                    retry=next_action,
+                )
+            emit_outer_input_rejection(feedback)
+            return []
+        if issue_state not in {"waiting_owner", "waiting_repair"}:
+            if receipt is not None:
+                receipt("rejected", code="invalid_outer_input")
+            emit_outer_input_rejection()
+            return []
     if _handle_cq_outer_message(runner, message, emit_and_observe, receipt=receipt):
         # R3.0-011: CQ inputs are fully handled ahead of the fatal boundary.
         return []
@@ -1788,8 +1812,12 @@ _CQ_JUDGE_ROLE_INSTRUCTIONS = (
     "against those real responses only -- the Examiner's self-reported answer or IRIs "
     "are claims, not response evidence, and an answer the retained responses do not "
     "support is a failure even when it echoes the reference answer. For each "
-    "question call submit_examiner_report exactly once with schema_version, batch_id, "
-    "question_id, verdict, failure_layer, conflicting_evidence and note. Submit "
+    "question prepare the final complete JSON verdict with schema_version, batch_id, "
+    "question_id, verdict, failure_layer, conflicting_evidence and note. Use the scoped "
+    "write_handoff_output and publish_handoff_material tools to publish that JSON to "
+    "the existing Host channel, then call submit_examiner_report with only report_ref "
+    "(material_id and path) from the first submission. Never submit a placeholder "
+    "or change your independent verdict to fit inline optional-field encoding. Submit "
     "failure_layer as the JSON null value or omit the field exactly when the "
     "verdict is pass or question-answer-review, never as a string such as "
     "'None', and never name a layer for a pass; model-recall-insufficient and "

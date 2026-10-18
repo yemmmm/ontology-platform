@@ -351,13 +351,12 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 emitted.append,
                 select_fn=lambda *_args: ([stream], [], []),
             )
-        self.assertEqual(
-            emitted,
-            [
-                [{"type": "outer-input-rejected", "code": "invalid_outer_input", "retryable": True}],
-                [{"type": "resolution-accepted"}],
-            ],
-        )
+        self.assertEqual(emitted[0][0]["type"], "outer-input-rejected")
+        self.assertEqual(emitted[0][0]["code"], "issue_pause_pending")
+        self.assertEqual(emitted[0][0]["issue_state"], "reported")
+        self.assertIn("issue_control", emitted[0][0]["next_action"])
+        self.assertIn("pause", emitted[0][0]["next_action"])
+        self.assertEqual(emitted[1], [{"type": "resolution-accepted"}])
         self.assertEqual(runner.received, [resolution])
 
     def test_foreground_loop_keeps_internal_drain_configuration_errors_fatal(self) -> None:
@@ -1559,13 +1558,12 @@ class RunnerR23005FifoOuterInputTests(unittest.TestCase):
                 outer_input=fifo,
                 select_fn=lambda *_args: next(polls),
             )
-        self.assertEqual(
-            emitted,
-            [
-                [{"type": "outer-input-rejected", "code": "invalid_outer_input", "retryable": True}],
-                [{"type": "resolution-accepted"}],
-            ],
-        )
+        self.assertEqual(emitted[0][0]["type"], "outer-input-rejected")
+        self.assertEqual(emitted[0][0]["code"], "issue_pause_pending")
+        self.assertEqual(emitted[0][0]["issue_state"], "reported")
+        self.assertIn("issue_control", emitted[0][0]["next_action"])
+        self.assertIn("pause", emitted[0][0]["next_action"])
+        self.assertEqual(emitted[1], [{"type": "resolution-accepted"}])
         self.assertEqual(runner.received, [resolution])
 
     def test_formal_owner_answer_via_fifo_requires_displayed_question(self) -> None:
@@ -1678,3 +1676,25 @@ class RunnerR23005FifoOuterInputTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_reported_issue_resolution_receipt_names_missing_pause_without_delivery(tmp_path):
+    receipts, emitted = [], []
+    runner = SimpleNamespace(
+        transport=SimpleNamespace(issue_ledger=lambda: SimpleNamespace(state="reported")),
+        _append_evidence=lambda name, value: receipts.append((name, value)),
+    )
+    message = {"action": "issue_resolution", "request_id": "early-resolution",
+               "issue_id": "issue-1", "reporter_id": "coordinator", "control_epoch": 1,
+               "resolution_type": "guidance", "resolution_text": "authorized guidance"}
+    team_main._handle_foreground_message(
+        runner, json.dumps(message), emitted.append,
+        lambda value=None: emitted.append(value),
+    )
+    assert emitted[0]["code"] == "issue_pause_pending"
+    assert receipts[0][0] == "outer-input-receipts"
+    receipt = receipts[0][1]
+    assert receipt["request_id"] == "early-resolution"
+    assert receipt["outcome"] == "rejected" and receipt["code"] == "issue_pause_pending"
+    assert "issue_control" in receipt["retry"]
+    assert runner.transport.issue_ledger().state == "reported"

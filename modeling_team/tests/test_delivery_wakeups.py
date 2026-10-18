@@ -233,6 +233,29 @@ def test_new_decision_event_wakes_once_and_page_settle_stays_quiet(tmp_path):
     assert stored["observation_count"] == 4 and stored["wake_count"] == 2
 
 
+@pytest.mark.parametrize("agent", ["modeling", "coordinator"])
+def test_terminal_role_receipt_keeps_identity_private_body_and_single_wakeup(tmp_path, agent):
+    from modeling_team.delivery import _decision_event_metadata
+
+    event = {"source": "team-transport-events.jsonl", "byte_offset": 100,
+             "data": {"agent": agent, "category": "terminal_report_accepted",
+                      "status": "accepted", "tool": "report_task_result",
+                      "report": {"summary": "PRIVATE BODY"}}}
+    metadata = _decision_event_metadata(event)
+    assert metadata["data"]["agent_id"] == agent
+    assert "PRIVATE BODY" not in json.dumps(metadata)
+    host = session(tmp_path)
+    assert host.record_observation(observation())
+    arrival = observation()
+    arrival["runs"]["run"]["events"] = _events_page([event], next_cursor="terminal-1")
+    assert host.record_observation(arrival)
+    assert not host.record_observation(arrival)
+    drained = observation()
+    drained["runs"]["run"]["events"] = _events_page([], next_cursor="terminal-2")
+    assert not host.record_observation(drained)
+    assert _decision_event_metadata({**event, "source": "other.jsonl"})["data"].get("agent_id") is None
+
+
 def test_truncated_placeholder_and_events_failure_stay_decisions(tmp_path):
     host = session(tmp_path)
     assert host.record_observation(observation())

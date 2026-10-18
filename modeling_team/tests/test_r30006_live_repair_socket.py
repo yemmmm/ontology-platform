@@ -560,7 +560,8 @@ def test_known_no_write_503_repairs_and_resumes_the_same_run_and_thread(tmp_path
             early = _admit_line(
                 runner, sink, _short_resolution_line(runner.run.run_id, issue_id, epoch)
             )
-            assert early is not None and early["code"] == "invalid_outer_input"
+            assert early is not None and early["code"] == "issue_pause_pending"
+            assert "issue_control" in early["next_action"]
             assert _ledger(runner).state == "reported"
 
             # 4) the Coordinator pauses cooperatively; the reporter turn finishes.

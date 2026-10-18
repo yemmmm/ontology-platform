@@ -557,3 +557,26 @@ def test_native_report_manifest_makes_reference_and_handoff_reachable():
         branch.get("required") == ["report_ref"]
         for branch in schema["oneOf"]
     )
+
+
+def test_judge_reference_preserves_negative_assessment_without_normalization(tmp_path):
+    packet = _batch_packet(role="acceptance")
+    entry = _verdict_entry(packet.batch_id, "cq-1")
+    entry.update(verdict="model-recall-insufficient", failure_layer="modeling-quality",
+                 note="Required point remains unsupported in this answer's retained read.")
+    materials = _Materials(json.dumps(entry))
+    accepted = []
+    sink = ReportSinkServer(
+        tmp_path / "report.sock", "token", accepted.append, kind="acceptance",
+        batch_contract=V3BatchReportContract(role="acceptance", packet=packet),
+        handoff_materials=materials, material_actor_id="acceptance",
+    )
+    sink.start()
+    try:
+        response = _request(sink.socket_path, sink.token, {"report": {"report_ref": {
+            "material_id": "material-report", "path": "verdict.json"}}})
+        assert response["ok"] is True
+        assert accepted == [entry]
+        assert sink.report_ref_receipts
+    finally:
+        sink.stop()

@@ -417,6 +417,10 @@ def _decision_event_metadata(event: Any) -> Any:
     projected = {key: value for key, value in data.items() if key in _EVENT_METADATA_KEYS}
     if isinstance(projected.get("result"), (dict, list)):
         projected.pop("result")
+    if (source == "team-transport-events.jsonl"
+            and data.get("category") == "terminal_report_accepted"
+            and isinstance(data.get("agent"), str)):
+        projected["agent_id"] = data["agent"]
     if source == "dsh-provider.jsonl":
         projected.update({key: data[key] for key in (
             "http_status", "usage_complete", "usage_issues", "provider_error", "request_shape",

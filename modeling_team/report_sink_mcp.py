@@ -595,7 +595,13 @@ def native_report_tool_specs(
     tools: list[dict[str, Any]] = [
         {
             "name": "submit_examiner_report",
-            "description": f"submit one strict {kind} semantic report",
+            "description": (
+                "Submit one final independent verdict via complete JSON material report_ref. "
+                "Preserve the assessed verdict and JSON null/omitted failure_layer; "
+                "never change the label to fit inline encoding or submit a placeholder."
+                if v3_batch and role == "acceptance"
+                else f"submit one strict {kind} semantic report"
+            ),
             "inputSchema": _reference_aware_schema(advertised_schema),
         }
     ]

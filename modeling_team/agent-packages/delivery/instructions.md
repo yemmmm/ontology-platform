@@ -425,6 +425,12 @@ retry the same freeze binding with a new request ID. No broader authorization,
 added `delivery_binding`, or terminal `state.json` is required. Historical receipts
 may use `cq_batch_scope_unauthorized` for this wait; confirm their actual detail
 or production readiness rather than interpreting that legacy code alone.
+After `cq_production_pending`, a new production-role `terminal_report_accepted`
+receipt (`agent_id` identifies the role) is a readiness change: retry
+`complete_cq_handoff` with the same freeze and a new request ID. The returned
+readiness check decides whether another role remains pending. Do not wait for
+an extra run-settled signal or poll unchanged state; CQ can keep the run open
+until this handoff.
 An accepted CQ handoff creates an acceptance binding, not an evaluation
 process. If no matching operation exists, call `start_evaluation` for each
 authorized public/hidden group with the returned handoff/freeze binding,

@@ -46,11 +46,15 @@ and no way to re-derive answers from a live system.
   `question-answer-review` — omit `failure_layer` from the payload or send the
   JSON literal `null`; never send the string `"None"` or an empty string. Every
   other verdict must name one of the four layer values.
-- If an inline submission is rejected because `pass` carries a nonempty
-  `failure_layer`, correct it to JSON `null` or omit it. If the next tool call
-  still cannot preserve that empty value, use the existing handoff tools to
-  publish your complete verdict JSON and submit only `report_ref`. Do not resend
-  the same rejected payload or alter the verdict to fit the tool encoding.
+- Submit every verdict through a complete JSON material reference from the first
+  submission: use `write_handoff_output` for the final per-question verdict JSON,
+  `publish_handoff_material` to the existing Host channel, then submit only
+  `{"report_ref":{"material_id":"...", "path":"..."}}`. This preserves the
+  JSON `null`/omitted layer without inline optional-field encoding. The original
+  verdict contract and independent grading rules still apply to the resolved JSON.
+  Do not mix a reference with inline fields, alter a verdict to fit tool encoding,
+  or submit a provisional label/note expecting to correct it later: an accepted
+  verdict is immutable.
 - Name your basis in `note`: cite the relied-on evidence entry by `source` and
   `content_digest`, and the examiner `question_id` you judged. Use
   `conflicting_evidence` when the examiner answer and the approved material
@@ -90,14 +94,11 @@ and no way to re-derive answers from a live system.
 - If a submission is rejected, the reason names the exact problem. Fix that field
   and resubmit the same question; the batch sink keeps accepting corrected
   verdicts for the whole session. The session deadline is the only budget.
-- The `examiner_report` server also exposes scoped handoff tools. For a large verdict, write one
-  complete UTF-8 JSON verdict object to your private output, publish it to the existing Host
-  channel, and submit exactly `{"report_ref":{"material_id":"...", "path":"..."}}` for that
-  question. A reference is a complete alternative to the per-question fields; do not mix it with
-  guessed fields. Handoff list/read only verifies published material and never substitutes for the
-  required `read_frozen_evidence` call or its original source-read receipt.
-- Do not request platform reads, do not read files, do not spawn agents, do not
-  collaborate with another role, and do not write files.
+- Handoff list/read verifies published material; it never substitutes for
+  `read_frozen_evidence` or its original source-read receipt.
+- Do not request platform reads, spawn agents, or collaborate with another role.
+  Use only the scoped handoff tools for your own verdict output; no general
+  filesystem access is authorized.
 
 ## Per-point diagnosis using existing evidence only (R4.0-013, option A)
 
