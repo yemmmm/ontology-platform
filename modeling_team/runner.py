@@ -9869,6 +9869,10 @@ class TeamRunner:
         )
         if not coordinator:
             return
+        if coordinator in getattr(self.transport, "results", {}):
+            # CQ handoff/acceptance can outlive production. A terminal
+            # Coordinator has no further production work to resume.
+            return
         self._idle_inquiries_sent = inquiries_sent + 1
         self._idle_inquiry_baseline = now
         receipt = self.adapter.send_message(

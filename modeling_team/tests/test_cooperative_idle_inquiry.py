@@ -238,3 +238,23 @@ def test_nonformal_nonstaged_run_stays_unwatched(tmp_path: Path) -> None:
     runner._staged_decisions = False
     runner._check_cooperative_idle()
     assert adapter.sent == []
+
+
+@pytest.mark.parametrize("status", ["completed", "blocked"])
+def test_terminal_coordinator_waiting_for_cq_handoff_is_not_nudged(
+    tmp_path: Path, status: str,
+) -> None:
+    # DSH rejects new input after an accepted terminal report. CQ handoff and
+    # independent acceptance still belong to Host; they must not revive the
+    # completed Coordinator or tear down its run with an idle inquiry.
+    adapter = _IdleAdapter(last_output=0.0)
+    runner = _idle_runner(tmp_path, adapter, now=[1400.0], staged=True)
+    runner.transport = SimpleNamespace(results={
+        "coordinator": SimpleNamespace(status=status),
+    })
+    runner._competency_questions = True
+    runner._cq_phase = "frozen"
+    runner._check_cooperative_idle()
+    assert adapter.sent == []
+    assert runner._idle_inquiries_sent == 0
+    assert not (runner.run.root / "evidence/idle-inquiry.jsonl").exists()
