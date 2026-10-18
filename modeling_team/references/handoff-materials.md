@@ -28,3 +28,22 @@ JSON 报告；材料错误不消耗报告格式纠错次数。冻结材料读取
 
 引用提示应说明目的、材料入口和接收任务。长材料优先引用，短澄清可内联。使用获准来源或私有
 交接输出；CQ 私有材料、Coordinator 私有全景图和独立验收隐藏证据不得借引用传给生产角色。
+
+## DSH运行期接线（R4.3-035）
+
+DSH生产Coordinator通过`write_handoff_output`写以下既有路径时，Host沿同一工具调用自动
+保存不可变handoff原件、将原字节接入Runner目标，并返回`runner_receipt`：
+`scenario-map/scenario-map.json`、`scenario-map/topology-decision.json`、
+`scenario-map/protection-iri-suggestions.json`。回执含run、actor、源、目标、摘要、material_ref
+与received事实。它不表示地图/拓扑准入或语义通过。其他私有输出继续原行为。
+失败按原内容重试；同版已接收不重复覆盖，目标或原件发生变化须先核对准确错误。
+
+Host审核后Runner发布`cq-public-input`消息：包含run_id、递增投影文件version、
+projection_digest和固定material_ref。生产通过原list/read_handoff_material领取原文，
+按分页元数据续读。只有真实freeze后才附batch_id、snapshot_digest；私有CQ快照和隐藏材料
+不进入生产。旧版迟到仍保留旧身份，应按version识别，不把它当最新事实。
+
+`evidence/dsh-handoff.jsonl`记录原件接收和公开输入交接；`dsh-dispatch.jsonl`及原生wire
+保留消息入队、领取、活动结束与取消/未知状态。queued不是已读，claimed不是语义完成。
+明确失败/取消允许原身份重试；unknown先核对原dispatch及迟到响应，不能重复发送。
+材料/派发失败由后续Runner drain重试可安全的未送事项，不要求人工复制或新开建模run。

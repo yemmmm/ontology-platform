@@ -58,6 +58,7 @@ class _DshAgent:
     write_lock: Any = field(default_factory=threading.Lock)
     projection: Any = None
     dispatches: dict = field(default_factory=dict)
+    public_dispatches: dict = field(default_factory=dict)
     dispatching: int = 0
     terminal: bool = False
     wait: dict | None = None
@@ -395,9 +396,13 @@ class DshRuntimeAdapter(RuntimeAdapter):
         instructions += (
             "\nDSH runtime: no shell or general filesystem tool is available. "
             "For Coordinator scenario-map artifacts, use write_handoff_output with "
-            "scenario-map/ relative paths; the supervising Host transfers your exact bytes "
-            "to the existing Runner paths. Receive dynamic public CQ projections and freeze "
-            "confirmation through sourced Host messages; do not guess material IDs. "
+            "scenario-map/ relative paths; the tool automatically transfers your exact bytes "
+            "to the existing Runner paths and returns runner_receipt (retry the same write "
+            "on recoverable transfer errors). Receive dynamic public CQ projections and true freeze "
+            "confirmation through runner cq-public-input messages. Read their fixed material_ref "
+            "with list/read_handoff_material; compare version and projection_digest so a late old "
+            "notice is not mistaken for the latest projection. Queueing is not consumption; "
+            "do not guess material IDs or request manual Host copying. "
             "If terminal reporting says native input is pending, naturally end this activity "
             "to consume the original inbox, then retry once consumed. This ordinary wait "
             "requires no retrieval, rewrite, new issue or blocked terminal result."
@@ -709,6 +714,19 @@ class DshRuntimeAdapter(RuntimeAdapter):
         agent = self.agents[agent_id]
         dispatch_id = "host-" + uuid.uuid4().hex
         with self._lock:
+            public_key = delivery.delivery_id if delivery.kind == "cq-public-input" else None
+            if public_key and public_key in agent.public_dispatches:
+                original, previous_id = agent.public_dispatches[public_key]
+                if original != delivery:
+                    raise DshRuntimeError("dsh-delivery-binding-changed: public input identity changed")
+                record = agent.dispatches[previous_id]
+                status = self._dispatch_record(agent, previous_id)
+                if status["state"] not in {"failed", "canceled"}:
+                    if isinstance(record, RuntimeDispatchReceipt):
+                        return record
+                    error = DshRuntimeError("dsh-delivery-unknown: reconcile the original dispatch")
+                    error.dispatch_id = previous_id
+                    raise error
             if self._closed or self._paused or agent.terminal or not agent.ready:
                 raise DshRuntimeError(
                     "dsh-dispatch-closed; retain input for authorized resume or terminal review"
@@ -716,6 +734,16 @@ class DshRuntimeAdapter(RuntimeAdapter):
             if agent.wait is not None and delivery.kind != "provider-recovery":
                 raise DshRuntimeError("provider wait pending; recover the original wait_id first")
             agent.dispatching += 1
+            if public_key:
+                agent.public_dispatches[public_key] = (delivery, dispatch_id)
+                agent.dispatches[dispatch_id] = {
+                    "runtime": "dsh", "dispatch_id": dispatch_id,
+                    "runtime_identity": agent.session_id, "process_instance": agent.instance,
+                    "message_id": None, "turn_id": None, "state": "unknown",
+                }
+                self._record("dispatch", {"event": "attempted", "agent_id": agent_id,
+                                           "dispatch_id": dispatch_id,
+                                           "delivery": dataclasses.asdict(delivery)})
         try:
             result = self._rpc(
                 agent,
@@ -768,6 +796,11 @@ class DshRuntimeAdapter(RuntimeAdapter):
                     late = agent.responses.get(getattr(exc, "request_id", None))
                 if late is not None:
                     self._reconcile_enqueue(agent, late)
+                if public_key:
+                    exc.dispatch_id = dispatch_id
+                    self._record("dispatch", {"event": "dispatch-unresolved",
+                                               "agent_id": agent_id,
+                                               **self._dispatch_record(agent, dispatch_id)})
             raise
         finally:
             with self._lock:

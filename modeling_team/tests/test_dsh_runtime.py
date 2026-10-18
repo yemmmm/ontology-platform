@@ -549,3 +549,118 @@ def test_startup_configuration_can_be_corrected_without_replacing_an_admitted_se
     assert all(not agent.dispatches for agent in adapter.agents.values())
     with pytest.raises(DshRuntimeError, match="still owns role processes"):
         adapter.start_roster(run, run.configuration.profile.agents)
+
+
+def _wire_run_materials(run, broker):
+    from modeling_team.runner import TeamRunner
+
+    runner = TeamRunner.__new__(TeamRunner)
+    runner.run = run
+    runner._competency_questions = True
+    runner._multi_slice_workflow = True
+    runner._staged_decisions = True
+    runner._unified_graph = True
+    (run.root / 'scenario-map').mkdir(exist_ok=True)
+    (run.root / 'competency-questions/public').mkdir(parents=True, exist_ok=True)
+    runner._prepare_handoff_materials()
+    broker.materials = run.handoff_materials
+    return runner
+
+
+def test_real_dsh_coordinator_tool_transfers_original_artifact_without_host_copy(local_roster):
+    from hashlib import sha256
+    from modeling_team.runtimes.base import RuntimeDelivery
+
+    adapter, run, broker = local_roster
+    _wire_run_materials(run, broker)
+    adapter.provider_factory = LocalMessagesProvider
+    adapter.start_roster(run, run.configuration.profile.agents)
+    provider = adapter._provider
+    provider.tool_name = 'mcp__team_transport__write_handoff_output'
+    content = '{\n "scenario_id": "工程原字节"\n}\n'
+    provider.tool_arguments = {'relative_path': 'scenario-map/scenario-map.json', 'content': content}
+    adapter.send_message('coordinator', RuntimeDelivery('runner', 'coordinator', 'task', 'fixture'))
+    wait_until(lambda: adapter.wait_settled(['coordinator'], 0.1))
+    assert (run.root / 'scenario-map/scenario-map.json').read_bytes() == content.encode()
+    receipt = run.handoff_materials.artifacts['coordinator:scenario-map/scenario-map.json']
+    assert receipt['state'] == 'received' and receipt['sha256'] == sha256(content.encode()).hexdigest()
+    assert len(provider.requests) == 2
+    assert 'runner_receipt' in __import__('json').dumps(provider.requests[1]['messages'])
+    # The regular Runner reader sees those same bytes; semantic validation is unchanged.
+    from modeling_team.scenario_map import load_scenario_map
+    assert load_scenario_map(run.root / 'scenario-map/scenario-map.json')['scenario_id'] == '工程原字节'
+
+
+def test_real_dsh_public_reference_is_read_and_native_consumption_is_separate(local_roster):
+    import json
+
+    adapter, run, broker = local_roster
+    _wire_run_materials(run, broker)
+    adapter.provider_factory = LocalMessagesProvider
+    adapter.start_roster(run, run.configuration.profile.agents)
+    store = run.handoff_materials
+    path = run.root / 'competency-questions/public/public-projection-0001.json'
+    path.write_text('{"questions":[{"question":"公开工程问题"}]}')
+    store.queue_public_input(path, ['modeling'], 'public-digest',
+                             freeze={'batch_id': 'batch-real-fixture', 'snapshot_digest': 'frozen'})
+    # Resolve the immutable reference before the native message is sent.
+    adapter.pause()
+    store.flush_public_inputs(adapter)
+    record = next(iter(store.public_inputs.values()))
+    assert record['state'] == 'pending' and 'error' in record
+    provider = adapter._provider
+    provider.tool_name = 'mcp__team_transport__read_handoff_material'
+    provider.tool_arguments = record['material_ref']
+    adapter.resume()
+    store.flush_public_inputs(adapter)
+    wait_until(lambda: adapter.wait_settled(['modeling'], 0.1))
+    store.flush_public_inputs(adapter)
+    record = next(iter(store.public_inputs.values()))
+    assert record['state'] == 'settled'
+    status = adapter.dispatch_status('modeling')[0]
+    assert status['queued_seq'] < status['claimed_seq'] < status['turn_end_seq']
+    assert '公开工程问题' in json.dumps(provider.requests[1]['messages'], ensure_ascii=False)
+    assert len(provider.requests) == 2
+    store.flush_public_inputs(adapter)
+    assert len(provider.requests) == 2
+    assert broker.results == {}  # Read/settled are not semantic acceptance.
+
+
+def test_public_dispatch_lost_reply_late_reconciliation_and_cancel_use_original_identity(local_roster):
+    from modeling_team.runtimes.base import RuntimeDelivery
+    from modeling_team.runtimes.dsh import DshRuntimeError
+
+    adapter, run, broker = local_roster
+    adapter.start_roster(run, run.configuration.profile.agents)
+    agent = adapter.agents['modeling']
+    original_rpc = adapter._rpc
+    calls = []
+    def lost_reply(target, method, params, **kwargs):
+        calls.append(params)
+        error = DshRuntimeError('fixture response lost')
+        error.request_id = 999
+        raise error
+    adapter._rpc = lost_reply
+    delivery = RuntimeDelivery('runner/competency-questions', 'modeling', 'cq-public-input',
+                               'public-version-one', delivery_id='stable-public-id')
+    with pytest.raises(DshRuntimeError):
+        adapter.send_message('modeling', delivery)
+    with pytest.raises(DshRuntimeError, match='delivery-unknown'):
+        adapter.send_message('modeling', delivery)
+    assert len(calls) == 1
+    adapter._reconcile_enqueue(agent, {'id': 999, 'result': {'messageId': 'late-message'}})
+    receipt = adapter.send_message('modeling', delivery)
+    assert receipt.message_id == 'late-message' and len(calls) == 1
+    with pytest.raises(DshRuntimeError, match='binding-changed'):
+        adapter.send_message('modeling', __import__('dataclasses').replace(delivery, text='changed'))
+    # Native cancellation proves this inbox message was never claimed.
+    seq = agent.projection.next_seq
+    agent.projection.append({'seq': seq, 'type': 'agent/inbox/spliced', 'data': {
+        'target': 'next-turn', 'start': 0, 'inserted': [{'id': 'late-message'}]}})
+    agent.projection.append({'seq': seq + 1, 'type': 'agent/inbox/spliced', 'data': {
+        'target': 'next-turn', 'start': 0, 'removedCount': 1, 'inserted': [], 'outcome': 'canceled'}})
+    # It may be resent only after cancellation; the delivery identity stays fixed.
+    adapter._rpc = lambda *args, **kwargs: {'messageId': 'replacement-message'}
+    second = adapter.send_message('modeling', delivery)
+    assert second.message_id == 'replacement-message' and second.dispatch_id != receipt.dispatch_id
+    adapter._rpc = original_rpc

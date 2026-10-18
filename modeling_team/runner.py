@@ -1457,7 +1457,16 @@ class TeamRunner:
         """Register only existing role paths and recipient source grants."""
         assert self.run
         run = self.run
-        store = HandoffMaterials(run.root / "handoff-materials", run.run_id)
+        if run.configuration.profile.runtime == "dsh":
+            from .runtime_handoff import DshRunMaterials
+
+            store = DshRunMaterials(
+                run.root / "handoff-materials", run.run_id,
+                {a.agent_id for a in run.configuration.profile.agents
+                 if a.package.role == "coordinator"},
+            )
+        else:
+            store = HandoffMaterials(run.root / "handoff-materials", run.run_id)
         agents = run.configuration.profile.agents
         edges = set(run.configuration.profile.communication)
         for agent in agents:
@@ -1507,7 +1516,11 @@ class TeamRunner:
                         filters[alias] = {"runner"}
                         filters[str(target)] = {"runner"}
             store.register_actor(agent.agent_id, sources, recipients, filters)
-        store.register_actor("runner", {}, {agent.agent_id for agent in agents})
+        public_dir = run.root / "competency-questions/public"
+        store.register_actor("runner", {str(public_dir): public_dir},
+                             {agent.agent_id for agent in agents},
+                             {str(public_dir): {agent.agent_id for agent in agents
+                                               if agent.package.role in self._cq_production_roles()}})
         run.handoff_materials = store
 
     def _stage_sources(self) -> None:
@@ -1610,6 +1623,7 @@ class TeamRunner:
             for name, relative in {
                 "dsh_adapter": "runtimes/dsh.py", "dsh_events": "runtimes/dsh_events.py",
                 "dsh_build": "runtimes/dsh_build.py", "dsh_composition": "runtimes/dsh_node/entry.mjs",
+                "dsh_runtime_handoff": "runtime_handoff.py",
                 "role_isolation": "runtimes/role_isolation.py", "messages_proxy": "messages_provider_proxy.py",
                 "model_routing": "model_routing.py", "runtime_contract": "runtimes/base.py",
             }.items():
@@ -8458,7 +8472,36 @@ class TeamRunner:
             },
         )
         self._cq_projection_consistency_feedback()
+        self._cq_queue_dsh_public_input(path, projection)
         return projection
+
+    def _cq_queue_dsh_public_input(self, path, projection):
+        from .runtime_handoff import DshRunMaterials
+
+        store = getattr(self.run, "handoff_materials", None)
+        if not isinstance(store, DshRunMaterials):
+            return
+        pending = getattr(self, "_dsh_public_input_pending", {})
+        self._dsh_public_input_pending = pending
+        pending[str(path)] = (path, projection)
+        freeze = getattr(self, "_cq_freeze", None)
+        confirmation = (
+            {"batch_id": freeze["batch_id"], "snapshot_digest": freeze["snapshot_digest"]}
+            if freeze and freeze["snapshot_digest"] == projection["snapshot_digest"] else None
+        )
+        try:
+            store.queue_public_input(
+                path, [a.agent_id for a in self.run.configuration.profile.agents
+                       if a.package.role in self._cq_production_roles()],
+                projection["projection_digest"], freeze=confirmation,
+            )
+            del pending[str(path)]
+            store.flush_public_inputs(self.adapter)
+        except (OSError, MaterialError) as exc:
+            self._append_evidence("dsh-handoff-errors", {
+                "version": path.relative_to(self.run.root).as_posix(), "error": str(exc),
+                "retry": "retained for the next Runner drain; correct the material store",
+            })
 
     def _cq_projection_consistency_feedback(self) -> None:
         """Recoverable projection/scenario-map consistency feedback (T0).
@@ -10919,6 +10962,16 @@ class TeamRunner:
     def drain(self) -> list[dict[str, Any]]:
         if not self.run or not self.transport:
             return []
+        from .runtime_handoff import DshRunMaterials
+
+        store = getattr(self.run, "handoff_materials", None)
+        if isinstance(store, DshRunMaterials):
+            for path, projection in list(getattr(self, "_dsh_public_input_pending", {}).values()):
+                self._cq_queue_dsh_public_input(path, projection)
+            try:
+                store.flush_public_inputs(self.adapter)
+            except OSError as exc:
+                self._append_evidence("dsh-handoff-errors", {"error": str(exc)})
         if getattr(self, "_standby_receipt", None) is not None and self._coordinator_final_captured:
             output = []
             for delivery in self.transport.drain():
