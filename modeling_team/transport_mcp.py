@@ -30,6 +30,7 @@ if __package__:
         IssueControl,
         IssueError,
         IssueResolution,
+        ISSUE_STATES,
         REPAIR_COMPONENTS,
         RecoverableIssueLedger,
         normalize_issue_control_arguments,
@@ -40,6 +41,7 @@ else:
         IssueControl,
         IssueError,
         IssueResolution,
+        ISSUE_STATES,
         REPAIR_COMPONENTS,
         RecoverableIssueLedger,
         normalize_issue_control_arguments,
@@ -1180,6 +1182,8 @@ def report_rejection_category(message: str) -> str:
     refusal, so one refusal is one category in every evidence stream.
     """
 
+    if message.startswith(("unconsumed DSH input", "unconsumed runtime input")):
+        return "runtime_input_pending"
     if message.startswith("terminal result requires terminal handoffs: "):
         missing = message.rsplit(": ", 1)[-1].split(", ")
         if "modeling" in missing:
@@ -1324,6 +1328,11 @@ def issue_control_transport_error(value: object) -> str | None:
 
     if not isinstance(value, str) or len(value) > 200:
         return None
+    pause_prefix = "issue pause is not valid in current state: "
+    if value.startswith(pause_prefix):
+        state = value[len(pause_prefix):]
+        if state in ISSUE_STATES:
+            return pause_prefix + state
     for pattern, prefix, joiner, suffix in _ISSUE_CONTROL_FIELD_COMPILED:
         match = pattern.fullmatch(value)
         if match is None:

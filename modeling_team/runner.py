@@ -13576,7 +13576,9 @@ class TeamRunner:
             or status not in {"rejected", "accepted"}
             or (
                 status == "rejected"
-                and category not in {"missing_modeling_handoff", "broker_rejection"}
+                and category not in {
+                    "missing_modeling_handoff", "broker_rejection", "runtime_input_pending",
+                }
             )
             or (status == "accepted" and category != "terminal_report_accepted")
         ):

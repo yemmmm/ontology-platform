@@ -70,6 +70,38 @@ def _paused_ledger() -> tuple[RecoverableIssueLedger, str, int]:
     return ledger, issue.issue_id, issue.control_epoch
 
 
+@pytest.mark.parametrize("resolved", [False, True])
+def test_repeated_pause_reports_actual_state_without_mutating_it(resolved: bool) -> None:
+    ledger, issue_id, epoch = _paused_ledger()
+    if resolved:
+        resolution = _resolution(issue_id=issue_id, control_epoch=epoch)
+        ledger.persist_resolution(resolution)
+        resume = ledger.control(
+            issue_id=issue_id, coordinator_id="coordinator", reporter_id="modeling",
+            action="resume", control_epoch=epoch, resolution=resolution,
+        )
+        ledger.mark_dispatch(resume)
+    expected = "resolved" if resolved else "waiting_repair"
+    before = ledger.evidence()
+    with pytest.raises(IssueError) as failure:
+        ledger.control(
+            issue_id=issue_id, coordinator_id="coordinator", reporter_id="modeling",
+            action="pause", control_epoch=epoch,
+        )
+    message = f"issue pause is not valid in current state: {expected}"
+    assert str(failure.value) == message
+    assert issue_control_transport_error(message) == message
+    assert ledger.state == expected and ledger.evidence() == before
+    assert ledger.can_terminal() is resolved
+
+
+def test_pause_state_relay_accepts_only_known_state_tokens() -> None:
+    for value in ["arbitrary_state", "resolved\nsecret", "resolved; resume now"]:
+        assert issue_control_transport_error(
+            "issue pause is not valid in current state: " + value
+        ) is None
+
+
 # --- normalize: name the rejected arguments -----------------------------------
 
 

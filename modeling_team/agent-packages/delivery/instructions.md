@@ -482,6 +482,9 @@ selected model profile and configured timeout; only then wait for reports.
 Do not repeatedly send freeze confirmations or terminal-report reminders while
 the same production inputs are queued. Wait for actual consumption or a new
 actionable gap; repeating reminders can keep a DSH recipient's queue nonempty.
+For runtime_input_pending, follow the actual queued/unknown/in-flight feedback;
+ack=not_applicable is audit metadata, not a capability rejection. Check current terminal
+receipts and issue state before escalating an old refusal or repeating pause/resolution.
 For an acceptance runtime failure with a retained final report, request a new
 read-only attempt using complete_cq_handoff(retry_of=<current acceptance_attempt_id>)
 and a new request ID. Use its returned model_handoff and attempt for evaluation

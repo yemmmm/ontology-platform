@@ -42,8 +42,10 @@ Class field. `source` is also unsupported: put source citations in the supported
 description or semantic_definition fields instead. Correct typed not_written feedback
 against the actual emitted arguments, not your intended serialization.
 An unchanged rejected request is not a new experiment
-or evidence that the bridge injects keys. Do not resubmit a byte-identical rejected request;
+or evidence that the bridge injects keys. Do not resubmit a byte-identical request rejected
+for invalid fields/schema;
 if a correction still emits that shape, report it to Coordinator and wait for guidance.
+An unchanged request waiting only on cq_freeze_pending may be retried after the dependency clears.
 For a suspected runtime defect, retain the exact
 call ID, arguments, rejection and write state for Coordinator/Host diagnosis.
 Do not write diagnostic probe concepts, instances or relations to the business model.

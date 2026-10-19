@@ -1,0 +1,941 @@
+{
+  "collected_at": "2026-10-19T17:28:59.362284+00:00",
+  "scope": "one authorized artificial minimal-chain task, including failed r1 and final r2, all retained DSH threads and independent public1/hidden3; engineering after delivery separately scoped",
+  "authorization": {
+    "authorized": 3,
+    "consumed": 2,
+    "remaining": 1,
+    "fresh_semantic_starts": 2
+  },
+  "native_usage": {
+    "roles": {
+      "delivery": {
+        "responses": 144,
+        "uncached_input_tokens": 1202396,
+        "cached_input_tokens": 26412160,
+        "output_tokens": 53676,
+        "native_total_tokens": 27668232,
+        "cache_write_missing_responses": 144,
+        "native_reported_input_tokens": 27614556
+      },
+      "competency-question": {
+        "responses": 30,
+        "uncached_input_tokens": 26366,
+        "cached_input_tokens": 323008,
+        "output_tokens": 7403,
+        "native_total_tokens": 356777,
+        "cache_write_missing_responses": 30,
+        "native_reported_input_tokens": 349374
+      },
+      "coordinator": {
+        "responses": 75,
+        "uncached_input_tokens": 91465,
+        "cached_input_tokens": 2065920,
+        "output_tokens": 32836,
+        "native_total_tokens": 2190221,
+        "cache_write_missing_responses": 75,
+        "native_reported_input_tokens": 2157385
+      },
+      "modeling": {
+        "responses": 83,
+        "uncached_input_tokens": 392104,
+        "cached_input_tokens": 2930432,
+        "output_tokens": 30058,
+        "native_total_tokens": 3352594,
+        "cache_write_missing_responses": 83,
+        "native_reported_input_tokens": 3322536
+      },
+      "platform-examiner": {
+        "responses": 13,
+        "uncached_input_tokens": 134438,
+        "cached_input_tokens": 64576,
+        "output_tokens": 3877,
+        "native_total_tokens": 202891,
+        "cache_write_missing_responses": 13,
+        "native_reported_input_tokens": 199014
+      },
+      "acceptance": {
+        "responses": 14,
+        "uncached_input_tokens": 66759,
+        "cached_input_tokens": 445312,
+        "output_tokens": 3547,
+        "native_total_tokens": 515618,
+        "cache_write_missing_responses": 14,
+        "native_reported_input_tokens": 512071
+      }
+    },
+    "total": {
+      "responses": 359,
+      "uncached_input_tokens": 1913528,
+      "cached_input_tokens": 32241408,
+      "output_tokens": 131397,
+      "native_total_tokens": 34286333,
+      "cache_write_missing_responses": 359,
+      "native_reported_input_tokens": 34154936
+    },
+    "conflicts": [],
+    "source_prefixes": [
+      {
+        "path": "workspaces/delivery-sessions/minimal-chain-20261020-dsh-glm-low/native/dsh-wire.jsonl",
+        "bytes": 9037390,
+        "sha256": "d91ef42883f192cf1b7c56e91ef34385df375dcc340aa6a470021a2754a765bd"
+      },
+      {
+        "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r1/evidence/dsh-wire.jsonl",
+        "bytes": 1549613,
+        "sha256": "6c54d3dd833820484f0678efc4ebf24cf9db66f8790c6af3aca461d09c17e13e"
+      },
+      {
+        "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r2/evidence/dsh-wire.jsonl",
+        "bytes": 1984597,
+        "sha256": "ad9b7ab886d6efa6861640274e1b59c18186e3e550e7b96332748cebcadc3509"
+      },
+      {
+        "path": ".delivery-ops/dsh-glm-20261020-acc-hidden-0001.owner/acceptance-runtime/ad593495f9cb4e7895314037646a695a/evidence/dsh-wire.jsonl",
+        "bytes": 155685,
+        "sha256": "ab73d580e7ee0b9c493e6893b15d0c0b7e7aeac3df05ebc4bea38f728e4615ac"
+      },
+      {
+        "path": ".delivery-ops/dsh-glm-20261020-acc-hidden-0001.owner/acceptance-runtime/f6d685379c874a3d85fd624928917805/evidence/dsh-wire.jsonl",
+        "bytes": 131405,
+        "sha256": "83745c9f9e1b7395cef72e355beb75860447d176d462541d96630a5990695f24"
+      },
+      {
+        "path": ".delivery-ops/dsh-glm-20261020-acc-hidden-0001.owner/acceptance-runtime/62d7f478157e4e2dbf176b6c39c827ae/evidence/dsh-wire.jsonl",
+        "bytes": 116462,
+        "sha256": "91229f7e78e20f8a57007ecbb133c984ea2d3ce5e3ac32cdf4dd34c33dde674c"
+      },
+      {
+        "path": ".delivery-ops/dsh-glm-20261020-acc-hidden-0001.owner/acceptance-runtime/f95572d867a54c98a8f2f98bb5589b53/evidence/dsh-wire.jsonl",
+        "bytes": 453411,
+        "sha256": "cea492cd17324db05fa571ff80beb0a08c08adda37dafabdf22c1e49c1ea430c"
+      },
+      {
+        "path": ".delivery-ops/dsh-glm-20261020-acc-public-0001.owner/acceptance-runtime/e4754134cfca4bbb863c3c539a2b75e8/evidence/dsh-wire.jsonl",
+        "bytes": 170193,
+        "sha256": "d130cc58879deb4e2ba7e531759aa45270384d70387b57970bb8ee24aa905be8"
+      },
+      {
+        "path": ".delivery-ops/dsh-glm-20261020-acc-public-0001.owner/acceptance-runtime/41f95920422b4113aecf1ce7df235734/evidence/dsh-wire.jsonl",
+        "bytes": 111688,
+        "sha256": "35f77f765766b9a5bec8903d8e45f4e7b871fc809b056ebc850216757aa2e87d"
+      }
+    ]
+  },
+  "delivery_threads": {
+    "delivery-8f8eb7b62b65453a82124007fa1f35d7": {
+      "responses": 26,
+      "input": 2354914,
+      "output": 6265,
+      "peak_input": 144489
+    },
+    "delivery-e9807a996dbc483cb0d1fb93d1c2344d": {
+      "responses": 64,
+      "input": 17220418,
+      "output": 22211,
+      "peak_input": 622027
+    },
+    "delivery-c9db9caf37f64957ac20c9fadadcfb50": {
+      "responses": 41,
+      "input": 6677246,
+      "output": 20917,
+      "peak_input": 286194
+    },
+    "delivery-28cf8d6081954c559bc17b90de7c1c97": {
+      "responses": 13,
+      "input": 1361978,
+      "output": 4283,
+      "peak_input": 131102
+    }
+  },
+  "phase_switches": [
+    {
+      "phase": "production",
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+      "status": "switched",
+      "started_at": "2026-10-19T16:53:58.809776+00:00",
+      "ended_at": "2026-10-19T16:53:58.824860+00:00",
+      "from_identity": {
+        "runtime": "dsh",
+        "process_instance": "d37d39873694422f99dd504c5fa9b4d9",
+        "runtime_session_id": "delivery-8f8eb7b62b65453a82124007fa1f35d7",
+        "activity_id": null
+      },
+      "to_identity": {
+        "runtime": "dsh",
+        "process_instance": "d37d39873694422f99dd504c5fa9b4d9",
+        "runtime_session_id": "delivery-e9807a996dbc483cb0d1fb93d1c2344d",
+        "activity_id": null
+      }
+    },
+    {
+      "phase": "production",
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r2",
+      "status": "switched",
+      "started_at": "2026-10-19T17:08:19.759885+00:00",
+      "ended_at": "2026-10-19T17:08:19.816918+00:00",
+      "from_identity": {
+        "runtime": "dsh",
+        "process_instance": "d37d39873694422f99dd504c5fa9b4d9",
+        "runtime_session_id": "delivery-e9807a996dbc483cb0d1fb93d1c2344d",
+        "activity_id": null
+      },
+      "to_identity": {
+        "runtime": "dsh",
+        "process_instance": "d37d39873694422f99dd504c5fa9b4d9",
+        "runtime_session_id": "delivery-c9db9caf37f64957ac20c9fadadcfb50",
+        "activity_id": null
+      }
+    },
+    {
+      "phase": "acceptance",
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r2",
+      "status": "switched",
+      "started_at": "2026-10-19T17:16:36.444109+00:00",
+      "ended_at": "2026-10-19T17:16:36.517000+00:00",
+      "from_identity": {
+        "runtime": "dsh",
+        "process_instance": "d37d39873694422f99dd504c5fa9b4d9",
+        "runtime_session_id": "delivery-c9db9caf37f64957ac20c9fadadcfb50",
+        "activity_id": null
+      },
+      "to_identity": {
+        "runtime": "dsh",
+        "process_instance": "d37d39873694422f99dd504c5fa9b4d9",
+        "runtime_session_id": "delivery-28cf8d6081954c559bc17b90de7c1c97",
+        "activity_id": null
+      }
+    }
+  ],
+  "delivery_tools": {
+    "start_run": 2,
+    "get_run_status": 1,
+    "yield_delivery": 69,
+    "read_delivery_artifact": 13,
+    "request_host_action": 8,
+    "recover_provider": 9,
+    "freeze_cq": 2,
+    "submit_instruction": 6,
+    "get_request_result": 2,
+    "reconcile_write_state": 2,
+    "stop_run": 1,
+    "complete_cq_handoff": 3,
+    "resolve_issue": 4,
+    "start_evaluation": 2,
+    "get_evaluation_status": 2,
+    "complete_cq_acceptance": 1,
+    "emit_user_message": 2,
+    "finish_delivery": 1
+  },
+  "yield_only": {
+    "responses": 69,
+    "input": 15415553
+  },
+  "native_turns": {
+    "ends": 12
+  },
+  "instruction_calls_without_explicit_id": 0,
+  "artifact_reads": {
+    "results": 13,
+    "errors": 0
+  },
+  "comparison": {
+    "baseline_path": "workspaces/minimal-chain-20261019-dsh-glm-low-140728/native-usage-snapshot.json",
+    "baseline_collected_at": "2026-10-19T14:40:45.229069+00:00",
+    "delivery": {
+      "native_reported_input_tokens": {
+        "previous": 41644343,
+        "current": 27614556,
+        "change_percent": -33.68953857670416
+      },
+      "native_total_tokens": {
+        "previous": 41694371,
+        "current": 27668232,
+        "change_percent": -33.64036598609438
+      },
+      "uncached_input_tokens": {
+        "previous": 627063,
+        "current": 1202396,
+        "change_percent": 91.75043018006166
+      },
+      "responses": {
+        "previous": 139,
+        "current": 144,
+        "change_percent": 3.597122302158273
+      }
+    },
+    "dsh_chain_total_change_percent": -32.14454848014745,
+    "causal_limit": "Same scenario/profile/model/effort and two starts, but different code and failures/Host interventions; observed difference, not single-factor A/B or a net whole-task comparison."
+  },
+  "host_task_tokens": {
+    "source": "/home/yangxiang/.codex/sessions/2026/10/20/rollout-2026-10-20T00-48-24-01a15510-7742-7393-a03e-e3e8785399df.jsonl",
+    "through": "2026-10-19T17:18:24.164Z",
+    "task_standby_at": "2026-10-19T17:18:41.261662+00:00",
+    "usage": {
+      "timestamp": "2026-10-19T17:18:24.164Z",
+      "input_tokens": 21628088,
+      "cached_input_tokens": 21365888,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 45377,
+      "reasoning_output_tokens": 16549,
+      "total_tokens": 21673465
+    },
+    "attribution": "Current Codex technical Host, outside selected DSH Team runtime; retained cumulative usage from initial task. Later retrospective/development excluded. Necessary cleanup tail after cutoff remains a lower-bound limitation."
+  },
+  "whole_task_known_lower_bound": 55959798,
+  "goal_tokens": 10000000,
+  "goal_met": false,
+  "runs": [
+    {
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+      "semantic_start": [
+        {
+          "baseline_hash": "b8b51af2c42db45e6a826c0f0aface18fa49d98f3be410054a47d46a315e5c50",
+          "recorded_at": "2026-10-19T16:50:01.539586+00:00"
+        }
+      ],
+      "submission_calls": [
+        {
+          "seq": 103,
+          "call_id": "call_80f790320f9a4e3790b8888d",
+          "argument_sha256": "856452d1874e5549bbcdb49c7f8e4fd6b0f3fb9202332c7377fe8b63c72cf0c0",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "item_id",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "item_id",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 108,
+          "call_id": "call_06bd4fab43354febb6756b50",
+          "argument_sha256": "cccc48e76c6008de2ce537424d8cb57ce73d6c2430409afb2a12fdda9df52da5",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields"
+            ]
+          ]
+        },
+        {
+          "seq": 113,
+          "call_id": "call_e24305e7948a4786bf951468",
+          "argument_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 118,
+          "call_id": "call_09a1140d14dd4bb29871f8b0",
+          "argument_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 123,
+          "call_id": "call_57321627f543491fab49c735",
+          "argument_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 128,
+          "call_id": "call_95812ee07b01480aaf2c9d24",
+          "argument_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 134,
+          "call_id": "call_49dd9e307adf49b18850214d",
+          "argument_sha256": "e81c0134640b272d763e5d982f9694195050bc6d98ec2e91752d4eacb552e96b",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 139,
+          "call_id": "call_c6ad5fedf72c409a8f829e1a",
+          "argument_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 154,
+          "call_id": "call_b9f932303f20498bb67020bb",
+          "argument_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 179,
+          "call_id": "call_7d2621ba16b34d0c8f9b5e75",
+          "argument_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 217,
+          "call_id": "call_eec02db31001497381103846",
+          "argument_sha256": "e81c0134640b272d763e5d982f9694195050bc6d98ec2e91752d4eacb552e96b",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 222,
+          "call_id": "call_05d60f6a5e9843b38048644f",
+          "argument_sha256": "e81c0134640b272d763e5d982f9694195050bc6d98ec2e91752d4eacb552e96b",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 227,
+          "call_id": "call_f7a1c81f25b8491bb837d95f",
+          "argument_sha256": "e81c0134640b272d763e5d982f9694195050bc6d98ec2e91752d4eacb552e96b",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        }
+      ],
+      "provider_errors": [
+        {
+          "agent_id": "coordinator",
+          "sessionId": "minimal-chain-20261020-dsh-glm-low-r1-coordinator-8d9511d4d904",
+          "code": "SERVER",
+          "http_status": 500
+        },
+        {
+          "agent_id": "coordinator",
+          "sessionId": "minimal-chain-20261020-dsh-glm-low-r1-coordinator-8d9511d4d904",
+          "code": "SERVER",
+          "http_status": 500
+        },
+        {
+          "agent_id": "coordinator",
+          "sessionId": "minimal-chain-20261020-dsh-glm-low-r1-coordinator-8d9511d4d904",
+          "code": "SERVER",
+          "http_status": 500
+        }
+      ],
+      "native_error_counts": {},
+      "atomic_applications": [],
+      "terminal_handoff": [],
+      "handoff": [],
+      "acceptance": []
+    },
+    {
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r2",
+      "semantic_start": [
+        {
+          "baseline_hash": "63f1e7a2172d1374eb6e3cbbed7134342d31c9fc6fd06677b5b89892ba5409ff",
+          "recorded_at": "2026-10-19T17:00:19.762150+00:00"
+        }
+      ],
+      "submission_calls": [
+        {
+          "seq": 28,
+          "call_id": "call_ac96cfed532b498596001912",
+          "argument_sha256": "48d45daa141dedcf3751fec565fdec21f53060bbae7221d448ceb049dcadbf56",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "item_id",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "item_id",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 76,
+          "call_id": "call_bd3a85be4e7d4e8eb4c99a88",
+          "argument_sha256": "6be0c28312cfdb5f259b00a46ddc74f74845c481619b8288fceb4f50f7f57091",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "item_id",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "item_id",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 108,
+          "call_id": "call_ec714102f4cb426d8d019a45",
+          "argument_sha256": "6be0c28312cfdb5f259b00a46ddc74f74845c481619b8288fceb4f50f7f57091",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "item_id",
+              "resource_kind",
+              "target_ref"
+            ],
+            [
+              "action",
+              "change_id",
+              "fields",
+              "item_id",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        },
+        {
+          "seq": 113,
+          "call_id": "call_a6e83e7b95174921ba935ef5",
+          "argument_sha256": "fcc64c0e3272afc841ddc7927bfe128b8440f192aad1fb9d1794198de356b5bb",
+          "change_keys": [
+            [
+              "action",
+              "change_id",
+              "fields",
+              "item_id",
+              "resource_kind",
+              "target_ref"
+            ]
+          ]
+        }
+      ],
+      "provider_errors": [
+        {
+          "agent_id": "coordinator",
+          "sessionId": "minimal-chain-20261020-dsh-glm-low-r2-coordinator-7e435b37865c",
+          "code": "SERVER",
+          "http_status": 500
+        },
+        {
+          "agent_id": "coordinator",
+          "sessionId": "minimal-chain-20261020-dsh-glm-low-r2-coordinator-7e435b37865c",
+          "code": "SERVER",
+          "http_status": 500
+        },
+        {
+          "agent_id": "coordinator",
+          "sessionId": "minimal-chain-20261020-dsh-glm-low-r2-coordinator-7e435b37865c",
+          "code": "SERVER",
+          "http_status": 500
+        }
+      ],
+      "native_error_counts": {
+        "unconsumed_dsh_input": 7
+      },
+      "atomic_applications": [
+        {
+          "attempt_id": "b8c6caef-e061-4d39-ba08-0f0b02982d67",
+          "attempt_status": "applied",
+          "batch_id": "f45d0141-99eb-4d0e-b4be-66fcbaadc5ff",
+          "client_batch_id": "direct-batch:minimal-chain-20261020-dsh-glm-low-r2:r4-3-026-minimal-installation-chain:0:504ff04ccd51c2e34c6cd89bd55016198b69d16a08cb86528b9563b44397b5b8",
+          "content_hash": "c5c5291e6a320cad6db17a70d14bd713495bd7f126006f51b6be02ceb1e651bb",
+          "event": "submission-attempt-proof-written",
+          "idempotency_key": "direct-apply:minimal-chain-20261020-dsh-glm-low-r2:r4-3-026-minimal-installation-chain:875df9c5-1163-46f1-b2ef-4b2fff1d0341:504ff04ccd51c2e34c6cd89bd55016198b69d16a08cb86528b9563b44397b5b8",
+          "intent_ordinal": 1,
+          "mode": "apply_atomic",
+          "plan_ref": null,
+          "projection_digest": null,
+          "receipt_ordinal": 1,
+          "recorded_at": "2026-10-19T17:04:03.067907+00:00",
+          "response_digest": "sha256:2a53383df660eca3ab6ba32a327b98163f3e3b7522bab51c86043e9dc67c150d",
+          "schema_version": "r3-0-014-attempt-proof/v1",
+          "workspace_before_version": 0
+        },
+        {
+          "attempt_id": "68c2cb37-2b47-47d1-9741-91b333c06752",
+          "attempt_status": "applied",
+          "batch_id": "04f9aa26-17c9-4e11-9b69-5d5ae4f46fff",
+          "client_batch_id": "direct-batch:minimal-chain-20261020-dsh-glm-low-r2:r4-3-026-minimal-installation-chain:0:601cba1201d42c31cc1b47b32880c7428d0d33e89273c27938cfe58b373215d1",
+          "content_hash": "14d07111ee831aee37120ca7deca95efd1a822172931f0559de8ef02d631ef29",
+          "event": "submission-attempt-proof-written",
+          "idempotency_key": "direct-apply:minimal-chain-20261020-dsh-glm-low-r2:r4-3-026-minimal-installation-chain:875df9c5-1163-46f1-b2ef-4b2fff1d0341:601cba1201d42c31cc1b47b32880c7428d0d33e89273c27938cfe58b373215d1",
+          "intent_ordinal": 2,
+          "mode": "apply_atomic",
+          "plan_ref": null,
+          "projection_digest": null,
+          "receipt_ordinal": 2,
+          "recorded_at": "2026-10-19T17:04:32.357197+00:00",
+          "response_digest": "sha256:12f6833f1989fee263686cdfb4c68fbc9edd81f9d92cd58eacaf5c176c7e40e9",
+          "schema_version": "r3-0-014-attempt-proof/v1",
+          "workspace_before_version": 1
+        }
+      ],
+      "terminal_handoff": [
+        {
+          "handoff_id": "terminal-handoff-1",
+          "recipient_id": "coordinator",
+          "recorded_at": "2026-10-19T17:09:42.150742+00:00"
+        }
+      ],
+      "handoff": [
+        {
+          "recorded_at": "2026-10-19T17:15:18.359166+00:00",
+          "write_phase": "read-only",
+          "readiness": {
+            "applied_batches": [
+              {
+                "batch_id": "f45d0141-99eb-4d0e-b4be-66fcbaadc5ff",
+                "intent_ordinal": 1,
+                "mode": "apply_atomic",
+                "response_digest": "sha256:2a53383df660eca3ab6ba32a327b98163f3e3b7522bab51c86043e9dc67c150d"
+              },
+              {
+                "batch_id": "04f9aa26-17c9-4e11-9b69-5d5ae4f46fff",
+                "intent_ordinal": 2,
+                "mode": "apply_atomic",
+                "response_digest": "sha256:12f6833f1989fee263686cdfb4c68fbc9edd81f9d92cd58eacaf5c176c7e40e9"
+              }
+            ],
+            "blocked_agents": [],
+            "checks": [
+              "delivery",
+              "quiescence",
+              "write-determinism",
+              "apply-closure",
+              "scope-binding"
+            ],
+            "in_flight_writes": [],
+            "not_applied": [],
+            "pending_agents": [],
+            "pending_writes": false,
+            "production_roles": [
+              "coordinator",
+              "modeling",
+              "protocol"
+            ],
+            "ready": true,
+            "role_states": {
+              "coordinator": "completed",
+              "modeling": "completed"
+            },
+            "unknown_writes": [],
+            "write_phase": "read-only"
+          },
+          "freeze_id": "cq-batch-0001",
+          "freeze_digest": "sha256:e4dc035135b22febbfd6fae9aa7c56b5fa6a954b2da30e3d57a39281be859ff7"
+        }
+      ],
+      "acceptance": [
+        {
+          "acceptance_attempt_id": "attempt-0001",
+          "acceptance_phase": "acceptance_complete",
+          "batch_id": "cq-batch-0001",
+          "cq_verdict": "pass",
+          "freeze_digest": "sha256:e4dc035135b22febbfd6fae9aa7c56b5fa6a954b2da30e3d57a39281be859ff7",
+          "freeze_id": "cq-batch-0001",
+          "recorded_at": "2026-10-19T17:18:13.060438+00:00",
+          "report_digest": "sha256:e3dc911b829b9e85c3f302ed0b6561d78906ea01a0519346882a55afb9e49c07",
+          "report_directory": "acceptance-v3/reports/cq-batch-0001/attempt-0001"
+        }
+      ]
+    }
+  ],
+  "quality_metadata": [
+    {
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r2",
+      "batch_id": "cq-batch-0001",
+      "runtime": "dsh",
+      "acceptance_mode": "read-only-acceptance",
+      "blind_status": {
+        "blind_status": "non-blind-regression",
+        "exposed_question_ids": [
+          "mic-concepts"
+        ],
+        "exposure_evidence_digest": "sha256:1bc48997d3755c035a8d497e49bddd908aeee8d207e19b4560bd1394451e93e8",
+        "exposure_record_count": 1
+      },
+      "freeze_digest": "sha256:e4dc035135b22febbfd6fae9aa7c56b5fa6a954b2da30e3d57a39281be859ff7",
+      "model_binding_digest": "sha256:2cd82cf9e9b83a8a8a2d3c5381bdba38d64fa21051085dc36963b716a3d9078d",
+      "full_pass": true,
+      "executed_question_ids": [
+        "mic-concepts"
+      ],
+      "unexecuted_question_ids": [],
+      "coverage_gaps": {
+        "cross_slice_projection_gap": false,
+        "empty_public_set": false,
+        "model_state_drift": [],
+        "notes": [
+          "public non-blind regression coverage; hidden acceptance is separate"
+        ],
+        "slices_without_public_question": []
+      },
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-concepts": "stable"
+        },
+        "replayed_responses": 1,
+        "unavailable": []
+      },
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r2/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "verdicts": [
+        {
+          "question_id": "mic-concepts",
+          "verdict": "pass",
+          "failure_layer": null,
+          "answer_points_supported": null,
+          "missing_answer_points": null,
+          "status": null
+        }
+      ]
+    },
+    {
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r2",
+      "batch_id": "cq-batch-0001",
+      "runtime": "dsh",
+      "acceptance_mode": "read-only-acceptance",
+      "blind_status": {
+        "blind_status": "non-blind-regression",
+        "exposed_question_ids": [
+          "mic-concepts"
+        ],
+        "exposure_evidence_digest": "sha256:1bc48997d3755c035a8d497e49bddd908aeee8d207e19b4560bd1394451e93e8",
+        "exposure_record_count": 1
+      },
+      "freeze_digest": "sha256:e4dc035135b22febbfd6fae9aa7c56b5fa6a954b2da30e3d57a39281be859ff7",
+      "model_binding_digest": "sha256:2cd82cf9e9b83a8a8a2d3c5381bdba38d64fa21051085dc36963b716a3d9078d",
+      "full_pass": true,
+      "executed_question_ids": [
+        "mic-direction",
+        "mic-ownership",
+        "mic-unknowns"
+      ],
+      "unexecuted_question_ids": [],
+      "coverage_gaps": {
+        "cross_slice_projection_gap": false,
+        "empty_hidden_set": false,
+        "model_state_drift": [],
+        "notes": [
+          "coverage gaps are recorded per scope"
+        ],
+        "slices_without_hidden_question": []
+      },
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-direction": "stable",
+          "mic-ownership": "stable",
+          "mic-unknowns": "stable"
+        },
+        "replayed_responses": 4,
+        "unavailable": []
+      },
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r2/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "verdicts": [
+        {
+          "question_id": "mic-direction",
+          "verdict": "pass",
+          "failure_layer": null,
+          "answer_points_supported": null,
+          "missing_answer_points": null,
+          "status": null
+        },
+        {
+          "question_id": "mic-ownership",
+          "verdict": "pass",
+          "failure_layer": null,
+          "answer_points_supported": null,
+          "missing_answer_points": null,
+          "status": null
+        },
+        {
+          "question_id": "mic-unknowns",
+          "verdict": "pass",
+          "failure_layer": null,
+          "answer_points_supported": null,
+          "missing_answer_points": null,
+          "status": null
+        }
+      ]
+    }
+  ],
+  "standby_receipt": {
+    "ack_type": "standby",
+    "action": "standby",
+    "content_digest": "sha256:d84795c4582387f8c5ad1a3bb2475ee7ef715a993eb3be54d76e033837450286",
+    "outcome": "accepted",
+    "recorded_at": "2026-10-19T17:18:41.261662+00:00",
+    "request_id": "delivery-69b8311943ec8f77b163157f88fd6bb9"
+  },
+  "limitations": [
+    "Token records are native reported numeric usage, not complete provider billing. Cached inputs already included; reasoning and compaction are subsets.",
+    "GLM auxiliary SSE usage observer remains disabled per prior user decision; missing cache-write/reasoning fields stay unknown.",
+    "Retrospective/code/test work after delivery is separate engineering cost, not silently counted as savings or erased.",
+    "Phase switch adoption is verified; aggregate decrease does not by itself prove its causal gain or full R4.3-030 acceptance."
+  ],
+  "post_delivery_engineering_host_tokens": {
+    "from": "2026-10-19T17:18:24.164Z",
+    "through": "2026-10-19T17:30:53.167Z",
+    "usage_delta": {
+      "input_tokens": 9873476,
+      "cached_input_tokens": 9763712,
+      "output_tokens": 43065,
+      "reasoning_output_tokens": 26207,
+      "total_tokens": 9916541
+    },
+    "scope": "retrospective, optimization development/tests and documentation after task closure; later tail excluded; separate from modeled-task lower bound"
+  }
+}

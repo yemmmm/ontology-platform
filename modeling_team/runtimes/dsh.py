@@ -876,22 +876,26 @@ class DshRuntimeAdapter(RuntimeAdapter):
     def terminal_report_blocked(self, agent_id, already_synchronized=False, status="completed"):
         with self._lock:
             agent = self.agents[agent_id]
-            blocked = bool(
-                status == "completed"
-                and (
-                    agent.dispatching
-                    or any(
-                        row["state"] in {"queued", "unknown"}
-                        for row in self.dispatch_status(agent_id)
-                    )
-                )
-            )
-            if blocked:
+            if status != "completed":
+                return False
+            states = [row["state"] for row in self.dispatch_status(agent_id)]
+            queued, unknown = states.count("queued"), states.count("unknown")
+            if agent.dispatching or queued or unknown:
                 from ..transport_mcp import RoutingError
 
+                counts, actions = [], []
+                if queued:
+                    counts.append(f"queued={queued}")
+                    actions.append("end this activity to receive queued handoffs")
+                if unknown:
+                    counts.append(f"unknown={unknown}")
+                    actions.append("Host reconciliation for unknown dispatches")
+                if agent.dispatching:
+                    counts.append(f"in_flight={agent.dispatching}")
+                    actions.append("wait for original dispatch receipt")
                 raise RoutingError(
-                    "unconsumed DSH input; end this activity to receive queued handoffs, "
-                    "then retry report_task_result; unknown dispatches require Host reconciliation",
+                    f"unconsumed DSH input ({', '.join(counts)}); "
+                    + "; ".join(actions) + "; then retry",
                     code="runtime_input_pending",
                 )
             return False

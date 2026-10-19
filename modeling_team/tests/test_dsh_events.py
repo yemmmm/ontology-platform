@@ -116,10 +116,47 @@ def test_notifications_before_rpc_response_bind_only_the_native_message(tmp_path
     with pytest.raises(RoutingError, match="end this activity") as failure:
         adapter.terminal_report_blocked("modeling")
     assert failure.value.code == "runtime_input_pending"
+    assert "queued=1" in str(failure.value)
+    assert "unknown" not in str(failure.value)
+    from modeling_team.transport_mcp import TeamTransportBroker, mcp_response
+
+    import json
+    from modeling_team.runner import TeamRunner
+
+    runner = TeamRunner(repository_root=tmp_path, adapter=adapter)
+    runner.run = SimpleNamespace(root=tmp_path)
+    broker = TeamTransportBroker(
+        tmp_path / "broker", set(),
+        terminal_report_guard=adapter.terminal_report_blocked,
+        transport_event_observer=runner._append_team_transport_event,
+    )
+    report = {"method": "tools/call", "params": {
+        "name": "report_task_result", "arguments": {"status": "completed", "summary": "done"},
+    }}
+    with pytest.raises(RoutingError, match="queued=1"):
+        mcp_response(report, broker=broker, agent_id="modeling")
+    evidence = tmp_path / "evidence/team-transport-events.jsonl"
+    assert evidence.exists(), "runtime input rejection must reach Host evidence"
+    assert json.loads(evidence.read_text().splitlines()[-1])["category"] == "runtime_input_pending"
+    assert "modeling" not in broker.results
     assert adapter.terminal_report_blocked("modeling", status="blocked") is False
     agent.projection.append(event(4, "turn/start", turn=2))
     agent.projection.append(claim(5))
     assert adapter.terminal_report_blocked("modeling") is False
+    mcp_response(report, broker=broker, agent_id="modeling")
+    assert json.loads(evidence.read_text().splitlines()[-1])["category"] == "terminal_report_accepted"
+    assert broker.results["modeling"].status == "completed"
+
+
+def test_pending_input_projection_identifies_the_role_without_raw_report_text():
+    from modeling_team.delivery import _decision_event_metadata
+
+    projected = _decision_event_metadata({"source": "team-transport-events.jsonl", "data": {
+        "agent": "modeling", "tool": "report_task_result", "status": "rejected",
+        "category": "runtime_input_pending", "ack": "not_applicable", "recorded_at_ns": 1,
+    }})
+    assert projected["data"]["agent_id"] == "modeling"
+    assert projected["data"]["category"] == "runtime_input_pending"
 
 
 def test_unknown_enqueue_has_no_invented_native_id_and_only_exact_response_reconciles(tmp_path):
@@ -147,6 +184,12 @@ def test_unknown_enqueue_has_no_invented_native_id_and_only_exact_response_recon
     assert (
         record["state"] == "unknown" and record["message_id"] is None and record["turn_id"] is None
     )
+    from modeling_team.transport_mcp import RoutingError
+
+    with pytest.raises(RoutingError, match="unknown=1") as failure:
+        adapter.terminal_report_blocked("modeling")
+    assert "Host reconciliation" in str(failure.value)
+    assert "end this activity" not in str(failure.value)
     old_instance = agent.instance
     agent.instance = "different-process"
     adapter._reconcile_enqueue(agent, {"id": 7, "result": {"messageId": "wrong-instance"}})
@@ -158,3 +201,21 @@ def test_unknown_enqueue_has_no_invented_native_id_and_only_exact_response_recon
     agent.projection.append(queued(0, "original-native-id"))
     assert adapter.dispatch_status("modeling")[0]["message_id"] == "original-native-id"
     assert adapter.dispatch_status("modeling")[0]["state"] == "queued"
+
+
+def test_terminal_report_waits_for_original_inflight_dispatch_receipt(tmp_path):
+    from types import SimpleNamespace
+    from modeling_team.runtimes.dsh import DshRuntimeAdapter, _DshAgent
+    from modeling_team.transport_mcp import RoutingError
+
+    adapter = DshRuntimeAdapter(repository_root=tmp_path)
+    agent = _DshAgent("modeling", SimpleNamespace(role="modeling"), tmp_path, "s")
+    agent.projection = DispatchProjection("s")
+    agent.dispatching = 1
+    adapter.agents["modeling"] = agent
+    with pytest.raises(RoutingError, match="in_flight=1") as failure:
+        adapter.terminal_report_blocked("modeling")
+    assert "original dispatch receipt" in str(failure.value)
+    assert "Host reconciliation" not in str(failure.value)
+    agent.dispatching = 0
+    assert adapter.terminal_report_blocked("modeling") is False

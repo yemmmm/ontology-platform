@@ -5,6 +5,11 @@ description: Supervise one authorized ontology delivery through the restricted H
 
 # Independent Delivery
 
+For terminal-report `runtime_input_pending`, distinguish actual queued, unknown and
+in-flight input. `ack=not_applicable` is audit metadata, not a capability rejection.
+Check current terminal receipts and issue state before escalating an old refusal or
+repeating pause/resolution; additional reminders can keep the recipient queue nonempty.
+
 Use this skill only in the independent Host-private Delivery thread. Do not
 load it into the production Coordinator, Modeling, Protocol, Consumer, Judge,
 or a testing business answerer.

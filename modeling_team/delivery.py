@@ -449,7 +449,7 @@ def _decision_event_metadata(event: Any) -> Any:
     if isinstance(projected.get("result"), (dict, list)):
         projected.pop("result")
     if (source == "team-transport-events.jsonl"
-            and data.get("category") == "terminal_report_accepted"
+            and data.get("category") in {"terminal_report_accepted", "runtime_input_pending"}
             and isinstance(data.get("agent"), str)):
         projected["agent_id"] = data["agent"]
     if source == "dsh-provider.jsonl":

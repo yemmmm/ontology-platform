@@ -480,7 +480,7 @@ class RecoverableIssueLedger:
         )
         if action == "pause":
             if active.state != "reported":
-                raise IssueError("issue pause is not valid in current state")
+                raise IssueError(f"issue pause is not valid in current state: {active.state}")
             active.state = "pause_sent"
             self._record("pause_sent", issue_id=issue_id)
             active.state = "waiting_repair" if active.report.category == "platform_repair" else "waiting_owner"
