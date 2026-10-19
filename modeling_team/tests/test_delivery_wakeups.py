@@ -876,3 +876,98 @@ def test_malformed_dsh_wire_stays_an_observable_decision(tmp_path, data):
     update['runs']['run']['events'] = _events_page([
         {'source': 'dsh-wire.jsonl', 'byte_offset': 0, 'data': data}], next_cursor='next')
     assert host.record_observation(update)
+
+
+def _diagnostic_update(index, *, source="new-plugin.jsonl", **fields):
+    raw = observation()
+    data = {"event": "diagnostic", "code": "meter_unavailable", "status": "degraded",
+            "request_id": f"request-{index}", "recorded_at": f"time-{index}",
+            "count": index, **fields}
+    raw["runs"]["run"]["events"] = _events_page([
+        {"source": source, "byte_offset": index * 100, "data": data}],
+        next_cursor=f"diagnostic-{index}")
+    return raw
+
+
+@pytest.mark.parametrize("source", ["new-plugin.jsonl", "dsh-provider.jsonl"])
+def test_diagnostic_state_changes_not_log_appends_wake(tmp_path, source):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    extra = ({"schema_version": "model-usage-capture/v1", "event": "response_usage",
+              "status": "completed", "http_status": 200, "usage_complete": False,
+              "usage_issues": ["input_outside_start:input_tokens"]}
+             if source == "dsh-provider.jsonl" else {})
+    assert host.record_observation(_diagnostic_update(1, source=source, **extra))
+    for index in range(2, 13):
+        assert not host.record_observation(_diagnostic_update(index, source=source, **extra))
+    while host._pending_decisions:
+        host._dispatch_observation(_StubNativeRuntime(), {
+            "kind": "host_observation", "data": host._model_observation()}, steer=False)
+    # A real business change wakes, without reinjecting the repeated diagnostic.
+    current = _diagnostic_update(13, source=source, **extra)
+    current["runs"]["run"]["pending"]["data"]["items"][0]["id"] = "new-review"
+    assert host.record_observation(current)
+    payload = host._model_observation()
+    assert not any(row["path"][:3] == ["runs", "run", "events"] for row in payload["changes"])
+    assert payload["raw_observation"]["excluded_noise_event_records"] == 1
+    assert json.loads((host.session_root / "observation.json").read_text())["data"] == current
+
+
+def test_diagnostic_change_recovery_and_recurrence_wake(tmp_path):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    assert host.record_observation(_diagnostic_update(1))
+    assert not host.record_observation(_diagnostic_update(2))
+    assert host.record_observation(_diagnostic_update(3, code="different_fault"))
+    assert host.record_observation(_diagnostic_update(4, status="recovered", code="meter_unavailable"))
+    assert not host.record_observation(_diagnostic_update(5, status="recovered", code="meter_unavailable"))
+    assert host.record_observation(_diagnostic_update(6))
+    assert host.record_observation(_diagnostic_update(7, object="another-affected-object"))
+
+
+def test_successful_meter_receipt_wakes_only_for_recovery(tmp_path):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    good = {"schema_version": "model-usage-capture/v1", "event": "response_usage",
+            "code": None, "status": "completed", "http_status": 200,
+            "usage_complete": True, "usage_issues": []}
+    assert not host.record_observation(_diagnostic_update(1, source="dsh-provider.jsonl", **good))
+    assert host.record_observation(_diagnostic_update(2, source="dsh-provider.jsonl",
+        **{**good, "usage_complete": False, "usage_issues": ["missing_input"]}))
+    assert host.record_observation(_diagnostic_update(3, source="dsh-provider.jsonl", **good))
+    assert not host.record_observation(_diagnostic_update(4, source="dsh-provider.jsonl", **good))
+
+
+def test_diagnostic_dedup_survives_delivery_restore(tmp_path):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    assert host.record_observation(_diagnostic_update(1))
+    restored = type(host)(repository_root=host.repository_root, session_root=host.session_root,
+                          config=host.config, resume=True)
+    assert not restored.record_observation(_diagnostic_update(2))
+    assert restored.record_observation(_diagnostic_update(3, code="new_fault"))
+
+
+@pytest.mark.parametrize("binding", ["write_state", "mutation_state", "control_epoch",
+                                     "authorization_reference", "review_id", "operation_id"])
+def test_problem_folding_preserves_effectful_request_bindings(tmp_path, binding):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    assert host.record_observation(_diagnostic_update(1, **{binding: "unknown"}))
+    assert host.record_observation(_diagnostic_update(2, **{binding: "unknown"}))
+
+
+def test_unfamiliar_ordinary_record_repeats_fold_but_opaque_content_changes_wake(tmp_path):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    def update(index, value):
+        raw = observation()
+        raw["runs"]["run"]["events"] = _events_page([{
+            "source": "future-plugin.jsonl", "byte_offset": index * 100,
+            "data": {"event": "future-notification", "seq": index,
+                     "recorded_at": str(index), "opaque": {"value": value}}}],
+            next_cursor=str(index))
+        return raw
+    assert host.record_observation(update(1, "first"))
+    assert not host.record_observation(update(2, "first"))
+    assert host.record_observation(update(3, "changed"))

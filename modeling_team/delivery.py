@@ -458,6 +458,46 @@ def _decision_event_metadata(event: Any) -> Any:
     return {**event, "data": projected}
 
 
+def _diagnostic_state(event: Any) -> tuple[str, str, bool] | None:
+    """Fold typed diagnostics by current problem state, not append/request identity.
+
+    This is shared by runtimes and unfamiliar plugins. Effectful bindings keep
+    per-record handling; opaque payload changes retain their full content. Only
+    diagnostic-owned counters/request identities are ignored; business dictionaries
+    are untouched.
+    """
+    if not isinstance(event, dict) or event.get("corrupt") or event.get("truncated"):
+        return None
+    data, source = event.get("data"), event.get("source")
+    if not isinstance(data, dict) or not isinstance(source, str):
+        return None
+    protected = {"write_state", "mutation_state", "control_epoch", "authorization_reference",
+                 "authorization_valid_until", "review_id", "content_version", "content_digest",
+                 "operation_id", "issue_id", "report_binding", "pending_actions"}
+
+    def has_binding(value):
+        if isinstance(value, dict):
+            return bool(protected.intersection(value)) or any(has_binding(v) for v in value.values())
+        return isinstance(value, list) and any(has_binding(v) for v in value)
+
+    if has_binding(data) or "receipt" in source or "control" in source or source.startswith("cq-"):
+        return None
+    diagnostic = bool({"code", "error", "error_type", "diagnostic", "usage_issues",
+                       "provider_error"}.intersection(data)) or _event_needs_action(data)
+    volatile = {"recorded_at", "timestamp", "received_at", "seq", "clock_ref",
+                "monotonic_start_ns", "monotonic_end_ns"}
+    if diagnostic:
+        volatile.update({"request_id", "provider_request_id", "response_id", "start",
+                         "headers_at", "end", "count", "attempt_index", "time_basis"})
+    if data.get("schema_version") == "model-usage-capture/v1":
+        volatile.update({"raw_usage", "present_fields", "field_positions", "request_shape"})
+    current = {key: value for key, value in data.items() if key not in volatile}
+    stream = {key: data[key] for key in ("event", "type", "category", "method", "plugin",
+              "agent_id", "agent", "role", "provider", "runtime_session_id", "process_instance",
+              "object", "target", "resource_id", "purpose") if key in data}
+    return (_json_bytes([source, stream]).decode(), _digest_bytes(_json_bytes(current)), diagnostic)
+
+
 def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]]) -> Any:
     """Project one incremental events page onto cumulative decision content.
 
@@ -479,15 +519,15 @@ def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]])
     projected = {key: value for key, value in page.items()
                  if key not in _DECISION_EVENT_NOISE_KEYS and key != "events"}
     run_state = state.setdefault(run_id, {"seen": set(), "chain": ""})
+    run_state["selected"] = []
+    problems = run_state.setdefault("problem_states", {})
     for event in page.get("events") or []:
-        if _is_decision_event_noise(event):
+        noise = _is_decision_event_noise(event)
+        problem = _diagnostic_state(event)
+        if noise and (problem is None or not problem[2]):
             continue
-        event = _decision_event_metadata(event)
-        canonical: Any = event
         identity: str | None = None
         if isinstance(event, dict):
-            canonical = {key: value for key, value in event.items()
-                         if key not in _DECISION_EVENT_NOISE_KEYS}
             source = event.get("source")
             if isinstance(source, str):
                 offset = event.get("byte_offset")
@@ -497,6 +537,17 @@ def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]])
             if identity in run_state["seen"]:
                 continue
             run_state["seen"].add(identity)
+        if problem is not None:
+            key, signature, _ = problem
+            previous = problems.get(key)
+            problems[key] = signature
+            if previous == signature or (noise and previous is None):
+                continue
+        event = _decision_event_metadata(event)
+        run_state["selected"].append(event)
+        canonical = ({key: value for key, value in event.items()
+                      if key not in _DECISION_EVENT_NOISE_KEYS}
+                     if isinstance(event, dict) else event)
         encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True)
         run_state["chain"] = hashlib.sha256(
             (run_state["chain"] + "\x00" + encoded).encode("utf-8")).hexdigest()
@@ -2730,7 +2781,8 @@ class DeliverySession:
                 self._last_decision_digest = record["decision_digest"]
                 self._event_cursors.update(record.get("event_cursors", {}))
                 self._decision_event_state = {
-                    key: {"seen": set(value["seen"]), "chain": value["chain"]}
+                    key: {"seen": set(value["seen"]), "chain": value["chain"],
+                          "problem_states": value.get("problem_states", {})}
                     for key, value in record.get("decision_event_state", {}).items()}
             elif event == "delivery_yield":
                 self.last_yield = record
@@ -2802,8 +2854,8 @@ class DeliverySession:
                     envelope = copy.deepcopy(envelope)
                     page = envelope.get("data", {})
                     events = page.get("events", [])
-                    page["events"] = [_decision_event_metadata(item) for item in events
-                                      if not _is_decision_event_noise(item)]
+                    page["events"] = copy.deepcopy(
+                        self._decision_event_state.get(run_id, {}).get("selected", []))
                     excluded += len(events) - len(page["events"])
                     self._locate_decision_events(run_id, page["events"])
                 run["events"] = envelope
@@ -2820,7 +2872,8 @@ class DeliverySession:
                 "snapshot": current, "changes": changes, "fingerprint_state": decision,
                 "changed_operations": changed_operations,
                 "decision_digest": digest, "event_cursors": self._event_cursors,
-                "decision_event_state": {key: {"seen": sorted(value["seen"]), "chain": value["chain"]}
+                "decision_event_state": {key: {"seen": sorted(value["seen"]), "chain": value["chain"],
+                    "problem_states": value.get("problem_states", {})}
                     for key, value in self._decision_event_state.items()}}
             offset, byte_length = append_session_event(self.session_root, packet)
             self._pending_decisions.append({"input_id": input_id, "byte_offset": offset,
