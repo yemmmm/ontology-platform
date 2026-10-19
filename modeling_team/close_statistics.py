@@ -1148,3 +1148,11 @@ def publish_close_statistics(
     finally:
         if temporary is not None:
             shutil.rmtree(temporary, ignore_errors=True)
+        if view == "run_close":
+            # This attachment is outside the numeric publication failure path.
+            # It must never turn a ready report or cleanup result into failure.
+            try:
+                from .work_board import archive_work_board
+                archive_work_board(root, root.name, read_close_statistics(root))
+            except Exception:
+                LOG.warning("work_board_archive_unavailable")

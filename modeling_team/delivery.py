@@ -49,6 +49,7 @@ _READ = {
     "get_run_status", "get_run_events", "get_pending_actions", "get_request_result",
     "inspect_checkpoints", "get_evaluation_status", "get_repair_status",
     "read_platform_record", "reconcile_write_state",
+    "get_team_work_board",
 }
 _MODEL_QUERIES = {"get_run_status", "get_pending_actions", "get_evaluation_status",
                   "get_request_result"}
@@ -293,6 +294,10 @@ def _is_decision_event_noise(event: Any) -> bool:
     source, data = event.get("source"), event.get("data")
     if not isinstance(data, dict):
         return False
+    if source == "work-board-events.jsonl" and data.get("schema_version") == "team-work-board/v1":
+        # The actual peer message, failure or formal issue still follows its
+        # original channel. Advisory report bookkeeping never wakes Delivery.
+        return True
     if source == "dsh-wire.jsonl":
         frame = data.get("frame")
         if isinstance(frame, dict):
@@ -388,7 +393,8 @@ def _is_decision_event_noise(event: Any) -> bool:
     if source == "dynamic-tool-calls.jsonl":
         return data.get("result") == "accepted" and data.get("tool") in {
             "read_handoff_material", "inspect_handoff_material",
-            "list_handoff_materials", "get_run_status",
+            "list_handoff_materials", "get_run_status", "update_work_card",
+            "get_work_board", "resolve_work_request",
         }
     if source not in {"provider-attempts.jsonl", "dsh-provider.jsonl"}:
         return False
@@ -1688,6 +1694,13 @@ class DeliverySession:
                 events.append(event)
                 continue
             source = event.get("source")
+            if source == "work-board-events.jsonl":
+                # Routine observations carry bookkeeping only. The explicit
+                # board tool provides the authorized on-demand flow projection.
+                item = event.get("data", {})
+                events.append({**event, "data": {k: item[k] for k in (
+                    "schema_version", "kind", "record_seq", "recorded_at") if k in item}})
+                continue
             if not self._event_source_public(source):
                 events.append(self._strip_material_fields(event))
                 continue
@@ -2045,6 +2058,15 @@ class DeliverySession:
                     continue
                 if path.is_relative_to(root):
                     relative = path.relative_to(root)
+                    private_board_files = {"evidence/work-board-events.jsonl",
+                        "evidence/work-board-retrospective.json", "evidence/close-statistics.json"}
+                    private_board_roots = {"evidence/work-board-retrospectives",
+                        "evidence/close-statistics", "evidence/close-statistics-capture"}
+                    name = relative.as_posix()
+                    if name in private_board_files or any(name.startswith(prefix + "/") for prefix in private_board_roots):
+                        raise HostOpError("artifact_forbidden",
+                            "raw work-board/statistics originals are Host-private; use get_team_work_board for the authorized flow projection",
+                            retryable=True, next_action="select the same run/agent/history through get_team_work_board")
                     approved = relative.parts[0] in {
                         "competency-questions", "acceptance-v3", "evidence", "manifest-snapshots",
                         "early-feedback",
@@ -2530,6 +2552,8 @@ class DeliverySession:
             if name == "submit_cq_review":
                 args["content_digest_value"] = args.pop("content_digest")
             args["repository_root"] = self.repository_root
+            if name == "get_team_work_board":
+                args["_projection"] = "delivery"
             inspect.signature(operation).bind(**args)
             if name == "start_run":
                 self.run_ids.add(args["run_id"])

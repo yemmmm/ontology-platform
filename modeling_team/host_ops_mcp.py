@@ -1,8 +1,8 @@
 """R3.0-016 S1+S2 and R4.0-023 host-only MCP tool surface.
 
-A stdio MCP server named ``modeling-team-host`` exposing exactly the fixed
-28 tools over the local operation layers: the original
-12 read/submission tools of S1 plus the 8 S2 start/lifecycle/checkpoint
+A stdio MCP server named ``modeling-team-host`` exposing the enumerated
+tools over the local operation layers: the original
+S1 read/submission tools (including the R4.4-001 work-board query) plus S2 start/lifecycle/checkpoint
 tools (``start_run``, ``pause_run``, ``resume_live_run``, ``stop_run``,
 ``inspect_checkpoints``, ``save_checkpoint``, ``resume_from_checkpoint``,
 ``settle_source_run``), plus eight Delivery instruction, evaluation, repair
@@ -38,6 +38,7 @@ from .host_ops import (
     get_request_result,
     get_run_events,
     get_run_status,
+    get_team_work_board,
     inspect_checkpoints,
     pause_run,
     recover_provider,
@@ -109,6 +110,25 @@ def tool_get_run_events(
     claim of causality.  Strictly read-only: no drain, no writes.
     """
     return _call(get_run_events, run_id, cursor=cursor, limit=limit)
+
+
+@mcp.tool(name="get_team_work_board")
+def tool_get_team_work_board(
+    run_id: str, agent_id: str | None = None, request_id: str | None = None,
+    view: Literal["current", "history", "version"] = "current",
+    from_time: str | None = None, to_time: str | None = None, record_seq: int | None = None,
+    cursor: str | None = None, source_ref: dict[str, Any] | None = None,
+    limit: int = 25, include_statistics: bool = False,
+) -> dict[str, Any]:
+    """Read authorized work reports, shared requests, fixed-prefix history and optional published statistics.
+
+    Times require a timezone and filter history only. The source/cursor fixes a
+    retained prefix; source_ref={archive_ref: returned-index} selects an archive.
+    Does not dispatch messages, start inference, or recalculate usage.
+    """
+    return _call(get_team_work_board, run_id, agent_id=agent_id, request_id=request_id,
+        view=view, from_time=from_time, to_time=to_time, record_seq=record_seq,
+        cursor=cursor, source_ref=source_ref, limit=limit, include_statistics=include_statistics)
 
 
 @mcp.tool(name="get_pending_actions")
@@ -878,6 +898,7 @@ def tool_consult_team(
 S1_TOOL_NAMES = (
     "get_run_status",
     "get_run_events",
+    "get_team_work_board",
     "get_pending_actions",
     "answer_question",
     "register_question",

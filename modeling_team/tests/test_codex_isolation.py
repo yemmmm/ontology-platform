@@ -548,7 +548,8 @@ class CodexIsolationTests(unittest.TestCase):
             proof_gate=True,
         )
         expected_protocol = [
-            {"name": "team_transport", "tools": [{"name": "send_team_message"}, {"name": "report_task_result"}]},
+            {"name": "team_transport", "tools": [{"name": name} for name in (
+                "send_team_message", "report_task_result", "update_work_card", "get_work_board", "resolve_work_request")]},
             {"name": "ontology_platform", "tools": [{"name": "check_platform_health"}]},
             {
                 "name": "protocol_mechanics",
@@ -1860,6 +1861,9 @@ class CodexIsolationTests(unittest.TestCase):
                 (root / "modeling_team/interventions.py").read_bytes(),
             )
             self.assertEqual(stat.S_IMODE(staged_interventions.stat().st_mode), 0o444)
+            staged_board = agent.home / "work_board.py"
+            self.assertEqual(staged_board.read_bytes(), (root / "modeling_team/work_board.py").read_bytes())
+            self.assertEqual(stat.S_IMODE(staged_board.stat().st_mode), 0o444)
             for feature in ("apps", "plugins", "multi_agent", "browser_use", "memories", "hooks"):
                 self.assertIn(f"{feature} = false", config)
             self.assertIn('web_search = "disabled"', config)

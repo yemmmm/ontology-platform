@@ -756,7 +756,8 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
                 proof_gate=True,
             )
             observed = [
-                {"name": "team_transport", "tools": [{"name": "send_team_message"}, {"name": "report_task_result"}]},
+                {"name": "team_transport", "tools": [{"name": name} for name in (
+                    "send_team_message", "report_task_result", "update_work_card", "get_work_board", "resolve_work_request")]},
                 {"name": "ontology_platform", "tools": [{"name": "check_platform_health"}]},
                 {"name": "protocol_mechanics", "tools": [{"name": name} for name in sorted(listed_tools)]},
             ]

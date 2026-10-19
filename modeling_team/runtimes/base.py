@@ -68,6 +68,7 @@ class RuntimeDelivery:
     display_text: str | None = None
     body_ref: dict | None = None
     material_refs: tuple[dict, ...] = ()
+    work_request_ref: dict | None = None
 
 
 @dataclass(frozen=True)

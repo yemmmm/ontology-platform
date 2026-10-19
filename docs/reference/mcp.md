@@ -3,6 +3,40 @@
 本文档描述当前 FastMCP 进程实际注册的工具。完整清单来自 `mcp.list_tools()`，并通过现有
 `app.api.mcp_catalog._enumerate_tools()` 补充 category 和源文件。
 
+## R4.4-001 Team 工作展台（独立本地工具）
+
+这些工具由 Team Transport／Host 提供，不注册到业务平台 MCP。
+生产端点绑定 run／Agent 身份，提供 `update_work_card(card)`、
+`resolve_work_request(request_id,resolution,note,update_id)`、`get_work_board(...)`；
+`send_team_message` 保留旧合同，增加可选 `work_request`（request／feedback）。
+请求 UUID 和反馈／关闭 update UUID 在首次调用前生成，重试复用；同身份不同内容返回
+`work_request_conflict`。同一请求供双方投影，反馈不自动满足依赖，resolved 不发送确认消息。
+回执分别报告 record／message 状态；`runtime_accepted` 只表示 Adapter 接受，不表示对方完成。
+
+Host MCP 新增只读 `get_team_work_board(run_id,agent_id?,request_id?,view?,from_time?,to_time?,
+record_seq?,cursor?,source_ref?,limit=25,include_statistics=false)`。默认 current；history
+返回获准变化；version 需要 agent_id 与准确的卡片 record_seq。时间须带时区，按半开
+区间筛选历史。页先按权限过滤，返回各集合 total／returned／complete 及统一 continuation；
+续读保持原选择并传 cursor。source_ref 绑定 path／byte_length／sha256／末序号，来源变化
+报 source_changed。Delivery 由会话绑定流程投影，模型不能选择 viewer 权限。
+请求内较长反馈及消息列表仅展示最近5条，完整数量、覆盖与原 history 定位一并返回。
+单次卡片／跟踪摘要最多16000 UTF-8字节，超限可修正为摘要及原件引用；不限制目标条数。
+
+本地用户／宿主也可运行以下只读命令（不调用 Provider）：
+
+```sh
+backend/.venv/bin/python -m modeling_team work-board --run-id RUN
+backend/.venv/bin/python -m modeling_team work-board --run-id RUN --agent AGENT --history --with-statistics --json
+backend/.venv/bin/python -m modeling_team work-board --run-id RUN --agent AGENT --record-seq 42
+backend/.venv/bin/python -m modeling_team work-board --run-id RUN --history --archive-ref evidence/work-board-retrospectives/snapshot-FINGERPRINT/index.json
+```
+
+CLI 还支持 `--from`、`--to`、`--cursor`、`--source-ref`（返回的 JSON）及 `--limit`。
+统计直接引用019／036已发布结果，按真实成员／会话列一次；历史时间过滤不改统计窗口，
+不分摊每卡精确token，不返回隐藏成员的总量或占比。关闭发布后附属生成私有历史快照及
+统计版本索引，查询旧索引不混入最新统计。归档失败不改变原关闭、清理或统计 ready。
+卡片正文与 numeric 报告分文件保存；缺卡、坏行、旧run、未知送达与缺统计均显式披露。
+
 ## R4.0-001 反馈工具
 
 `submit_semantic_feedback` 是与召回并列的 read + PROJECT_RESOURCE 工具：

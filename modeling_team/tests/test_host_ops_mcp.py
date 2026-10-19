@@ -174,7 +174,7 @@ def test_cold_start_exposes_s1_s2_and_delivery_extensions():
         | set(host_ops_mcp.S2_TOOL_NAMES)
         | set(host_ops_mcp.DELIVERY_TOOL_NAMES)
     )
-    assert len(host_ops_mcp.S1_TOOL_NAMES) == 12
+    assert len(host_ops_mcp.S1_TOOL_NAMES) == 13  # R4.4-001 adds an explicit read-only board query
     assert len(host_ops_mcp.S2_TOOL_NAMES) == 10
     assert len(host_ops_mcp.DELIVERY_TOOL_NAMES) == 9
     assert not set(names) & FORBIDDEN_TOOL_NAMES

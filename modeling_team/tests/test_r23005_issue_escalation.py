@@ -45,7 +45,7 @@ class IssueEscalationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory) / "agent-home"
             home.mkdir()
-            for name in ("transport_mcp.py", "interventions.py"):
+            for name in ("transport_mcp.py", "interventions.py", "work_board.py"):
                 shutil.copyfile(Path(__file__).parents[1] / name, home / name)
             completed = subprocess.run(
                 ["/usr/bin/python3", str(home / "transport_mcp.py")],

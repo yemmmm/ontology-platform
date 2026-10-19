@@ -14,6 +14,13 @@ from pathlib import Path
 import re
 from typing import Callable
 
+if __package__:
+    from .work_board import WorkBoard, WorkBoardError, TOOL_NAMES as WORK_BOARD_TOOLS
+    from .work_board import TOOL_SPECS as WORK_BOARD_SPECS, WORK_REQUEST_SCHEMA, _state
+else:
+    from work_board import WorkBoard, WorkBoardError, TOOL_NAMES as WORK_BOARD_TOOLS
+    from work_board import TOOL_SPECS as WORK_BOARD_SPECS, WORK_REQUEST_SCHEMA, _state
+
 # The Runtime stages this module as a standalone script next to its small
 # dependency rather than exposing the repository package or PYTHONPATH.  Keep
 # the package import for in-repository use, while making that isolated launch
@@ -156,6 +163,16 @@ class RoutingError(ValueError):
         self.code = code
 
 
+def _board_call(function, *args, **kwargs):
+    try:
+        return function(*args, **kwargs)
+    except WorkBoardError as exc:
+        raise RoutingError(str(exc), code=exc.code) from None
+    except OSError:
+        raise RoutingError("work_board_unavailable: evidence write/read failed; correct the source or use ordinary messaging",
+                           code="work_board_unavailable") from None
+
+
 @dataclass(frozen=True)
 class Delivery:
     sequence: int
@@ -171,6 +188,7 @@ class Delivery:
     display_text: str | None = None
     body_ref: dict | None = None
     material_refs: tuple[dict, ...] = ()
+    work_request_ref: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -225,6 +243,9 @@ class TeamTransportBroker:
         pre_send_validator: Callable[[str, str, str, bool, str | None], object] | None = None,
         materials: object | None = None,
         terminal_commit: Callable[[str, str], None] | None = None,
+        run_id: str | None = None,
+        agent_roles: dict[str, str] | None = None,
+        work_member_reader: Callable[[str], dict | None] | None = None,
     ):
         self.evidence_root = root
         requested_root = root
@@ -244,6 +265,14 @@ class TeamTransportBroker:
         self.pre_send_validator = pre_send_validator
         self.materials = materials
         self.terminal_commit = terminal_commit
+        run_root = (requested_root.parent.parent if requested_root.name == "broker"
+                    and requested_root.parent.name == "transport" else requested_root)
+        roles = agent_roles if agent_roles is not None else {
+            actor: actor if actor in {"acceptance", "competency-question", "source-examiner", "platform-examiner", "judge"}
+            else "modeling" for edge in permissions for actor in edge}
+        self.work_board = WorkBoard(run_root, run_id or self._infer_run_id(requested_root),
+                                    roles, permissions, member_reader=work_member_reader)
+        self._work_status: dict[str, dict] = {}
         self._issue_lock = threading.Lock()
         self._issues: RecoverableIssueLedger | None = None
         if self.issue_escalation_enabled:
@@ -260,6 +289,13 @@ class TeamTransportBroker:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self._deliveries: list[Delivery] = []
         self._delivery_sequence = 0
+        try:
+            for event in self.work_board.load()[0]:
+                recorded = event.get("delivery_id", "")
+                if re.fullmatch(r"delivery-[1-9][0-9]*", recorded):
+                    self._delivery_sequence = max(self._delivery_sequence, int(recorded.split("-")[1]))
+        except (OSError, WorkBoardError):
+            pass  # advisory history cannot prevent the ordinary channel from starting
         self._delivery_by_id: dict[str, Delivery] = {}
         self._pending_replies: dict[str, str | None] = {}
         self._reply_delivery_ids: dict[str, str] = {}
@@ -516,6 +552,7 @@ class TeamTransportBroker:
         expects_reply: bool = False,
         reply_to_delivery_id: str | None = None,
         *, body_ref: dict | None = None, material_refs: list[dict] | None = None,
+        work_request: dict | None = None,
     ) -> Delivery:
         if (
             not isinstance(text, str)
@@ -539,7 +576,26 @@ class TeamTransportBroker:
                 reply_to_delivery_id,
             )
         with self._lock:
+            plan = None
+            if work_request is not None:
+                prior, plan = _board_call(self.work_board.prepare, sender_id, recipient_id,
+                    work_request, {"text": text, "expects_reply": expects_reply,
+                                   "reply_to_delivery_id": reply_to_delivery_id,
+                                   "body_ref": body_ref, "material_refs": list(refs)})
+                if prior:
+                    existing = self._delivery_by_id.get(prior.get("delivery_id"))
+                    if existing and existing.work_request_ref and existing.work_request_ref["request_id"] == prior["request_id"]:
+                        return existing
+                    raise RoutingError("work_message_unknown: request recorded in an earlier Broker; inspect its receipt, do not resend with a new ID",
+                                       code="work_message_unknown")
+                if self.materials is not None:
+                    for ref in plan.get("result_refs", []):
+                        if isinstance(ref, dict):
+                            self.normalize_materials(sender_id, recipient_id, "", None, [ref])
             if self.terminal_commit is not None and recipient_id in self._results:
+                if plan is not None:
+                    return self._record_tracked_delivery(sender_id, recipient_id, text, expects_reply,
+                        reply_to_delivery_id, display_text, body_ref, refs, plan, terminal=True)
                 raise RoutingError("recipient already accepted terminal result; retain late input for Host review",
                                    code="recipient-terminal")
             if reply_to_delivery_id is not None:
@@ -556,6 +612,10 @@ class TeamTransportBroker:
                         "Team Transport reply is not an active reversed request",
                         code="reply-slot-not-active",
                     )
+            if plan is not None:
+                return self._record_tracked_delivery(sender_id, recipient_id, text, expects_reply,
+                    reply_to_delivery_id, display_text, body_ref, refs, plan,
+                    terminal=recipient_id in self._results)
             self._delivery_sequence += 1
             delivery = Delivery(
                 self._delivery_sequence,
@@ -576,6 +636,95 @@ class TeamTransportBroker:
                 self._pending_replies[reply_to_delivery_id] = delivery.delivery_id
                 self._reply_delivery_ids[delivery.delivery_id] = reply_to_delivery_id
             return delivery
+
+    def _record_tracked_delivery(self, sender, recipient, text, expects_reply, reply_to,
+                                 display, body_ref, refs, plan, *, terminal=False):
+        """Under the original Broker lock: durable intent precedes all queue effects."""
+        sequence = self._delivery_sequence + 1
+        delivery_id = f"delivery-{sequence}"
+        requests = _state(self.work_board.load()[0])[1]
+        requester = sender if plan["kind"] == "request" else requests[plan["request_id"]]["requester_id"]
+        reference = {"run_id": self.work_board.run_id, "request_id": plan["request_id"],
+                     "requester_id": requester, "action": plan["kind"]}
+        if plan["kind"] != "request":
+            reference["update_id"] = plan["operation_id"]
+        event = _board_call(self.work_board.append, sender, **plan, delivery_id=delivery_id,
+                           message_status="recipient_terminal" if terminal else "unknown")
+        delivery = Delivery(sequence, sender, recipient, text, time.time(), delivery_id,
+            expects_reply, reply_to, display_text=display, body_ref=body_ref,
+            material_refs=refs, work_request_ref=reference)
+        self._delivery_sequence = sequence
+        self._delivery_by_id[delivery_id] = delivery
+        self._work_status[delivery_id] = {"record_status": "recorded", "record_seq": event["record_seq"],
+                                        "message_status": "recipient_terminal" if terminal else "queued"}
+        if not terminal:
+            self._deliveries.append(delivery)
+            if expects_reply:
+                self._pending_replies[delivery_id] = None
+            if reply_to is not None:
+                self._pending_replies[reply_to] = delivery_id
+                self._reply_delivery_ids[delivery_id] = reply_to
+        return delivery
+
+    def update_work_card(self, actor, card):
+        with self._lock:
+            _board_call(self.work_board.require_actor, actor)
+            if self.materials is not None and isinstance(card, dict):
+                for ref in card.get("latest_result_refs", []):
+                    if isinstance(ref, dict):
+                        self._read_work_reference(actor, ref, required=True)
+            return _board_call(self.work_board.update, actor, card)
+
+    def _read_work_reference(self, actor, ref, *, required=False):
+        from .handoff_materials import MaterialError
+        if self.materials is None:
+            return False
+        try:
+            self.materials.list(actor, ref.get("material_id"), max_entries=1)
+            return True
+        except MaterialError as exc:
+            if required:
+                raise RoutingError(str(exc), code=exc.code) from None
+            return False
+
+    def get_work_board(self, actor, **arguments):
+        with self._lock:
+            return _board_call(self.work_board.read, actor, live_status=self._work_status,
+                               _ref_reader=self._read_work_reference, **arguments)
+
+    def resolve_work_request(self, actor, request_id, resolution, note, update_id):
+        metadata = dict(action="resolution", request_id=request_id, resolution=resolution,
+                        note=note, update_id=update_id)
+        # No reply slot or confirmation message is created for resolved.
+        if resolution == "withdrawn":
+            _board_call(self.work_board.require_actor, actor)
+            requests = _state(self.work_board.load()[0])[1]
+            current = requests.get(request_id)
+            if not current or current["requester_id"] != actor:
+                raise RoutingError("work_board_forbidden: only the requester may withdraw", code="work_board_forbidden")
+            value = self.send(actor, current["assignee_id"], note, work_request=metadata)
+            return {**_delivery_payload(value), **self._work_status[value.delivery_id]}
+        with self._lock:
+            prior, plan = _board_call(self.work_board.prepare, actor, actor, metadata, None)
+            event = prior or _board_call(self.work_board.append, actor, **plan)
+            return {"record_status": "recorded", "message_status": "not_required",
+                    "request_id": request_id, "record_seq": event["record_seq"], "changed": prior is None}
+
+    def record_work_transport(self, delivery_id, message_status, receipt_ref=None):
+        """Advisory projection of the actual Runner result; never affects dispatch/ack."""
+        with self._lock:
+            delivery = self._delivery_by_id.get(delivery_id)
+            if not delivery or not delivery.work_request_ref:
+                return
+            status = self._work_status[delivery_id]
+            status["message_status"] = message_status
+            try:
+                self.work_board.append(delivery.sender_id, "transport", delivery_id=delivery_id,
+                    request_id=delivery.work_request_ref["request_id"],
+                    message_status=message_status, receipt_ref=receipt_ref)
+            except (OSError, WorkBoardError):
+                status["record_status"] = "partial"
+                status["limitation"] = "receipt_record_failed; inspect original Runner receipt"
 
     def publish_owner_answer(
         self,
@@ -1013,6 +1162,8 @@ def _delivery_payload(delivery: Delivery) -> dict[str, object]:
         "expects_reply": delivery.expects_reply,
         "reply_to_delivery_id": delivery.reply_to_delivery_id,
     }
+    if delivery.work_request_ref is not None:
+        payload["work_request_ref"] = delivery.work_request_ref
     if delivery.body_ref is not None or delivery.material_refs:
         payload.update(body_ref=delivery.body_ref, material_refs=list(delivery.material_refs))
     if delivery.owner_answer_id is not None:
@@ -1400,6 +1551,10 @@ def mcp_response(
                         },
                     }
                 )
+        if agent_id in broker.work_board.agents:
+            from copy import deepcopy
+            tools.extend(deepcopy(WORK_BOARD_SPECS))
+            tools[0]["inputSchema"]["properties"]["work_request"] = WORK_REQUEST_SCHEMA
         for spec in tools:
             if broker.materials is not None and spec["name"] in {"send_team_message", "send_coordination", "report_task_result"}:
                 spec["inputSchema"]["properties"].update(
@@ -1425,9 +1580,22 @@ def mcp_response(
         except MaterialError as exc:
             raise RoutingError(str(exc), code=exc.code) from None
         return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]}
+    if name in WORK_BOARD_TOOLS:
+        allowed = next(spec["inputSchema"]["properties"] for spec in WORK_BOARD_SPECS if spec["name"] == name)
+        if set(args) - set(allowed):
+            raise RoutingError("invalid work board arguments", code="invalid_work_board_query")
+        _board_call(broker.work_board.require_actor, agent_id)
+        try:
+            value = getattr(broker, name)(agent_id, **args)
+        except TypeError:
+            raise RoutingError("invalid work board arguments: provide the required fields", code="invalid_work_board_query") from None
+        return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]}
     if name == "send_team_message":
-        if set(args) - {"recipient_id", "text", "expects_reply", "reply_to_delivery_id", "body_ref", "material_refs"}:
+        if set(args) - {"recipient_id", "text", "expects_reply", "reply_to_delivery_id", "body_ref", "material_refs", "work_request"}:
             raise RoutingError("invalid Team Transport arguments")
+        if args.get("work_request") is not None and (not isinstance(args["work_request"], dict)
+                or args["work_request"].get("action") not in {"request", "feedback"}):
+            raise RoutingError("invalid_work_request: use request or feedback", code="invalid_work_request")
         value = broker.send(
             agent_id,
             args.get("recipient_id"),
@@ -1435,10 +1603,12 @@ def mcp_response(
             args.get("expects_reply", False),
             args.get("reply_to_delivery_id"),
             body_ref=args.get("body_ref"), material_refs=args.get("material_refs"),
+            work_request=args.get("work_request"),
         )
         return {
             "content": [
-                {"type": "text", "text": json.dumps(_delivery_payload(value), ensure_ascii=False)}
+                {"type": "text", "text": json.dumps({**_delivery_payload(value),
+                    **broker._work_status.get(value.delivery_id, {})}, ensure_ascii=False)}
             ]
         }
     if name == "report_task_result":

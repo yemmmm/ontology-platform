@@ -4738,6 +4738,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self.root / "modeling_team" / "interventions.py",
             agent.home / "interventions.py",
         )
+        shutil.copyfile(self.root / "modeling_team/work_board.py", agent.home / "work_board.py")
         source_root = run.root / "sources"
         if getattr(task, "schema_version", 1) == 2:
             source_root = source_root / agent.package.role
@@ -4749,6 +4750,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             shutil.copytree(source_root, agent.home / "sources")
         os.chmod(agent.home / "transport_mcp.py", 0o444)
         os.chmod(agent.home / "interventions.py", 0o444)
+        os.chmod(agent.home / "work_board.py", 0o444)
         # This private config deliberately does not inherit the user's Codex config.  The
         # CLI flags below are a second, command-line enforced layer because several of
         # these are stable features enabled by default in interactive Codex installations.
@@ -6455,6 +6457,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._require_mcp_surface(agent, expected)
             return
         expected = {"team_transport": {"send_team_message", "report_task_result"}}
+        from ..work_board import PRODUCTION_ROLES, TOOL_NAMES
+        if agent.package.role in PRODUCTION_ROLES:
+            expected["team_transport"].update(TOOL_NAMES)
         if getattr(getattr(self, "_active_run", None), "handoff_materials", None) is not None:
             expected["team_transport"].update(HANDOFF_TOOL_NAMES)
         # 2026-09-11 auth006-start9: staged v3 runs enable the cooperative
@@ -6739,6 +6744,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         }
         if delivery.body_ref is not None or delivery.material_refs:
             payload.update(body_ref=delivery.body_ref, material_refs=list(delivery.material_refs))
+        if delivery.work_request_ref is not None:
+            payload["work_request_ref"] = delivery.work_request_ref
         if delivery.kind == "owner-answer":
             if not isinstance(delivery.owner_answer_id, str) or not delivery.owner_answer_id:
                 raise CodexRuntimeError("owner-answer delivery is missing owner_answer_id")
@@ -7169,6 +7176,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "report_issue",
             "issue_control",
             "send_coordination",
+            "update_work_card", "resolve_work_request", "get_work_board",
         }:
             if not isinstance(arguments, dict):
                 return self._dynamic_tool_error("Team Transport arguments are invalid")
@@ -7711,6 +7719,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         """Accept only fixed broker RoutingError text; never reflect socket-controlled data."""
         if not isinstance(value, str) or len(value) > 200:
             return None
+        # Return fixed actionable advice, never socket-supplied free text.
+        from ..work_board import SAFE_ERRORS
+        code = value.split(":", 1)[0]
+        if code in SAFE_ERRORS:
+            return code + ": " + SAFE_ERRORS[code]
         if re.fullmatch(r"material_[a-z_]+: [A-Za-z0-9 _./;:,()-]{1,160}", value):
             return value
         fixed = {

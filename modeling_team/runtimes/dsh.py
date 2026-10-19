@@ -245,6 +245,7 @@ class DshRuntimeAdapter(RuntimeAdapter):
         stage_skills(agent.package, skills)
         for name in (
             "transport_mcp.py",
+            "work_board.py",
             "interventions.py",
             "capability_mcp.py",
             "read_proxy_mcp.py",
@@ -808,6 +809,9 @@ class DshRuntimeAdapter(RuntimeAdapter):
                                            "dispatch_id": dispatch_id,
                                            "delivery": dataclasses.asdict(delivery)})
         try:
+            envelope = dataclasses.asdict(delivery)
+            if delivery.work_request_ref is None:
+                envelope.pop("work_request_ref")
             result = self._rpc(
                 agent,
                 "session/prompt",
@@ -816,7 +820,7 @@ class DshRuntimeAdapter(RuntimeAdapter):
                     "contentBlocks": [
                         {
                             "type": "text",
-                            "text": json.dumps(dataclasses.asdict(delivery), ensure_ascii=False),
+                            "text": json.dumps(envelope, ensure_ascii=False),
                         }
                     ],
                 },

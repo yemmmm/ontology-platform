@@ -530,3 +530,18 @@ model_handoff/freeze_id. Omit question_ids and checkpoint_id: those arguments be
 to public-feedback. Use the same selected model profile and configured bounded
 session timeout. After reports are verified use finish_delivery's existing sealing
 and retention path; report limitations rather than stopping an owner to force exit.
+
+
+## R4.4-001 work visibility
+
+For a specific coordination gap, use the bound read-only `get_team_work_board` tool. It returns
+shareable production reports, request/transport states and references, with optional fixed-prefix
+history, exact versions and already published member/session statistics. Your flow projection
+excludes Host context, peer result bodies and private acceptance members. Times filter history,
+not the original statistics window; missing bindings stay unknown. Follow returned pagination
+and source references. Reports and open requests do not prove progress or add a closure gate.
+Do not poll the board, copy the full board into each decision, or request redundant reports:
+ordinary card updates do not wake you. Necessary errors/blockers still use the original messages,
+issues and `request_host_action` paths. Keep your existing yield/wait journal; do not maintain a
+second production card for Delivery. Host can query the retained archive after closure without
+reopening a run. Actual adoption and maintenance cost require separate authorized observations.

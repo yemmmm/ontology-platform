@@ -3891,6 +3891,20 @@ def _run_checkpoint_resume_acceptance(
 def main() -> int:
     parser = argparse.ArgumentParser(description="R2.3-001 foreground Team Runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    board = subparsers.add_parser("work-board", help="Read current work, history or an archived retrospective without inference")
+    board.add_argument("--run-id", required=True)
+    board.add_argument("--agent", dest="agent_id")
+    board.add_argument("--request", dest="request_id")
+    board.add_argument("--history", action="store_true")
+    board.add_argument("--record-seq", type=int)
+    board.add_argument("--from", dest="from_time")
+    board.add_argument("--to", dest="to_time")
+    board.add_argument("--cursor")
+    board.add_argument("--source-ref", help="JSON source_ref returned by a previous read")
+    board.add_argument("--archive-ref", help="Returned run-local archive index")
+    board.add_argument("--limit", type=int, default=25)
+    board.add_argument("--with-statistics", action="store_true")
+    board.add_argument("--json", action="store_true")
     incremental = subparsers.add_parser("incremental", help="Trusted Host incremental modeling on an existing Project")
     incremental.add_argument("incremental_action", choices=["start"])
     incremental.add_argument("--request", required=True, type=Path)
@@ -4096,6 +4110,23 @@ def main() -> int:
         "--fork-reason", help="Explicitly restore saved data into a new Project; record why",
     )
     args = parser.parse_args()
+    if args.command == "work-board":
+        from .host_ops import get_team_work_board
+        from .work_board import render_board
+        try:
+            if args.source_ref and args.archive_ref or args.history and args.record_seq is not None:
+                raise ValueError("choose one source and one view")
+            source = json.loads(args.source_ref) if args.source_ref else ({"archive_ref": args.archive_ref} if args.archive_ref else None)
+            result = get_team_work_board(args.run_id, agent_id=args.agent_id, request_id=args.request_id,
+                view="version" if args.record_seq is not None else "history" if args.history else "current",
+                from_time=args.from_time, to_time=args.to_time, record_seq=args.record_seq,
+                cursor=args.cursor, source_ref=source, limit=args.limit, include_statistics=args.with_statistics,
+                repository_root=repository_root())
+            print(json.dumps(result, ensure_ascii=False) if args.json else render_board(result))
+            return 0
+        except (HostOpError, ValueError) as exc:
+            print(json.dumps({"error": getattr(exc, "code", "invalid_work_board_query"), "detail": str(exc)}, ensure_ascii=False))
+            return 2
     if args.command == "incremental":
         from .incremental import start_incremental
         try:

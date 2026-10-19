@@ -23,7 +23,9 @@ delivery evidence. Use the following locations for new documentation.
   R4.4-001 records Agent-maintained current work and flexible near-term goals, with one tracked
   request shown to both requester and assignee. Refinement and design are complete;
   independent review passed for both the initial design and its history-query and linked-statistics
-  extension. Implementation and real-run benefits remain unverified.
+  extension. Engineering implementation and local tests now pass; see the
+  [delivery record](delivery/records/2026-10-19-r4-4-001-team-work-board-delivery-record.md).
+  Real adoption, net token benefits and independent business semantics remain unverified.
   The current Delivery token-reduction priority remains R4.3-030.
 - [v4.3 modeling efficiency, semantic retrieval, and rapid iteration](requirements/requirements-v4.3.md):
   target of at most two hours from a fresh start to complete independent semantic acceptance,

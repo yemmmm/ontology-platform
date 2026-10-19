@@ -1595,6 +1595,7 @@ class TeamRunner:
             "preflight": self.repository_root / "modeling_team/preflight.py",
             "codex_adapter": self.repository_root / "modeling_team/runtimes/codex.py",
             "team_transport": self.repository_root / "modeling_team/transport_mcp.py",
+            "team_work_board": self.repository_root / "modeling_team/work_board.py",
             "handoff_materials": self.repository_root / "modeling_team/handoff_materials.py",
             "team_transport_interventions": self.repository_root / "modeling_team/interventions.py",
             "platform_scope": self.repository_root / "modeling_team/platform_scope.py",
@@ -1739,6 +1740,7 @@ class TeamRunner:
             runner_capability_roles["modeling"] = ["modeling_publish_staged_candidate"]
         baseline = {
             "run_id": run_id,
+            "work_board_roster": {agent.agent_id: agent.package.role for agent in configuration.profile.agents},
             **(
                 {"task_input_overlay": task_overlay.manifest()}
                 if task_overlay is not None
@@ -1800,6 +1802,11 @@ class TeamRunner:
                         "staged_path": "/agent/home/interventions.py",
                         "sha256": digests["team_transport_interventions"],
                         "mode": "0444",
+                    },
+                    "work_board_dependency": {
+                        "source_path": "modeling_team/work_board.py",
+                        "staged_path": "/agent/home/work_board.py",
+                        "sha256": digests["team_work_board"], "mode": "0444",
                     },
                 },
                 "runner_capability_mcp": {
@@ -2489,6 +2496,9 @@ class TeamRunner:
             self.transport = TeamTransportBroker(
                 self.run.root / "transport" / "broker",
                 set(self.run.configuration.profile.communication),
+                run_id=self.run.run_id,
+                agent_roles={agent.agent_id: agent.package.role for agent in self.run.configuration.profile.agents},
+                work_member_reader=self._work_member_ref,
                 terminal_dependencies=terminal_dependencies,
                 modeling_agent_id=role_agents["modeling"],
                 coordinator_agent_id=role_agents["coordinator"],
@@ -2671,6 +2681,21 @@ class TeamRunner:
                 )
             self.cleanup()
             raise
+
+    def _work_member_ref(self, agent_id):
+        # Bind at the report time; never backfill old events with a new process.
+        identity = self.adapter.runtime_identity(agent_id)
+        if identity is None:
+            return None
+        native = getattr(self.adapter, "agents", {}).get(agent_id)
+        registered = getattr(getattr(native, "activity", None), "context", {})
+        process = identity.process_instance
+        if registered.get("agent_id") == agent_id and registered.get("run_id") == self.run.run_id:
+            process = registered.get("process_instance") or process
+        return {"run_id": self.run.run_id, "agent_id": agent_id,
+                "runtime": identity.runtime, "runtime_session_id": identity.runtime_identity,
+                "process_instance": process, "source": "runtime_adapter.runtime_identity",
+                "registration_ref": "evidence/close-statistics-capture/statistics-members.jsonl" if registered else None}
 
     def _probe_role_visibility(self) -> None:
         """Deterministically prove staged role inputs before first business delivery."""
@@ -11332,6 +11357,7 @@ class TeamRunner:
                         continue
             owner_answer = delivery.owner_answer_id is not None
             if delivery.recipient_id in self.transport.results:
+                self.transport.record_work_transport(delivery.delivery_id, "recipient_terminal")
                 self._append_evidence(
                     "terminal-delivery-blocked",
                     {
@@ -11376,6 +11402,7 @@ class TeamRunner:
                     delivery_id=delivery.delivery_id,
                     expects_reply=delivery.expects_reply,
                     reply_to_delivery_id=delivery.reply_to_delivery_id,
+                    work_request_ref=delivery.work_request_ref,
                 )
             try:
                 dispatch_receipt = self.adapter.send_message(delivery.recipient_id, runtime_delivery)
@@ -11390,6 +11417,9 @@ class TeamRunner:
                 )
                 raise
             except Exception as exc:
+                self.transport.record_work_transport(delivery.delivery_id,
+                    "failed" if getattr(exc, "rejected", False) else "unknown",
+                    {"source": "runtime_adapter.send_message", "delivery_id": delivery.delivery_id})
                 if self._provider_rejection_pending(delivery.recipient_id):
                     # r30006-20260917-auth018-start3: a delivery bound for a
                     # role parked in a provider wait defers instead of killing
@@ -11422,6 +11452,8 @@ class TeamRunner:
                 "expects_reply": delivery.expects_reply,
                 "reply_to_delivery_id": delivery.reply_to_delivery_id,
             }
+            if delivery.work_request_ref is not None:
+                envelope["work_request_ref"] = delivery.work_request_ref
             if delivery.body_ref is not None or delivery.material_refs:
                 envelope.update(body_ref=delivery.body_ref, material_refs=list(delivery.material_refs))
             if owner_answer:
@@ -11433,6 +11465,8 @@ class TeamRunner:
                 )
             output.append(envelope)
             self._append_evidence("deliveries", envelope)
+            self.transport.record_work_transport(delivery.delivery_id, "runtime_accepted",
+                {"path": "evidence/deliveries.jsonl", "delivery_id": delivery.delivery_id})
             self._observe_modeling_question(delivery)
         results = self.transport.results
         self._finalize_acceptance_if_ready()
@@ -12074,6 +12108,7 @@ class TeamRunner:
                 "transport_mcp_sha256": digest_file(
                     self.repository_root / "modeling_team/transport_mcp.py"
                 ),
+                "work_board_sha256": digest_file(self.repository_root / "modeling_team/work_board.py"),
                 "transport_interventions_sha256": digest_file(
                     self.repository_root / "modeling_team/interventions.py"
                 ),

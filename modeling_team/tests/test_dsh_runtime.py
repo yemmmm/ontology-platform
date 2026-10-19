@@ -112,6 +112,12 @@ def test_real_isolated_roster_loads_exact_tools_and_freezes_all_processes(local_
     assert all(identity.runtime == "dsh" for identity in identities)
     visibility = adapter.probe_role_visibility(run)
     assert set(visibility) == {"coordinator", "modeling", "competency-question"}
+    for actor in ("coordinator", "modeling"):
+        tools = {tool["name"] for server, tool in adapter.agents[actor].expected_tools if server == "team_transport"}
+        assert {"update_work_card", "get_work_board", "resolve_work_request"} <= tools
+        assert (adapter.agents[actor].base / "home/work_board.py").read_bytes() == (ROOT / "modeling_team/work_board.py").read_bytes()
+    cq_tools = {tool["name"] for server, tool in adapter.agents["competency-question"].expected_tools if server == "team_transport"}
+    assert not {"update_work_card", "get_work_board", "resolve_work_request"} & cq_tools
     before = [adapter.runtime_identity(key) for key in adapter.agents]
     groups = adapter.pause()
     assert all(len(group) >= 3 for group in groups.values())

@@ -1274,3 +1274,16 @@ Protocol 从当前受治理读取绑定既有定义。复用条目不写；全�
 返回 `incremental_feedback_unavailable`。可将已获准的公开反馈原文作为 `approved_sources`
 使用，但其观察／预期不自动变成业务事实。001 后续接同一入口的公开投影读取器，不能
 另建改进 Runner，也不能把 Judge 私有材料传入生产。
+
+
+## R4.4-001 当前工作与关闭后复盘（只读）
+
+具体进度缺口可用Host工具`get_team_work_board`或本地
+`backend/.venv/bin/python -m modeling_team work-board --run-id RUN`读取。
+`--history --agent AGENT`查询变化，`--record-seq N --agent AGENT`读取准确版本；
+`--from/--to`须带时区，续页沿原选择加`--cursor`。`--with-statistics`并列显示019／036已发布
+成员／会话数值，保留原统计窗口与缺口，不推算每张卡片token。关闭后的原件在同run的
+`evidence/work-board-retrospectives/`；沿返回的`--archive-ref`读取冻结版本，不新开run。
+工具参数、隔离及覆盖见[当前MCP合同](../../../docs/reference/mcp.md#r44-001-team-工作展台独立本地工具)。
+日常卡片由生产Agent低频自维护；Host／Delivery继续使用原yield与请求交接，不重复填卡或轮询。
+卡片、开放请求与活跃进程不证明应用成功或独立语义PASS；真实阻塞仍沿原升级通道处理。
