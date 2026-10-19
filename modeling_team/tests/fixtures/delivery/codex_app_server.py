@@ -10,6 +10,7 @@ trace = home / 'protocol.jsonl'
 turn = 0
 pending = None
 thread_id = 'delivery-native-thread'
+thread_count = 0
 # Effective feature state, mirroring the installed server's defaults.  Unknown
 # config keys (for example default_tools_enabled) never touch this state; only
 # a real per-thread feature overlay does.
@@ -42,6 +43,8 @@ for line in sys.stdin:
     if method == 'initialize':
         emit({'id': request_id, 'result': {'userAgent': 'offline-fixture'}})
     elif method == 'thread/start':
+        thread_count += 1
+        thread_id = 'delivery-native-thread' + (f'-{thread_count}' if thread_count > 1 else '')
         assert params['approvalPolicy'] == 'never'
         assert 'ONTOLOGY_PLATFORM_ADMIN_API_KEY' not in os.environ
         assert 'DEEPSEEK_API_KEY' not in os.environ

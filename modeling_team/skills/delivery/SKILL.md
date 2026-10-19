@@ -422,6 +422,17 @@ user controls and EOF/liveness exceptions. Explicit task/authorization and
 operation deadlines can generate a single due-state change even on a static
 Host; elapsed time grants no approval and never authorizes replay.
 
+Use observation `request_results` directly as consumed receipt outcomes and
+`unresolved[].result` for pending/rejected outcomes and corrective feedback.
+Do not re-query an already supplied receipt or complete pending-action binding.
+For a submitted action with receipt_tracking, yield on its actual run/request
+identity and end the activity; the program delivers the next receipt change.
+Active queries are for concrete missing facts, unknown outcomes before a retry,
+or recovery. cq_production_pending is a readiness wait, not a platform defect.
+Copy every supplied source_ref field, including byte_length; correct a named
+missing field without refreshing a file or repeating the incomplete call.
+Read native/transport logs for concrete unresolved failures, not routine progress.
+
 The four active get queries (get_run_status, get_pending_actions,
 get_evaluation_status, get_request_result) return model-only compact views
 with raw-result references and omission coverage. Correct any concrete gap
@@ -431,9 +442,18 @@ checks continue using the full original Host results. A recovery bootstrap
 acknowledges only itself; outstanding input pages and original message
 acknowledgements remain independent. Resent unknown facts do not authorize
 repeating an action. Original user messages preserve earlier effective
-constraints; a later message does not silently replace them. Thread switching
-and mechanical continuations are separate staged work and are not enabled
-by yield or v2.
+constraints; a later message does not silently replace them.
+
+Host `phase_thread_boundaries` optionally selects production and/or acceptance;
+the default is empty. At a selected boundary, yield with
+thread_boundary={phase,run_id,request_ids} and complete effective active_decisions,
+original references and reasons, then end the activity. Production requires
+accepted cq_freeze and freeze-notification instruction receipts plus confirmed
+production continuation. Acceptance requires accepted cq_handoff_complete and
+actual authorized evaluation operations after writes settle. The program defers
+unsafe switches; continue normally without redoing production or resetting quota.
+New phases receive current facts, original constraints and effective decisions.
+Mechanical continuations remain separate work; yield does not execute them.
 
 ## Deterministic phase progression after a semantic decision
 

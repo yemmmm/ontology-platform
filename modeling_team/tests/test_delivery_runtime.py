@@ -73,6 +73,35 @@ def _runtime(module, profile, home: Path, **overrides):
     return module.DeliveryRuntime(**settings)
 
 
+def test_phase_thread_uses_same_process_and_ignores_old_completion(tmp_path):
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, 'openai-sol-medium')
+    runtime = _runtime(module, profile, tmp_path / 'native')
+    try:
+        runtime.start()
+        old = runtime.thread_id
+        pid = runtime.process.pid
+        identity = runtime.new_thread()
+        assert identity['runtime_session_id'] != old
+        assert runtime.process.pid == pid
+        starts = [v['params'] for v in _messages(runtime) if v.get('method') == 'thread/start']
+        assert len(starts) == 2 and starts[0] == starts[1]
+        runtime.send('New phase with authoritative handoff facts.')
+        assert runtime.busy
+        runtime._handle({'method': 'turn/completed', 'params': {
+            'threadId': old, 'turn': {'id': 'old-turn', 'status': 'completed'}}})
+        assert runtime.busy
+        runtime._handle({'method': 'thread/tokenUsage/updated', 'params': {
+            'threadId': old, 'turnId': 'old-turn', 'tokenUsage': {'total': {
+                'inputTokens': 123, 'outputTokens': 7}}}})
+        usage = json.loads((runtime.home / 'usage-events.jsonl').read_text().splitlines()[-1])
+        assert usage['thread_id'] == old and usage['runtime_session_id'] == old
+        with pytest.raises(module.DeliveryRuntimeError, match='busy'):
+            runtime.new_thread()
+    finally:
+        runtime.close()
+
+
 @pytest.mark.parametrize('profile_id,external', [
     ('openai-sol-medium', False), ('glm-flash-high', True),
 ])
@@ -514,7 +543,7 @@ def test_real_codex_external_delivery_context_window(tmp_path):
     )
     try:
         runtime.start()
-        runtime.send('window probe')
+        runtime.send('window probe OLD_PHASE_WINDOW_PROBE')
         deadline = time.monotonic() + 20
         while runtime.busy and time.monotonic() < deadline:
             runtime.poll(0.1)
@@ -532,6 +561,18 @@ def test_real_codex_external_delivery_context_window(tmp_path):
         assert bodies[0]['model'] == 'glm-5.3-flash'
         assert bodies[0]['reasoning']['effort'] == 'high'
         assert _captured_tool_names([json.dumps(bodies[0])]) == {'emit_user_message'}
+        original = runtime.thread_id
+        pid = runtime.process.pid
+        runtime.new_thread()
+        assert runtime.thread_id != original and runtime.process.pid == pid
+        runtime.send('phase two current facts only')
+        deadline = time.monotonic() + 20
+        while runtime.busy and time.monotonic() < deadline:
+            runtime.poll(0.1)
+        assert not runtime.busy and len(bodies) == 2
+        assert 'OLD_PHASE_WINDOW_PROBE' not in json.dumps(bodies[1])
+        assert 'phase two current facts only' in json.dumps(bodies[1])
+        assert _captured_tool_names([json.dumps(bodies[1])]) == {'emit_user_message'}
     finally:
         runtime.close()
         server.shutdown()

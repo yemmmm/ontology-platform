@@ -479,7 +479,10 @@ def test_finish_standby_has_queryable_receipt_and_native_retry_reuses_request(tm
                                 call_identity="native-finish-call")
         assert result["ok"], result
         standby = result["data"]["runs"]["run"]["data"]
-        assert standby["request_id"] and standby["next_query"] == "get_request_result"
+        assert standby["request_id"]
+        assert standby["receipt_tracking"]["via"] == "host_observation"
+        assert "yield_delivery" in standby["receipt_tracking"]["next_action"]
+        assert "next_query" not in standby
         fifo.read_ready()
         envelope = json.loads(fifo.pop_line())
         assert envelope.pop("request_id") == standby["request_id"]

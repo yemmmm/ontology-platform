@@ -41,6 +41,7 @@ class DeliveryRuntimeProtocol(Protocol):
     @property
     def identity(self) -> dict: ...
     def start(self) -> None: ...
+    def new_thread(self) -> dict: ...
     def send(self, text: str) -> dict | None: ...
     def steer(self, text: str) -> dict | None: ...
     def poll(self, timeout: float = 0) -> list[dict]: ...
@@ -230,17 +231,7 @@ class DeliveryRuntime:
                 "capabilities": {"experimentalApi": True},
             })
             self._write({"method": "initialized"})
-            result = self._rpc("thread/start", {
-                "cwd": str(work), "model": self.binding.model,
-                "baseInstructions": "", "developerInstructions": self.instructions,
-                "approvalPolicy": "never", "sandbox": "read-only",
-                "config": _native_tool_boundary_config(),
-                "dynamicTools": [{"type": "function", **tool} for tool in self.tools],
-            })
-            self.thread_id = result["thread"]["id"]
-            self.activity.bind(self.thread_id)
-            self._usage_writer.context.update(self.activity.context)
-            self._verify_native_tool_boundary()
+            self.new_thread()
         except Exception:
             self.close()
             raise
@@ -281,7 +272,7 @@ class DeliveryRuntime:
             self._handle(value)
         raise DeliveryRuntimeError(f"Delivery native RPC timed out: {method}")
 
-    def _verify_native_tool_boundary(self) -> None:
+    def _verify_native_tool_boundary(self, thread_id=None) -> None:
         """Fail closed unless the live app-server reports the builtins off.
 
         An accepted ``thread/start`` cannot prove the effective boundary on its
@@ -291,7 +282,7 @@ class DeliveryRuntime:
         refreshed config, so a renamed or re-forced builtin feature is caught
         here, before any turn can drive native tool traffic.
         """
-        result = self._rpc("experimentalFeature/list", {"threadId": self.thread_id})
+        result = self._rpc("experimentalFeature/list", {"threadId": thread_id or self.thread_id})
         reported: dict[str, Any] = {}
         for entry in result.get("data") or []:
             if isinstance(entry, dict) and isinstance(entry.get("name"), str):
@@ -306,6 +297,23 @@ class DeliveryRuntime:
                 f" (not reported off: {', '.join(still_enabled)})"
             )
 
+    def new_thread(self) -> dict:
+        if self.busy or self.process is None or self.process.poll() is not None:
+            raise DeliveryRuntimeError("Delivery runtime unavailable or busy")
+        result = self._rpc("thread/start", {
+            "cwd": str(self.home / "work"), "model": self.binding.model,
+            "baseInstructions": "", "developerInstructions": self.instructions,
+            "approvalPolicy": "never", "sandbox": "read-only",
+            "config": _native_tool_boundary_config(),
+            "dynamicTools": [{"type": "function", **tool} for tool in self.tools],
+        })
+        thread_id = result["thread"]["id"]
+        self._verify_native_tool_boundary(thread_id)
+        self.thread_id, self._turn_id = thread_id, None
+        self.activity.bind(thread_id)
+        self._usage_writer.context.update(self.activity.context)
+        return self.identity
+
     def _remove_auth(self) -> None:
         (self.home / "auth.json").unlink(missing_ok=True)
 
@@ -316,6 +324,7 @@ class DeliveryRuntime:
             try:
                 self._usage_writer({"event": "thread_usage",
                     "thread_id": params.get("threadId"), "turn_id": params.get("turnId"),
+                    "runtime_session_id": params.get("threadId"),
                     "total": (params.get("tokenUsage") or {}).get("total") or {}})
             except Exception:
                 from modeling_team.usage_capture import LOG
@@ -353,6 +362,11 @@ class DeliveryRuntime:
                 "code": -32601, "message": "Delivery permits only declared Host tools",
             }})
         elif method == "turn/completed":
+            params = value.get("params", {})
+            if (params.get("threadId", self.thread_id) != self.thread_id
+                    or (self._turn_id is not None
+                        and params.get("turn", {}).get("id") != self._turn_id)):
+                return
             self.busy = False
             self._remove_auth()
             status = value.get("params", {}).get("turn", {}).get("status")

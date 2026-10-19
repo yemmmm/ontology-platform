@@ -386,6 +386,10 @@ def aggregate_activity(config, usage, events):
         bound = {r["runtime_session_id"] for r in rows if r.get("runtime_session_id")}
         if len(bound) == 1:
             member["runtime_session_id"] = bound.pop()
+        elif bound:
+            member["runtime_session_ids"] = sorted(bound)
+            member.pop("runtime_session_id", None)
+            member.pop("thread_id", None)
         member_limits = set()
         starts, exits = (
             [r for r in rows if r["event"] == "launch"],
@@ -438,7 +442,7 @@ def aggregate_activity(config, usage, events):
             if unit.get("runtime", "codex") != member.get("runtime"):
                 continue
             session = unit.get("runtime_session_id") or unit.get("thread_id")
-            if not session or session != member.get("runtime_session_id"):
+            if not session or session not in (bound or {member.get("runtime_session_id")}):
                 continue
             if unit.get("process_instance") and unit["process_instance"] != member.get(
                 "process_instance"
@@ -448,7 +452,7 @@ def aggregate_activity(config, usage, events):
                 m
                 for m in config.get("members", [])
                 if m.get("runtime") == member.get("runtime")
-                and m.get("runtime_session_id") == session
+                and session in (m.get("runtime_session_ids") or [m.get("runtime_session_id")])
             ]
             if not unit.get("process_instance") and len(candidates) != 1:
                 member_limits.add("session_usage_instance_unallocated")
@@ -550,7 +554,8 @@ def aggregate_activity(config, usage, events):
         for u in units
         if any(
             u.get("runtime", "codex") == m.get("runtime")
-            and (u.get("runtime_session_id") or u.get("thread_id")) == m.get("runtime_session_id")
+            and (u.get("runtime_session_id") or u.get("thread_id")) in (
+                m.get("runtime_session_ids") or [m.get("runtime_session_id")])
             for m in members
         )
     ]
@@ -981,17 +986,25 @@ def publish_close_statistics(
                     (member["activity_path"] + "activity").encode()
                 ).hexdigest()[:24]
                 activity_raw = frozen[activity_sid] or b""
+                actual_bindings = {}
                 for line in activity_raw.splitlines():
                     try:
                         event = json.loads(line)
                     except ValueError:
                         continue
                     if _key(event) == _key(member) and event.get("event") == "bind":
-                        if not source.get("shared"):
-                            binding.update(identity(event))
-                        member.update(identity(event))
-                if binding not in bindings:
-                    bindings.append(binding)
+                        actual_bindings[event["runtime_session_id"]] = identity(event)
+                if len(actual_bindings) == 1:
+                    member.update(next(iter(actual_bindings.values())))
+                elif actual_bindings:
+                    member["runtime_session_ids"] = sorted(actual_bindings)
+                    member.pop("runtime_session_id", None)
+                    member.pop("thread_id", None)
+                for native_identity in (list(actual_bindings.values())
+                        if actual_bindings and not source.get("shared") else [{}]):
+                    selected = {**binding, **native_identity}
+                    if selected not in bindings:
+                        bindings.append(selected)
         fingerprint = hashlib.sha256(
             json.dumps(
                 {
@@ -1056,7 +1069,9 @@ def publish_close_statistics(
                 "cutoff_clock": cutoff,
                 "limitations": sorted(inventory_limits),
                 "members": [
-                    {**identity(m), "scope_member": m.get("scope_member", True)} for m in members
+                    {**identity(m), "scope_member": m.get("scope_member", True),
+                     **({"runtime_session_ids": m["runtime_session_ids"]}
+                        if m.get("runtime_session_ids") else {})} for m in members
                 ],
                 "cleanup_complete": cleanup_complete,
                 "wall_clock_seconds": wall_clock_seconds,

@@ -818,7 +818,13 @@ _LOCAL_SPECS = [
                  "replaces": {"type": "array", "items": {"type": "string"}}},
              "required": ["decision_id", "text", "source_references", "replaces"],
              "additionalProperties": False}},
-         "evidence_references": {"type": "array", "items": {"type": "object"}}},
+         "evidence_references": {"type": "array", "items": {"type": "object"}},
+         "thread_boundary": {"type": "object", "properties": {
+             "phase": {"enum": ["production", "acceptance"]},
+             "run_id": {"type": "string", "minLength": 1},
+             "request_ids": {"type": "array", "minItems": 1, "uniqueItems": True,
+                             "items": {"type": "string", "minLength": 1}}},
+             "required": ["phase", "run_id", "request_ids"], "additionalProperties": False}},
          "required": ["input_id", "phase", "waiting_for", "next_action", "reason", "active_decisions"],
          "additionalProperties": False}},
     {"name": "record_efficiency_progress", "description": "Append evidence-backed timing intervals or verified completion to the Host-configured round; never resets its start or judges semantic PASS.",
@@ -912,6 +918,11 @@ class DeliverySession:
         self.repository_root = repository_root.resolve()
         self.session_root = session_root.resolve()
         self.config = copy.deepcopy(config)
+        boundaries = config.get("phase_thread_boundaries", [])
+        if not isinstance(boundaries, list) or any(
+                item not in {"production", "acceptance"} for item in boundaries):
+            raise ValueError("phase_thread_boundaries must select production and/or acceptance")
+        self.phase_thread_history = []
         self._state_lock = threading.RLock()
         self.project_id = config.get("project_id") or config.get("readback_scope", {}).get("project_id")
         self.authorization_valid_until = config.get("authorization_valid_until")
@@ -995,6 +1006,7 @@ class DeliverySession:
             self.activity = previous.get("activity", "active")
             self.work_result = previous.get("work_result")
             self.flow_confirmation = previous.get("flow_confirmation")
+            self.phase_thread_history = previous.get("phase_thread_history", [])
             self.stop_pending = self.activity == "stopping"
         else:
             self.session_root.mkdir(parents=True, exist_ok=False, mode=0o700)
@@ -1803,6 +1815,7 @@ class DeliverySession:
                   "native_thread_id": getattr(self, "native_thread_id", None),
                   "runtime": self.runtime_name, "runtime_identity": self.runtime_identity,
                   "runtime_task_binding": self.runtime_task_binding,
+                  "phase_thread_history": self.phase_thread_history,
                   "native_pid": getattr(self, "native_pid", None),
                   "close_statistics": getattr(self, "close_statistics", {
                       "schema_version": "team-close-statistics/v1", "view": "task_close",
@@ -2451,8 +2464,10 @@ class DeliverySession:
             if name not in _READ:
                 self._save("active")
             data = operation(**args)
-            if name in {"standby_run", "complete_cq_acceptance"} and data.get("status") == "submitted":
-                data["next_query"] = "get_request_result"
+            if name not in _READ and data.get("status") == "submitted":
+                data["receipt_tracking"] = {
+                    "via": "host_observation", "request_id": data.get("request_id"),
+                    "next_action": "yield_delivery and end this turn; program observation delivers the actual receipt; query only a concrete receipt gap or recovery"}
             if name == "get_run_events" and isinstance(data, dict):
                 data = self._project_run_events(args["run_id"], data)
             if name == 'reconcile_write_state':
@@ -2628,6 +2643,7 @@ class DeliverySession:
             "model_profile", "evaluation_model_profile", "evaluation_runtime", "business_input_role",
             "production_start_limit", "incremental_request_id", "incremental_run_id",
             "deadline", "model_context_window", "model_auto_compact_token_limit",
+            "phase_thread_boundaries",
         ) if key in self.config}
         timing = self.config.get("efficiency_round")
         if timing:
@@ -2696,6 +2712,80 @@ class DeliverySession:
             "evidence": self._journal_reference(offset, length),
             "note": "End this turn now. All bindings remain under program observation; this is not turn completion."}}
 
+    def maybe_switch_phase_thread(self, runtime, *, pending_inputs=()) -> bool:
+        """Honor an explicit phase handoff only after the original activity settles."""
+        handoff = self.last_yield or {}
+        boundary = handoff.get("thread_boundary", {})
+        phase, run_id = boundary.get("phase"), boundary.get("run_id")
+        if (phase not in self.config.get("phase_thread_boundaries", [])
+                or runtime.busy or pending_inputs or self._pending_decisions
+                or self.activity != "active" or self.recovery_pending
+                or handoff.get("input_id") != self._latest_input_id):
+            return False
+        if any(row.get("run_id") == run_id and row.get("phase") == phase and (
+                row.get("status") in {"switched", "attempted"}
+                or row.get("input_id") == handoff["input_id"])
+                for row in self.phase_thread_history):
+            return False
+        recovery = self._recovery_context()
+        if not recovery.get("history_complete") or any(
+                row.get("dispatch") in {"pending", "dispatch_started", "unknown"}
+                for row in recovery.get("user_messages", [])):
+            return False
+        current = self._last_current
+        for run in current.get("runs", {}).values():
+            requests = run.get("requests", {})
+            status = run.get("status", {})
+            if (requests.get("ok") is not True or status.get("ok") is not True
+                    or requests.get("data", {}).get("coverage", {}).get("complete") is not True
+                    or status.get("data", {}).get("write_phase") in {"unknown", "writing", "applying"}):
+                return False
+            for item in requests.get("data", {}).get("pending", []):
+                result = item.get("result", {})
+                if result.get("ok") is not True or result.get("data", {}).get("outcome") != "rejected":
+                    return False
+        run = current.get("runs", {}).get(run_id, {})
+        settled = {item["request_id"]: item for item in
+                   run.get("requests", {}).get("data", {}).get("settled", [])}
+        ids = boundary.get("request_ids", [])
+        if not ids or any(request_id not in settled for request_id in ids):
+            return False
+        actions = {settled[request_id].get("action") for request_id in ids}
+        if phase == "production":
+            if not {"cq_freeze", "instruction"} <= actions:
+                return False
+        else:
+            operations = [value.get("data", {}) for key, value in current.get("operations", {}).items()
+                if key in self.operation_ids and value.get("ok") is True
+                and value.get("data", {}).get("run_id") == run_id
+                and value.get("data", {}).get("mode") == "cq-acceptance"
+                and value.get("data", {}).get("status") in {"running", "exited", "standby"}]
+            if "cq_handoff_complete" not in actions or not operations:
+                return False
+        record = {"event": "delivery_phase_thread", "attempt_id": uuid.uuid4().hex,
+                  "phase": phase, "run_id": run_id, "input_id": handoff["input_id"],
+                  "from_identity": copy.deepcopy(runtime.identity), "status": "attempted",
+                  "reason": handoff["reason"], "request_ids": ids, "started_at": now()}
+        self.phase_thread_history.append(record)
+        self._append("session-events.jsonl", record)
+        try:
+            identity = runtime.new_thread()
+        except Exception as exc:
+            record.update(status="failed", error_type=type(exc).__name__, ended_at=now())
+            self._append("session-events.jsonl", record)
+            self._save("active")
+            return False
+        record.update(status="switched", to_identity=identity, ended_at=now())
+        self.runtime_identity = identity
+        self.native_thread_id = runtime.thread_id
+        self._append("session-events.jsonl", record)
+        # Reuse the full last observation and original messages, not a model
+        # summary. A new input owns its own acknowledgement and paging offsets.
+        raw = json.loads((self.session_root / "observation.json").read_text())["data"]
+        self.record_observation(raw, force_delivery=True)
+        self._bootstrap_observation()
+        return True
+
     def _deadline_events(self, observation: dict) -> list[dict]:
         # A fixed due state participates in the existing digest and durable input
         # queue. No timer, inferred heartbeat timeout, action replay or renewal.
@@ -2762,6 +2852,7 @@ class DeliverySession:
         self._last_current = {}
         self._decision_event_state = {}
         self._input_ids = set()
+        self._latest_input_id = None
         self.last_yield = None
         path = self.session_root / "session-events.jsonl"
         if not path.exists():
@@ -2776,6 +2867,7 @@ class DeliverySession:
             if "event_cursors" in record:
                 self._event_cursors.update(record["event_cursors"])
             if event == "delivery_decision_input":
+                self._latest_input_id = record["input_id"]
                 self._input_ids.add(record["input_id"])
                 self._pending_decisions.append({"input_id": record["input_id"], "byte_offset": offset,
                     "byte_length": len(line), "offset": 0, "delivery_status": "pending"})
@@ -2788,6 +2880,9 @@ class DeliverySession:
                     for key, value in record.get("decision_event_state", {}).items()}
             elif event == "delivery_yield":
                 self.last_yield = record
+            elif event == "delivery_phase_thread":
+                self.phase_thread_history = [row for row in self.phase_thread_history
+                    if row["attempt_id"] != record["attempt_id"]] + [record]
             elif event == "delivery_input_dispatch":
                 for item in list(self._pending_decisions):
                     if item["input_id"] != record["input_id"]:
@@ -2866,6 +2961,15 @@ class DeliverySession:
                 "source_ref": _source_ref(path, _json_bytes(record)),
                 "excluded_noise_event_records": excluded}
             changes = _value_changes(self._last_current, decision)
+            request_results = []
+            for run_id, run in current.get("runs", {}).items():
+                previous_settled = {item["request_id"]: item.get("result") for item in self._last_current.get(
+                    "runs", {}).get(run_id, {}).get("requests", {}).get("data", {}).get("settled", [])}
+                for item in run.get("requests", {}).get("data", {}).get("settled", []):
+                    if self._last_current and item.get("result") != previous_settled.get(item["request_id"]):
+                        request_results.append({"run_id": run_id, "request_id": item["request_id"],
+                            **{key: value for key, value in item.get("result", {}).get("data", {}).items()
+                               if key in _STATUS_FIELDS}})
             input_id = uuid.uuid4().hex
             packet = {"event": "delivery_decision_input", "input_id": input_id,
                 "mode": "bootstrap" if force_delivery or not self._last_current else "changes",
@@ -2873,6 +2977,7 @@ class DeliverySession:
                 "recovery_context": self._recovery_context() if force_delivery or not self._last_current else None,
                 "snapshot": current, "changes": changes, "fingerprint_state": decision,
                 "changed_operations": changed_operations,
+                "request_results": request_results,
                 "decision_digest": digest, "event_cursors": self._event_cursors,
                 "decision_event_state": {key: {"seen": sorted(value["seen"]), "chain": value["chain"],
                     "problem_states": value.get("problem_states", {})}
@@ -2881,6 +2986,7 @@ class DeliverySession:
             self._pending_decisions.append({"input_id": input_id, "byte_offset": offset,
                 "byte_length": byte_length, "offset": 0, "delivery_status": "pending"})
             self._input_ids.add(input_id)
+            self._latest_input_id = input_id
             self._last_current = decision
             self._last_decision_digest = digest
         # Persist the cursor only after the full raw observation and change
@@ -3011,6 +3117,8 @@ class DeliverySession:
                     run_id=run_id)
                 result = value.get("result", {})
                 unresolved[-1]["outcome"] = result.get("data", {}).get("outcome", "unknown")
+                unresolved[-1]["result"] = {key: value for key, value in result.get("data", {}).items()
+                                            if key in _STATUS_FIELDS}
                 if result.get("ok") is False:
                     unresolved[-1]["error"] = result.get("error")
             for kind in ("status", "pending", "requests", "events"):
@@ -3034,6 +3142,9 @@ class DeliverySession:
                 # event bodies from the authorized snapshot, never a chain hash.
                 if len(parts) >= 3 and parts[0] == "runs" and parts[2] == "events":
                     continue
+                if ("request_results" in packet and len(parts) >= 5
+                        and parts[0] == "runs" and parts[2:5] == ["requests", "data", "settled"]):
+                    continue  # New receipts are explicit; do not resend the entire settled list.
                 if len(parts) == 2 and parts[0] == "runs" and change["change"] == "added":
                     change = {**change, "value": snapshot["runs"][parts[1]]}
                 changes.append(change)
@@ -3046,6 +3157,7 @@ class DeliverySession:
                    "mode": "bootstrap" if bootstrap else "changes", "core": core,
                    "unresolved": unresolved, "changes": changes, "evidence": reference,
                    "delivery_status": item["delivery_status"],
+                   "request_results": packet.get("request_results", []),
                    "raw_observation": snapshot.get("raw_observation"),
                    "coverage": {"complete": True, "source_complete": False,
                        "omitted_sections": ["settled_history"] + omitted_stable + ([] if bootstrap else
@@ -3362,6 +3474,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                 if not session._dispatch_observation(runtime, packet, steer=True):
                     steer_blocked_turn = runtime.turn_id
             if not runtime.busy:
+                session.maybe_switch_phase_thread(runtime, pending_inputs=pending_input)
                 if pending_input:
                     current = pending_input.pop(0)
                     if session.conversation:

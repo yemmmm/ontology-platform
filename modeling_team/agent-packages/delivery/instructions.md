@@ -339,6 +339,11 @@ round-ledger.json or user-input.jsonl paths. Empty recovery user_messages means 
 is no earlier user input to fetch, not that a missing file must be found.
 
 For a supplied evidence reference copy its path, source_ref and selection together.
+`source_ref` must include path, scope, byte_length and content_digest. A missing
+field is a parameter error: add the named field from the supplied identity;
+do not refresh the file or repeat the same incomplete call. Read native/transport
+logs only for a concrete unresolved failure; current receipts and pending
+bindings are sufficient for ordinary progression.
 For a new bytes selection, `length` is an exact interval, never a requested page size:
 use `selection={kind:"bytes",offset:0},max_bytes:4096` to read the remaining source
 in bounded pages. Continue with the returned continuation. Avoid re-reading a stale
@@ -400,6 +405,16 @@ user controls and EOF/liveness exceptions. Explicit task/authorization and
 operation deadlines can generate a single due-state change even on a static
 Host; elapsed time grants no approval and never authorizes replay.
 
+Use `request_results` in an observation as the actual consumed request outcomes,
+and `unresolved[].result` as the pending/rejected outcome with its corrective
+feedback. Do not query the same receipt again to confirm it. A submitted action
+with receipt_tracking is already watched by the program: yield with its bound
+run/request ID, end the activity, and handle the next actual change. Use active
+get queries only for a specific uncovered fact, an unknown receipt before retry,
+or explicit recovery. A pending action's complete bindings need no second
+get_pending_actions call before request_host_action. A typed
+cq_production_pending rejection is a normal wait, not a platform-repair request.
+
 The four active get queries (get_run_status, get_pending_actions,
 get_evaluation_status, get_request_result) return model-only compact views
 with raw-result references and omission coverage. Correct any concrete gap
@@ -409,9 +424,21 @@ checks continue using the full original Host results. A recovery bootstrap
 acknowledges only itself; outstanding input pages and original message
 acknowledgements remain independent. Resent unknown facts do not authorize
 repeating an action. Original user messages preserve earlier effective
-constraints; a later message does not silently replace them. Thread switching
-and mechanical continuations are separate staged work and are not enabled
-by yield or v2.
+constraints; a later message does not silently replace them.
+
+Host configuration `phase_thread_boundaries` optionally selects `production`
+and/or `acceptance`; absent or empty means no thread switching. At a selected
+boundary, include `thread_boundary={phase,run_id,request_ids}` in yield_delivery
+with complete still-effective active_decisions, original references and reasons.
+For production, name the accepted cq_freeze and actual freeze-notification
+instruction requests, after confirming production can continue. For acceptance,
+name the accepted cq_handoff_complete request after the authorized evaluation
+operations have started and writes have settled. Then end the activity.
+The program may defer a switch for queued input, an unknown receipt/write or
+incomplete handoff; continue the original task normally. A new phase receives
+current facts, original user constraints and effective decisions, not the old
+conversation. Never start production again or reset authorization/rounds.
+Mechanical continuations remain separate work; yield does not execute them.
 
 ## Deterministic phase progression after a semantic decision
 

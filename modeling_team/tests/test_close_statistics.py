@@ -198,6 +198,32 @@ def test_automatic_report_is_frozen_replayable_private_and_versioned(tmp_path):
     assert (tmp_path / first["report_ref"]).read_bytes() == old
 
 
+def test_phase_threads_keep_all_usage_without_duplicating_process_lifetime(tmp_path):
+    source = tmp_path / "numeric.jsonl"
+    recorder = ActivityRecorder(tmp_path, {"runtime": "codex", "agent_id": "delivery",
+        "role": "delivery", "task_ref": "task"},
+        usage_sources=[{"path": str(source), "kind": "capture"}], fresh_session=True)
+    rows = []
+    for thread_id, amount in [("old-phase", 100), ("new-phase", 200)]:
+        recorder.bind(thread_id)
+        rows.append({"event": "thread_usage", "runtime": "codex",
+            "runtime_session_id": thread_id, "thread_id": thread_id,
+            "process_instance": recorder.context["process_instance"],
+            "received_at": recorder.started_at,
+            "total": {"input_tokens": amount, "cached_input_tokens": 0, "output_tokens": 10}})
+    source.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    recorder.exit(0)
+    result = publish_close_statistics(tmp_path, view="task_close", task_ref="task")
+    assert result["summary"]["input_tokens"] == 300
+    report = json.loads((tmp_path / result["report_ref"]).read_text())
+    members = report["close_statistics"]["members"]
+    assert len(members) == 1
+    assert set(members[0]["runtime_session_ids"]) == {"old-phase", "new-phase"}
+    assert members[0]["usage"]["tokens"]["input_tokens"] == 300
+    replay = write_report(tmp_path / result["scope_ref"], tmp_path / "replay")
+    assert replay["close_statistics"] == report["close_statistics"]
+
+
 def test_report_failure_does_not_change_cleanup_or_publish_half_ready(tmp_path, monkeypatch):
     recorder = ActivityRecorder(tmp_path, {"runtime": "dsh", "agent_id": "a"})
     recorder.exit(0)

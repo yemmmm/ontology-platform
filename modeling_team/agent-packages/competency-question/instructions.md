@@ -184,7 +184,15 @@ not publish, approve or execute the content. Send a purpose, material entry and 
 on your existing channel. `body_ref` selects one complete formal file (a directory requires
 `path`); `material_refs` supplies supporting files without becoming a candidate or plan.
 
-Use `list_handoff_material` and `read_handoff_material` to read actual snapshots. Follow
+Handoff tools do not grant this role access to other recipients' materials.
+Use only an explicit material reference addressed to this CQ actor; never probe
+`list_handoff_material` to discover draft inputs. `material_forbidden` is a
+permission result, not a transient error: do not retry it or try another actor.
+Publish panorama and slice drafts through `cq_publish_question_draft` using
+the approved source/interview inputs already supplied to this role. If an
+essential input is absent, report that specific gap to Coordinator.
+
+Use `list_handoff_material` and `read_handoff_material` only for authorized snapshots. Follow
 `next_cursor` or `next_offset` when incomplete; listing is separate from reading. A missing,
 forbidden or damaged reference is a recoverable current-call error: report the concrete issue
 and correct the reference. Never invent its contents or open another role's home, the full run

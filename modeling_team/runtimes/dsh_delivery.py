@@ -53,6 +53,7 @@ class DSHDeliveryRuntime:
         self.provider_factory = provider_factory
         self.process_instance = uuid.uuid4().hex
         self.runtime_session_id = None
+        self._retired_sessions = set()
         self.process = self.provider = self._stderr = None
         self._lock = threading.RLock()
         self._condition = threading.Condition(self._lock)
@@ -128,6 +129,7 @@ class DSHDeliveryRuntime:
                 self.runtime_session_id = "delivery-" + uuid.uuid4().hex
                 state.write_text(json.dumps({"runtime_session_id": self.runtime_session_id}))
         self.projection = DispatchProjection(self.runtime_session_id)
+        self._retired_sessions = set(json.loads(state.read_text()).get("previous_session_ids", []))
         dispatch_path = self.home / "dsh-dispatch.jsonl"
         if dispatch_path.exists():
             for line in dispatch_path.read_text().splitlines():
@@ -145,13 +147,15 @@ class DSHDeliveryRuntime:
         self.provider = self.provider_factory(credential,
             **({"provider_id": self.binding.provider_id} if self.binding.provider_id == "glm-messages" else {}),
             on_attempt=NumericReceiptWriter(self.home / "dsh-provider.jsonl"))
-        self.provider.register_usage_session(self.runtime_session_id, {
+        self._usage_context = {
             "session_id": self.session_id, "agent_id": "delivery", "role": "delivery", "phase": "supervision",
             "process_instance": self.process_instance, "provider": self.binding.provider_id,
             "requested_model": self.binding.model,
             "requested_effort": self.binding.requested_effort,
             "effective_effort": self.binding.effective_effort,
-        }, evidence_ref="dsh-baseline.jsonl")
+        }
+        self.provider.register_usage_session(self.runtime_session_id, self._usage_context,
+                                             evidence_ref="dsh-baseline.jsonl")
         credential[:] = b"\0" * len(credential)
         try:
             self.provider.start()
@@ -244,7 +248,8 @@ class DSHDeliveryRuntime:
             for line in self.process.stdout:
                 value = json.loads(line)
                 if value.get("method") != "host/activity":
-                    self._record("wire", frame=value)
+                    session_id = value.get("params", {}).get("sessionId", self.runtime_session_id)
+                    self._record("wire", frame=value, runtime_session_id=session_id)
                 if value.get("method") == "host/activity":
                     params = value.get("params", {})
                     if self.activity and params.get("sessionId") == self.runtime_session_id:
@@ -271,6 +276,8 @@ class DSHDeliveryRuntime:
                 elif value.get("method") == "session.event":
                     params = value["params"]
                     if params.get("sessionId") != self.runtime_session_id:
+                        if params.get("sessionId") in self._retired_sessions:
+                            continue  # Retained on wire; cannot finish the new activity.
                         raise DeliveryRuntimeError("DSH Delivery unbound session event")
                     event = params["event"]
                     if self.activity and not self.activity.context.get("runtime_session_id"):
@@ -362,7 +369,34 @@ class DSHDeliveryRuntime:
     def dispatch_status(self):
         with self._lock:
             return [{**row, **(self.projection.status(row["message_id"])
-                     if row.get("message_id") else {})} for row in self.dispatches.values()]
+                     if row.get("message_id") and row.get("runtime_session_id") == self.runtime_session_id
+                     else {})} for row in self.dispatches.values()]
+
+    def new_thread(self):
+        with self._lock:
+            if self.busy or self._closed:
+                raise DeliveryRuntimeError("DSH Delivery unavailable or busy")
+        new_id = "delivery-" + uuid.uuid4().hex
+        result = self._rpc("ontoweave/delivery/new-session", {
+            "sessionId": self.runtime_session_id, "newSessionId": new_id})
+        if result.get("sessionId") != new_id:
+            raise DeliveryRuntimeError("DSH phase session reservation unconfirmed")
+        self.provider.register_usage_session(new_id, self._usage_context,
+                                             evidence_ref="dsh-baseline.jsonl")
+        with self._lock:
+            for row in self.dispatch_status():
+                self.dispatches[row["dispatch_id"]] = row
+                self._record("dispatch", **row)
+            self._retired_sessions.add(self.runtime_session_id)
+            self.runtime_session_id = new_id
+            self.projection = DispatchProjection(new_id)
+            self.activity.bind(new_id)
+            path = self.home / "dsh-session.json"
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps({"runtime_session_id": new_id,
+                "previous_session_ids": sorted(self._retired_sessions)}))
+            temporary.replace(path)
+        return self.identity
 
     def _dispatch(self, text, active):
         if self._closed:

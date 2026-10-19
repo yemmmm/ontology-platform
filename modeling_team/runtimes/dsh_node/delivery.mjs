@@ -5,8 +5,10 @@ export async function serveDelivery(ctx, config, mounted, load) {
   const { createUserMessage } = await load('@deepseek-ai/dsh-llm');
   const transport = new JsonRpcLineTransport(process.stdin, process.stdout);
   const server = new HarnessSdkJsonRpcServer(ctx, transport, {maxTokensAsSuccess: false});
+  const sessions = new Set([config.sessionId]);
+  let activeSession = config.sessionId;
   const owned = id => {
-    if (id !== config.sessionId) throw new Error('session outside Delivery ownership');
+    if (id !== activeSession) throw new Error('session outside Delivery ownership');
     const agent = ctx.agents.get(id);
     if (!agent) throw new Error('original Delivery session unavailable');
     return agent;
@@ -40,6 +42,15 @@ export async function serveDelivery(ctx, config, mounted, load) {
     }
     if (method === 'host/inspect') return {plugins:mounted, tools:ctx.tools.schemas(),
       services:{tokenMeter:!!ctx.get('tokenMeter'), compaction:!!ctx.get('compaction')}};
+    if (method === 'ontoweave/delivery/new-session') {
+      if (params.sessionId !== activeSession || typeof params.newSessionId !== 'string'
+          || !/^delivery-[a-f0-9]{32}$/.test(params.newSessionId)
+          || sessions.has(params.newSessionId)) throw new Error('invalid phase session binding');
+      // Reserve a fresh SDK identity without starting inference or replacing
+      // the old owner. A lost reservation reply leaves the old session usable.
+      sessions.add(params.newSessionId);
+      return {sessionId:params.newSessionId};
+    }
     if (method === 'ontoweave/delivery/steer') {
       const agent = owned(params.sessionId);
       const message = createUserMessage({content:[{type:'text', text:params.text}], source:{kind:'user'}});
@@ -58,7 +69,9 @@ export async function serveDelivery(ctx, config, mounted, load) {
     if (method === 'shutdown') { setImmediate(() => void exit()); return {}; }
     if (!['session/prompt', 'session/resume', 'session/wait'].includes(method))
       throw new Error('undeclared Delivery bridge method');
-    if (params.sessionId !== config.sessionId) throw new Error('session outside Delivery ownership');
+    if (!sessions.has(params.sessionId)) throw new Error('session outside Delivery ownership');
+    if (method === 'session/prompt') activeSession = params.sessionId;
+    else if (params.sessionId !== activeSession) throw new Error('inactive phase session');
     return server.handleRequest(method, params);
   });
   process.stdin.on('end', () => void exit());

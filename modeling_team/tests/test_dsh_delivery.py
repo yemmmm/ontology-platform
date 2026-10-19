@@ -38,6 +38,36 @@ def settle(runtime):
     return runtime.poll(0)
 
 
+def test_real_dsh_phase_session_keeps_process_and_drops_completed_history(runtime):
+    runtime.provider.tool_calls = False
+    runtime.send(json.dumps({'text': 'OLD_PHASE_HISTORY_CANARY ' * 200}))
+    settle(runtime)
+    original = runtime.runtime_session_id
+    pid = runtime.process.pid
+    requests_before = len(runtime.provider.requests)
+    identity = runtime.new_thread()
+    assert identity['runtime_session_id'] != original and runtime.thread_id is None
+    assert runtime.process.pid == pid and not runtime.busy
+    assert len(runtime.provider.requests) == requests_before
+    runtime.send(json.dumps({'text': 'New phase: retain the original authorized goal.'}))
+    settle(runtime)
+    assert len(runtime.provider.requests) == requests_before + 1
+    assert 'OLD_PHASE_HISTORY_CANARY' not in json.dumps(runtime.provider.requests[-1])
+    assert 'original authorized goal' in json.dumps(runtime.provider.requests[-1])
+    assert all(row['state'] == 'settled' for row in runtime.dispatch_status())
+    assert set(runtime.provider.usage_bindings) == {original, runtime.runtime_session_id}
+    assert json.loads((runtime.home / 'dsh-session.json').read_text())['runtime_session_id'] == runtime.runtime_session_id
+
+
+def test_dsh_phase_switch_refuses_unsettled_tools(runtime):
+    runtime._inflight = 1
+    try:
+        with pytest.raises(DeliveryRuntimeError, match='busy'):
+            runtime.new_thread()
+    finally:
+        runtime._inflight = 0
+
+
 def test_runtime_selection_defaults_and_precise_setting_errors():
     codex, _ = resolve_delivery_model_binding(load_team_model_profile(ROOT, "openai-sol-medium"))
     dsh, _ = resolve_delivery_model_binding(load_team_model_profile(ROOT, "dsh-deepseek-flash-low"))
@@ -215,10 +245,15 @@ def test_control_stays_responsive_during_host_tool_and_cancel_preserves_inbox(ru
     assert (runtime.home / "dsh-tools.jsonl").exists()
 
 
-def test_persisted_resume_keeps_original_session_and_queued_input(runtime):
+@pytest.mark.parametrize("phase_switch", [False, True])
+def test_persisted_resume_keeps_original_session_and_queued_input(runtime, phase_switch):
     runtime.provider.tool_calls = False
     runtime.send(json.dumps({"message_id": "u1", "text": "original constraints"}))
     settle(runtime)
+    if phase_switch:
+        runtime.new_thread()
+        runtime.send(json.dumps({"text": "Phase bootstrap retains original constraints."}))
+        settle(runtime)
     runtime._rpc("host/checkpoint", {"sessionId": runtime.runtime_session_id})
     original = runtime.runtime_session_id
     instance = runtime.process_instance

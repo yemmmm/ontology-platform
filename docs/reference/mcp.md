@@ -390,8 +390,20 @@ bytes的`length`是精确区间而非页面大小；省略length可读捕获原�
 CQ验收状态的`report_binding.summary.blind_status`仅返回原报告资格字符串或null，
 不展开私有exposure明细；question_visibility=hidden不自动表示盲评。
 
-本批只实现 F1＋F2。F3换线程未实施／默认关闭，F4连续动作另行分项实施；F5真实token
-对照与A6独立语义需另获运行授权。离线检查不证明真实等待行为、token或费用下降。
+首批只实现 F1＋F2。2026-10-19追加回执直达与F3可选阶段线程：v2的
+`request_results`直接列出本次新落定的accepted回执，`unresolved[].result`保留未决／
+拒绝的实际结果和纠错动作；不要求模型再查同一回执。首次bootstrap不展开全部已结历史。
+
+Host配置`phase_thread_boundaries: [production, acceptance]`显式选择边界，缺省为空。
+Delivery在`yield_delivery`可附`thread_boundary={phase,run_id,request_ids}`，同时保存
+完整有效决定及理由。production要求实际接受的cq_freeze与冻结通知instruction请求，
+由Delivery确认已进入生产；acceptance要求cq_handoff_complete接受、所选独立验收
+operation已启动。只有当前输入的交接、旧活动已结束、无在途／未知提交、待投递输入
+或未知写入时切换；条件不全延后，不终止原run。新线程仍在原监督进程中，接收当前
+bootstrap、原用户约束与yield决定，不重新启动生产或重置额度。原线程迟到完成不能
+释放新线程忙状态；usage保留实际原生身份，关闭统计累计全部线程而进程存活只计一次。
+F3默认关闭，F4连续动作另行分项实施；F5真实token对照与A6独立语义需另获运行授权。
+工程检查不证明真实等待行为、token或费用下降。
 
 ### R4.3-029 Delivery→Host 私有接单
 
@@ -403,7 +415,10 @@ Delivery默认观察继续保留当前授权、阶段、待办、首阻塞、未
 
 在Delivery本地调用`standby_run`（含`finish_delivery`内部收尾）或
 `complete_cq_acceptance`时，省略request_id会由程序补齐并在结果中返回；
-提交态附`next_query=get_request_result`。同一原生工具调用重投保留关联身份，
+Delivery所有提交态附`receipt_tracking`，包含原request_id、`via=host_observation`及
+yield等待指引，不再用`next_query`要求立即轮询。`get_request_result`仍可用于实际
+回执缺口、未知结果对账和显式恢复；submitted本身不是消费证明。
+同一原生工具调用重投保留关联身份，
 显式传入request_id继续原样使用。独立Host工具的可选参数合同不变；
 submitted只证明提交，实际消费与standby仍以Runner回执／状态为准。
 
