@@ -454,6 +454,12 @@ actual authorized evaluation operations after writes settle. The program defers
 unsafe switches; continue normally without redoing production or resetting quota.
 New phases receive current facts, original constraints and effective decisions.
 Mechanical continuations remain separate work; yield does not execute them.
+Treat current core.phase_thread_handoff as the immediate handoff decision before
+repeating the same wait. Copy its request identities into thread_boundary; for production
+select the actual accepted freeze-notification instruction from notification_request_ids,
+never an unrelated instruction. Preserve still-effective decisions and original constraints,
+then end this activity. This candidate does not prove a switch; original receipt, activity,
+input and write-safety checks still decide whether it can happen.
 
 ## Deterministic phase progression after a semantic decision
 

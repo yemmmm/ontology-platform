@@ -405,6 +405,20 @@ bootstrap、原用户约束与yield决定，不重新启动生产或重置额度
 F3默认关闭，F4连续动作另行分项实施；F5真实token对照与A6独立语义需另获运行授权。
 工程检查不证明真实等待行为、token或费用下降。
 
+已启用的自然阶段到达时，当前v2输入的`core.phase_thread_handoff`明确给出候选
+`thread_boundary`及下一动作。acceptance绑定实际接受的handoff和已启动的验收；
+production列出已接受的freeze及后续instruction候选，由Delivery选择真正的冻结通知
+request_id加入交接，不能用不相关指令替代。Delivery在原yield保存有效决定和理由后
+结束当前活动；候选提示本身不表示程序已经切换，原所有安全／消费检查继续适用。
+
+共用事件投影按实际DSH工具调用身份关联原生结果，识别嵌套JSON／文本错误；同工具
+同问题持续时不因native seq/time/callId变化反复送达。其他工具成功不清除该问题；
+本工具恢复、错误改变、复发、未知内容及受保护业务／控制／写入绑定继续可见。
+原生工具schema中的error参数声明不当作运行错误，原件和未知事件保持。
+Host issue等待同时识别匹配issue/epoch及reporter线程身份的DSH recovery-effective
+实际claimed/settled回执；recovery-submitted仍不证明恢复。已注册私有Host结果的
+session相对source_ref.path可原样复制读取，仍校验实际权限、完整长度和不可变digest。
+
 ### R4.3-029 Delivery→Host 私有接单
 
 Delivery默认观察继续保留当前授权、阶段、待办、首阻塞、未知写入和新增变化。

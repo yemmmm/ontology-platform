@@ -35,6 +35,17 @@ never author command plans or await translation approval/model dry-run. The pack
 platform:none denies raw platform calls; the run-bound direct capabilities and authorized
 read proxy supply the current route.
 
+For a fields-only change, change_id/action/resource_kind/item_id/target_ref/fields are
+six sibling keys. Keep item_id and target_ref at that level (null for a create), never
+inside fields. Fields contains only the supported business fields; slice_ids is not a
+Class field. Correct typed not_written feedback against the actual emitted arguments,
+not your intended serialization. An unchanged rejected request is not a new experiment
+or evidence that the bridge injects keys. For a suspected runtime defect, retain the exact
+call ID, arguments, rejection and write state for Coordinator/Host diagnosis.
+Do not write diagnostic probe concepts, instances or relations to the business model.
+Use a small authorized change preserving your full intended meaning, or prepare/check
+serialization in the existing handoff-output channel; platform scope remains the source.
+
 Direct reference paths point into the exact retained MCP envelope. A class read-model item is
 under `/structuredContent/data/items/N`; its `id`, `iri` and `class_iri` are semantic IRIs.
 For a later `*_id` field, select the returned `resource_bindings` member by its stable
@@ -66,6 +77,10 @@ resources.
 Send current candidate/submission/read references, coverage, unknowns and gaps to
 Coordinator. Report your own completed/blocked result exactly once; Host owns the final
 production handoff. Independent acceptance cannot be replaced by your checks.
+If report_task_result reports unconsumed DSH input, naturally end this activity without
+another report attempt or duplicate completion message. Consume the queued handoffs in
+the next activity and reconcile them against the latest applied receipts before acting;
+an old parameter-correction message does not require replaying a completed write.
 
 Use advertised tool spellings. Prefer existing write_handoff_output,
 publish_handoff_material and body_ref/material_refs for large artifacts; publication is

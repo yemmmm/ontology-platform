@@ -164,9 +164,18 @@ def _dsh_wire_noise(data: dict) -> bool:
     if (set(frame) == {"jsonrpc", "id", "result"} and frame["jsonrpc"] == "2.0"
             and type(frame["id"]) in (str, int) and frame["id"] != ""):
         result = frame["result"]
-        return isinstance(result, dict) and (not result or (
-            set(result) == {"messageId"} and isinstance(result["messageId"], str)
-            and bool(result["messageId"])))
+        if not isinstance(result, dict):
+            return False
+        if not result:
+            return True
+        if set(result) == {"messageId"}:
+            return isinstance(result["messageId"], str) and bool(result["messageId"])
+        if set(result) == {"effectiveBinding", "serverInfo"}:
+            return (all(isinstance(value, dict) for value in result.values())
+                    and not _event_needs_action(result))
+        return (set(result) == {"plugins", "tools"}
+                and all(isinstance(value, list) for value in result.values())
+                and not _event_needs_action(result["plugins"]))
     params = frame.get("params", {})
     if not isinstance(params, dict):
         return False
@@ -202,6 +211,12 @@ def _dsh_wire_noise(data: dict) -> bool:
     reason = payload.get("reason")
     if isinstance(reason, dict) and reason.get("kind") in {"error", "failed", "canceled", "max-tokens"}:
         return False
+    if kind == "request/header":
+        diagnostic = dict(payload)
+        if isinstance(payload.get("header"), dict):
+            diagnostic["header"] = {key: value for key, value in payload["header"].items()
+                                    if key != "tools"}
+        return not _event_needs_action(diagnostic)
     if kind == "turn/end":
         return isinstance(reason, dict) and reason.get("kind") == "completed"
     # Attempts, abnormal activity endings and unknown event kinds stay visible.
@@ -278,6 +293,16 @@ def _is_decision_event_noise(event: Any) -> bool:
     source, data = event.get("source"), event.get("data")
     if not isinstance(data, dict):
         return False
+    if source == "dsh-wire.jsonl":
+        frame = data.get("frame")
+        if isinstance(frame, dict):
+            params = frame.get("params")
+            native = params.get("event") if isinstance(params, dict) else None
+            if (set(frame) == {"jsonrpc", "id", "result"}
+                    or isinstance(native, dict) and native.get("type") == "request/header"):
+                # These known protocol envelopes contain tool schemas. An `error`
+                # parameter declaration is not a live runtime diagnostic.
+                return _dsh_wire_noise(data)
     # Explicit errors/unknown outcomes override otherwise routine activity.
     if _event_needs_action(data):
         return False
@@ -458,7 +483,7 @@ def _decision_event_metadata(event: Any) -> Any:
     return {**event, "data": projected}
 
 
-def _diagnostic_state(event: Any) -> tuple[str, str, bool] | None:
+def _diagnostic_state(event: Any, *, native_operation: str | None = None) -> tuple[str, str, bool] | None:
     """Fold typed diagnostics by current problem state, not append/request identity.
 
     This is shared by runtimes and unfamiliar plugins. Effectful bindings keep
@@ -471,6 +496,35 @@ def _diagnostic_state(event: Any) -> tuple[str, str, bool] | None:
     data, source = event.get("data"), event.get("source")
     if not isinstance(data, dict) or not isinstance(source, str):
         return None
+    native_values = None
+    if source == "dsh-wire.jsonl":
+        if native_operation is None:
+            return None
+        frame = data.get("frame")
+        params = frame.get("params") if isinstance(frame, dict) else None
+        native = params.get("event") if isinstance(params, dict) else None
+        payload = native.get("data") if isinstance(native, dict) else None
+        if not isinstance(payload, dict) or native.get("type") != "tool/result":
+            return None
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            return None
+        values = _dsh_tool_results(payload)
+        failed = message.get("isError") is True or _event_needs_action(values)
+        if values is None:
+            content = message.get("content")
+            if (not failed or not isinstance(content, list) or not content
+                    or any(not isinstance(block, dict) or block.get("type") != "text"
+                           or not isinstance(block.get("text"), str) for block in content)):
+                return None
+            values = [{"text": block["text"]} for block in content]
+        # Fold only native envelope identities, never keys inside the actual
+        # business/error payload. A healthy result clears this actor's problem.
+        native_values = values
+        data = {key: data[key] for key in ("agent_id", "session_id", "process_instance")
+                if key in data}
+        data.update(event="native-tool-result", operation=native_operation, diagnostic=(
+            {"failed": True, "results": values} if failed else {"status": "recovered"}))
     protected = {"write_state", "mutation_state", "control_epoch", "authorization_reference",
                  "authorization_valid_until", "review_id", "content_version", "content_digest",
                  "operation_id", "issue_id", "report_binding", "pending_actions"}
@@ -480,7 +534,8 @@ def _diagnostic_state(event: Any) -> tuple[str, str, bool] | None:
             return bool(protected.intersection(value)) or any(has_binding(v) for v in value.values())
         return isinstance(value, list) and any(has_binding(v) for v in value)
 
-    if has_binding(data) or "receipt" in source or "control" in source or source.startswith("cq-"):
+    if (has_binding(data) or has_binding(native_values) or "receipt" in source
+            or "control" in source or source.startswith("cq-")):
         return None
     diagnostic = bool({"code", "error", "error_type", "diagnostic", "usage_issues",
                        "provider_error"}.intersection(data)) or _event_needs_action(data)
@@ -493,8 +548,11 @@ def _diagnostic_state(event: Any) -> tuple[str, str, bool] | None:
         volatile.update({"raw_usage", "present_fields", "field_positions", "request_shape"})
     current = {key: value for key, value in data.items() if key not in volatile}
     stream = {key: data[key] for key in ("event", "type", "category", "method", "plugin",
-              "agent_id", "agent", "role", "provider", "runtime_session_id", "process_instance",
+              "agent_id", "agent", "role", "provider", "runtime_session_id", "session_id",
+              "process_instance",
               "object", "target", "resource_id", "purpose") if key in data}
+    if native_operation is not None:
+        stream["operation"] = native_operation
     return (_json_bytes([source, stream]).decode(), _digest_bytes(_json_bytes(current)), diagnostic)
 
 
@@ -521,9 +579,28 @@ def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]])
     run_state = state.setdefault(run_id, {"seen": set(), "chain": ""})
     run_state["selected"] = []
     problems = run_state.setdefault("problem_states", {})
+    native_calls = run_state.setdefault("native_tool_calls", {})
     for event in page.get("events") or []:
+        operation = None
+        if isinstance(event, dict) and event.get("source") == "dsh-wire.jsonl":
+            data = event.get("data", {})
+            frame = data.get("frame") if isinstance(data, dict) else None
+            params = frame.get("params") if isinstance(frame, dict) else None
+            native = params.get("event") if isinstance(params, dict) else None
+            payload = native.get("data") if isinstance(native, dict) else None
+            if isinstance(payload, dict):
+                message = payload.get("message", {})
+                call_id = (payload.get("callId") if native.get("type") == "tool/call"
+                           else message.get("toolCallId") if isinstance(message, dict) else None)
+                if isinstance(call_id, str):
+                    key = _json_bytes([data.get("agent_id"), data.get("session_id"),
+                                       data.get("process_instance"), call_id]).decode()
+                    if native.get("type") == "tool/call" and isinstance(payload.get("name"), str):
+                        native_calls[key] = payload["name"]
+                    elif native.get("type") == "tool/result":
+                        operation = native_calls.pop(key, None)
         noise = _is_decision_event_noise(event)
-        problem = _diagnostic_state(event)
+        problem = _diagnostic_state(event, native_operation=operation)
         if noise and (problem is None or not problem[2]):
             continue
         identity: str | None = None
@@ -2014,6 +2091,10 @@ class DeliverySession:
         if bound_host_ref and _digest_bytes(raw) != bound_host_ref.get("content_digest"):
             raise HostOpError("host_result_changed", "Host result original differs from its journal binding",
                 retryable=True, next_action="ask the Host to retain and register the current result original")
+        if bound_host_ref and source_ref and source_ref.get("path") == bound_host_ref["path"]:
+            # Journal Host results use a session-relative path; the private
+            # permission and immutable digest checks above bind its absolute identity.
+            source_ref = {**source_ref, "path": str(path)}
         if selection is None:
             if source_ref is not None:
                 raise HostOpError("artifact_selection_invalid", "source_ref requires a selection",
@@ -2712,6 +2793,55 @@ class DeliverySession:
             "evidence": self._journal_reference(offset, length),
             "note": "End this turn now. All bindings remain under program observation; this is not turn completion."}}
 
+    def _phase_thread_handoff(self) -> dict | None:
+        """Surface the enabled natural boundary where Delivery must record its handoff."""
+        enabled = self.config.get("phase_thread_boundaries", [])
+        current = self._last_current
+        for phase in ("acceptance", "production"):
+            if phase not in enabled:
+                continue
+            for run_id, run in current.get("runs", {}).items():
+                if any(row.get("run_id") == run_id and row.get("phase") == phase
+                       and row.get("status") in {"switched", "attempted"}
+                       for row in self.phase_thread_history):
+                    continue
+                requests = run.get("requests", {})
+                if (requests.get("ok") is not True
+                        or requests.get("data", {}).get("coverage", {}).get("complete") is not True):
+                    continue
+                settled = requests.get("data", {}).get("settled", [])
+                if phase == "production" and any(
+                        row.get("action") == "cq_handoff_complete" for row in settled):
+                    continue
+                action = "cq_handoff_complete" if phase == "acceptance" else "cq_freeze"
+                matches = [row for row in settled if row.get("action") == action]
+                if not matches:
+                    continue
+                request_id = matches[-1]["request_id"]
+                hint = {"thread_boundary": {"phase": phase, "run_id": run_id,
+                                            "request_ids": [request_id]},
+                        "next_action": "include thread_boundary in yield_delivery, retain effective decisions, then end this turn"}
+                if phase == "acceptance":
+                    if not any(key in self.operation_ids and value.get("ok") is True
+                               and value.get("data", {}).get("run_id") == run_id
+                               and value.get("data", {}).get("mode") == "cq-acceptance"
+                               and value.get("data", {}).get("status") in {"running", "exited", "standby"}
+                               for key, value in current.get("operations", {}).items()):
+                        continue
+                else:
+                    following = settled[settled.index(matches[-1]) + 1:]
+                    notifications = [row["request_id"] for row in following
+                                     if row.get("action") == "instruction"]
+                    if not notifications:
+                        continue
+                    hint["notification_request_ids"] = notifications
+                    hint["next_action"] = (
+                        "add the actual accepted freeze-notification instruction request_id to "
+                        "thread_boundary.request_ids, retain effective decisions in yield_delivery, "
+                        "then end this turn; do not select an unrelated instruction")
+                return hint
+        return None
+
     def maybe_switch_phase_thread(self, runtime, *, pending_inputs=()) -> bool:
         """Honor an explicit phase handoff only after the original activity settles."""
         handoff = self.last_yield or {}
@@ -2876,7 +3006,8 @@ class DeliverySession:
                 self._event_cursors.update(record.get("event_cursors", {}))
                 self._decision_event_state = {
                     key: {"seen": set(value["seen"]), "chain": value["chain"],
-                          "problem_states": value.get("problem_states", {})}
+                          "problem_states": value.get("problem_states", {}),
+                          "native_tool_calls": value.get("native_tool_calls", {})}
                     for key, value in record.get("decision_event_state", {}).items()}
             elif event == "delivery_yield":
                 self.last_yield = record
@@ -2980,7 +3111,8 @@ class DeliverySession:
                 "request_results": request_results,
                 "decision_digest": digest, "event_cursors": self._event_cursors,
                 "decision_event_state": {key: {"seen": sorted(value["seen"]), "chain": value["chain"],
-                    "problem_states": value.get("problem_states", {})}
+                    "problem_states": value.get("problem_states", {}),
+                    "native_tool_calls": value.get("native_tool_calls", {})}
                     for key, value in self._decision_event_state.items()}}
             offset, byte_length = append_session_event(self.session_root, packet)
             self._pending_decisions.append({"input_id": input_id, "byte_offset": offset,
@@ -3082,6 +3214,10 @@ class DeliverySession:
                                for key, envelope in snapshot.get("operations", {}).items()},
                 "first_blockers": first_blockers,
                 "deadline_events": snapshot.get("deadline_events", [])}
+        if packet["input_id"] == self._latest_input_id:
+            handoff = self._phase_thread_handoff()
+            if handoff:
+                core["phase_thread_handoff"] = handoff
         objective_in_snapshot = "delivery_objective" in core.get("task_context", {})
         if not bootstrap and objective_in_snapshot:
             # The full Host task is supplied at bootstrap/recovery. Later

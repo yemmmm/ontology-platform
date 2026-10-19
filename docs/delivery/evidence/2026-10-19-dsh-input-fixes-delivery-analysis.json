@@ -1,0 +1,181 @@
+{
+  "session": "minimal-chain-20261019-dsh-input-fixes",
+  "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+  "code": "9945ea2",
+  "runtime": "dsh",
+  "model": "glm-5.3-flash",
+  "effort": "low",
+  "current": {
+    "responses": 117,
+    "input": 27786274,
+    "output": 27478,
+    "uncached": 967010,
+    "input_first": 24930,
+    "input_last": 481894,
+    "input_mean": 237489.52136752137,
+    "input_max": 481894,
+    "yield_count": 56,
+    "yield_boundary_count": 0,
+    "yield_only_responses": 58,
+    "yield_only_response_input": 13684357,
+    "native_turn_ends": 18,
+    "native_compactions": 0,
+    "tool_calls": {
+      "start_run": 1,
+      "get_run_status": 1,
+      "yield_delivery": 58,
+      "get_pending_actions": 1,
+      "read_delivery_artifact": 10,
+      "request_host_action": 4,
+      "submit_instruction": 5,
+      "freeze_cq": 1,
+      "resolve_issue": 1,
+      "get_request_result": 3,
+      "complete_cq_handoff": 3,
+      "start_evaluation": 2,
+      "get_evaluation_status": 2,
+      "complete_cq_acceptance": 1,
+      "emit_user_message": 1,
+      "finish_delivery": 1
+    },
+    "stage_window_attribution": {
+      "before_issue": {
+        "responses": 35,
+        "input": 3592681,
+        "output": 9096,
+        "yield_only": 17
+      },
+      "issue_to_recovery": {
+        "responses": 32,
+        "input": 6478726,
+        "output": 7276,
+        "yield_only": 16
+      },
+      "recovery_to_handoff": {
+        "responses": 28,
+        "input": 8170386,
+        "output": 6723,
+        "yield_only": 15
+      },
+      "acceptance_and_close": {
+        "responses": 22,
+        "input": 9544481,
+        "output": 4383,
+        "yield_only": 10
+      }
+    }
+  },
+  "previous_wake_guard": {
+    "responses": 68,
+    "input": 12014191,
+    "output": 16487,
+    "uncached": 631599,
+    "input_mean": 176679.2794117647,
+    "input_max": 317967,
+    "tool_calls": {
+      "start_run": 1,
+      "get_run_status": 1,
+      "submit_instruction": 3,
+      "read_delivery_artifact": 15,
+      "get_request_result": 7,
+      "get_pending_actions": 5,
+      "request_host_action": 3,
+      "yield_delivery": 13,
+      "freeze_cq": 1,
+      "complete_cq_handoff": 2,
+      "start_evaluation": 2,
+      "complete_cq_acceptance": 1,
+      "emit_user_message": 1,
+      "finish_delivery": 1
+    }
+  },
+  "comparison": {
+    "input_change_pct": 131.2787769064101,
+    "response_change_pct": 72.05882352941177,
+    "mean_input_change_pct": 34.418434441332366,
+    "uncached_change_pct": 53.10505558115197,
+    "yield_only_share": 0.49248621819535787,
+    "post_handoff_input_share": 0.3434962528621146
+  },
+  "f3_adoption": {
+    "instructions_hash_matches": true,
+    "instructions_mention_boundary": true,
+    "schema_mention_boundary": true,
+    "yield_records": 56,
+    "boundary_requested": 0,
+    "phase_thread_history": []
+  },
+  "cq_prompt_adoption": {
+    "minimal_replaces_generic": true,
+    "actual_has_material_forbidden": false,
+    "actual_has_only_addressed_material": false
+  },
+  "repeated_native_error_signature_summary": [
+    {
+      "text": "Error: material_forbidden: material is unavailable for this identity",
+      "count": 3,
+      "diagnostic_flags": {
+        "False": 3
+      },
+      "distinct_signatures": 3
+    },
+    {
+      "text": "{\"error\": {\"code\": \"material_forbidden\", \"message\": \"material is unavailable for this identity\", \"ok\": false, \"retry\": \"correct the material binding or use the continuation metadata\"}, \"ok\":",
+      "count": 4,
+      "diagnostic_flags": {
+        "False": 4
+      },
+      "distinct_signatures": 4
+    },
+    {
+      "text": "Error: unconsumed DSH input; end this activity to receive queued handoffs, then retry report_task_result; unknown dispatches require Host reconciliation",
+      "count": 11,
+      "diagnostic_flags": {
+        "False": 11
+      },
+      "distinct_signatures": 11
+    }
+  ],
+  "selected_native_event_counts": {
+    "rpc_result:effectiveBinding,serverInfo": 3,
+    "rpc_result:plugins,tools": 6,
+    "event:request/header": 3,
+    "event:tool/result": 25
+  },
+  "artifact_reads": {
+    "current_calls": 10,
+    "current_failed": 1,
+    "current_missing_byte_length": 0,
+    "previous_calls": 15,
+    "previous_failed": 12
+  },
+  "v2_packets": {
+    "count": 99,
+    "unique": 97,
+    "bytes_mean": 10163.838383838383,
+    "bytes_sum": 1006220,
+    "modes": {
+      "bootstrap": 1,
+      "changes": 98
+    },
+    "events_only_no_new_request_results": 49,
+    "request_results_bytes": 4644
+  },
+  "result": "Independent non-blind public 1/1 and hidden 3/3 pass; this analysis does not regrade semantics",
+  "limitations": [
+    "Stage token sums are by response timestamp; they include shared prior history and are not removable-cost estimates.",
+    "Input-byte counts are new v2 content, not whole prompt tokens.",
+    "Previous run has different failures, authorization details and observer setting; before/after is descriptive, not controlled causal estimate.",
+    "F3 was not requested in actual yields, so safety-gate success/failure and savings remain untested.",
+    "Host preparation/supervision input 16,049,989, output 27,750 is separate; current retrospective overhead and pending bill/reasoning/cache-write remain excluded/unknown."
+  ],
+  "ordinary_header_false_positive": {
+    "count": 3,
+    "reason": "_event_needs_action sees the tool error parameter declaration at header.tools[*].parameters.properties.error as a runtime error; _dsh_wire_noise itself returns True for these known request/header events",
+    "agents": [
+      "coordinator",
+      "modeling",
+      "competency-question"
+    ]
+  }
+}

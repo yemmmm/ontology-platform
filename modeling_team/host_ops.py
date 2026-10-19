@@ -596,9 +596,9 @@ def _issue_pending(run_root: Path) -> tuple[dict[str, Any] | None, list[str]]:
 
     ``issue-resolution`` records persist guidance, but do not prove that the
     corresponding control reached the reporter.  Only an issue-control
-    terminal dispatch, or the Runner's matching abort-control record, closes
-    the host-side wait; informational control events (which carry ``event``)
-    remain pending until the actual dispatch record.
+    terminal dispatch, a bound DSH recovery-effective native consumption receipt,
+    or the Runner's matching abort-control record closes the host-side wait.
+    Informational recovery-submitted events remain pending.
     """
 
     reports, report_limits = _evidence_source(run_root, "issue-report")
@@ -625,6 +625,29 @@ def _issue_pending(run_root: Path) -> tuple[dict[str, Any] | None, list[str]]:
             and "event" not in record
         )
     }
+    report_bindings = {record.get("issue_id"): record for record in reports}
+    for record in controls:
+        report = report_bindings.get(record.get("issue_id"), {})
+        native = record.get("native_dispatch")
+        reporter_matches = record.get("reporter_id") == report.get("reporter_id")
+        if "reporter_id" not in record and isinstance(native, dict):
+            session = native.get("runtime_identity")
+            process = native.get("process_instance")
+            reporter_matches = (isinstance(session, str) and bool(session)
+                                and isinstance(process, str) and bool(process)
+                                and report.get("thread_id") == f"{session}:{process}")
+        if (
+            record.get("event") == "recovery-effective"
+            and reporter_matches
+            and type(record.get("control_epoch")) is int
+            and record["control_epoch"] == report.get("control_epoch")
+            and isinstance(record.get("dispatch_id"), str)
+            and record["dispatch_id"]
+            and isinstance(native, dict)
+            and native.get("dispatch_id") == record["dispatch_id"]
+            and native.get("state") in {"claimed", "settled"}
+        ):
+            resolved.add(record["issue_id"])
     resolved.update(
         issue_id
         for record in aborts

@@ -118,3 +118,9 @@ than reporting a new issue or claiming that resolution was lost. Pause on a sour
 in-flight work, collect Modeling's acknowledgement and reply with
 `flow_confirmation: {request_id: <actual id>, action: pause|resume}` and remaining work.
 Resume only the authorized remainder, retaining confirmed writes and decisions.
+Before relaying another execution request, reconcile queued technical guidance with the
+latest Modeling application/readback/closure receipts. Preserve the original sourced
+message and any effective user control, but do not ask Modeling to repeat a completed
+write because an older correction arrived late. For unconsumed DSH input at terminal
+reporting, end the activity, consume the queued handoffs next activity, then retry the
+report; do not keep sending the same completion or correction while that queue drains.

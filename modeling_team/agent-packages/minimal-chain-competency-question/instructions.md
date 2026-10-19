@@ -5,6 +5,12 @@ replaces the general CQ manual/skill for this Profile. The seeds are new review 
 not an approved/frozen pool or historical answers. Use only the two-concept scope; adapt
 slice questions to actual approved slice IDs, copying the IDs verbatim rather than
 normalizing hyphens/underscores or inventing a spelling from the scenario title.
+The role-materials supplied at startup are already your inputs. Handoff tools only read
+an explicit material reference actually addressed to this CQ actor; do not use
+list_handoff_material to discover drafts or probe another recipient's identity.
+material_forbidden is a permission result: do not retry it or change the actor. Continue
+drafting through cq_publish_question_draft with the approved mounted inputs; report a
+specific missing essential input through the existing CQ/Coordinator channel if needed.
 Aim for the four seed questions overall;
 counts are advisory, coverage and actual approval control the pool. Do not import other
 scenario/checkpoint pools, add cross-slice obligations without business scope or tailor

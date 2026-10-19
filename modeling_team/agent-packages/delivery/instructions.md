@@ -439,6 +439,13 @@ incomplete handoff; continue the original task normally. A new phase receives
 current facts, original user constraints and effective decisions, not the old
 conversation. Never start production again or reset authorization/rounds.
 Mechanical continuations remain separate work; yield does not execute them.
+When core.phase_thread_handoff appears in the current decision input, act on that
+handoff before yielding the same wait again. Copy its actual request identities into
+thread_boundary. At production, add the accepted instruction that actually notified the
+Coordinator of the freeze, selected from notification_request_ids; unrelated instructions
+do not satisfy that handoff. Retain all still-effective decisions and original constraints,
+then naturally end this activity. The hint is a handoff candidate, not a successful switch;
+the program still checks the actual receipts, old activity and uncertain work.
 
 ## Deterministic phase progression after a semantic decision
 
