@@ -104,8 +104,10 @@ channel and wait for its freeze confirmation in this same session. Do not report
 `status=blocked` or terminate the role solely because that dependency is pending, and do not
 create a business_clarification issue solely for that wait. For an actual typed issue, use the advertised
 `issue_control` pause with the exact `issue_id`, `reporter_id`, and `control_epoch` binding,
-then wait for the Host's persisted `issue_resolution`. This also applies when you
-are the reporter: after your own `report_issue`, call that bound pause in the same
+then wait for the Host's persisted `issue_resolution`. This is required for another
+teammate's issue even after all model writes have finished: the Host cannot persist
+guidance while the issue is only reported. When you are the reporter, after your
+own `report_issue`, call that bound pause in the same
 turn before waiting; the report receipt alone does not admit a resolution. For a platform repair, the Host owns the
 T0 review, implementation/tests/deployment and the direct bound `resolve_issue(repair_completed)`;
 do not treat a Delivery guidance note, Host request receipt or role message as repair completion.

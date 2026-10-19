@@ -1,0 +1,316 @@
+{
+  "collected_at": "2026-10-19T01:24:57.541734+00:00",
+  "code_at_semantic_start": "bb51c4e",
+  "runtime": "dsh",
+  "model": "glm-5.3-flash",
+  "effort": "low",
+  "run_id": "minimal-chain-20261019-dsh-glm-low-r1",
+  "baseline_run": "minimal-chain-20261019-token-opt-c-r1",
+  "rounds": 1,
+  "fresh_starts": 1,
+  "substantive_repairs": 0,
+  "question_pool_canonical_equal": true,
+  "nonruntime_team_profile_equal": true,
+  "independent_public_pass": 1,
+  "independent_hidden_pass": 3,
+  "blind_status": "non-blind-regression",
+  "application_revisions": [
+    1,
+    2
+  ],
+  "closure": {
+    "acceptance_attempt_id": "attempt-0001",
+    "acceptance_phase": "acceptance_complete",
+    "batch_id": "cq-batch-0001",
+    "cq_verdict": "pass",
+    "freeze_digest": "sha256:5cd4854dbfff1d4288b869edd5fde87ecc599fbe8919079ecf02a3c0fca1cd53",
+    "freeze_id": "cq-batch-0001",
+    "recorded_at": "2026-10-19T01:22:09.672203+00:00",
+    "report_digest": "sha256:a964061e054c93de2e0f5d0a77c5ab828e64059516f1d2ae456f4438de08aaa1",
+    "report_directory": "acceptance-v3/reports/cq-batch-0001/attempt-0001"
+  },
+  "comparison": {
+    "semantic_start_to_complete_acceptance_minutes": {
+      "codex": 10.863124733333333,
+      "dsh": 14.18687055,
+      "dsh_over_codex": 1.305965907439855,
+      "percent_change": 30.59659074398551
+    },
+    "delivery_input_tokens": {
+      "codex": 6919702,
+      "dsh": 21418062,
+      "dsh_over_codex": 3.0952289563914746,
+      "percent_change": 209.52289563914746
+    },
+    "chain_input_tokens": {
+      "codex": 9930615,
+      "dsh": 24586921,
+      "dsh_over_codex": 2.4758709304509336,
+      "percent_change": 147.58709304509335
+    },
+    "chain_uncached_input_tokens": {
+      "codex": 430007,
+      "dsh": 787881,
+      "dsh_over_codex": 1.8322515679977303,
+      "percent_change": 83.22515679977303
+    },
+    "chain_output_tokens": {
+      "codex": 38057,
+      "dsh": 62959,
+      "dsh_over_codex": 1.6543342880416219,
+      "percent_change": 65.43342880416219
+    }
+  },
+  "roles": {
+    "delivery": {
+      "codex": {
+        "input_tokens": 6919702,
+        "cached_input_tokens": 6751168,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 9481,
+        "reasoning_output_tokens": 1118,
+        "total_tokens": 6929183,
+        "response_count": 49,
+        "responses_with_cached_input": 49,
+        "response_cache_hit_ratio": 1.0,
+        "uncached_input_tokens": 168534,
+        "cached_input_ratio": 0.9756443268799726
+      },
+      "dsh": {
+        "responses": 78,
+        "uncached_input_tokens": 473870,
+        "cached_input_tokens": 20944192,
+        "output_tokens": 28565,
+        "native_total_tokens": 21446627,
+        "cache_write_missing_responses": 78,
+        "native_reported_input_tokens": 21418062
+      }
+    },
+    "competency-question": {
+      "codex": {
+        "input_tokens": 137084,
+        "cached_input_tokens": 123520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 2252,
+        "reasoning_output_tokens": 418,
+        "total_tokens": 139336,
+        "response_count": 11,
+        "responses_with_cached_input": 11,
+        "response_cache_hit_ratio": 1.0,
+        "uncached_input_tokens": 13564,
+        "cached_input_ratio": 0.9010533687374165
+      },
+      "dsh": {
+        "responses": 17,
+        "uncached_input_tokens": 31515,
+        "cached_input_tokens": 173824,
+        "output_tokens": 4391,
+        "native_total_tokens": 209730,
+        "cache_write_missing_responses": 17,
+        "native_reported_input_tokens": 205339
+      }
+    },
+    "coordinator": {
+      "codex": {
+        "input_tokens": 507370,
+        "cached_input_tokens": 476928,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 8724,
+        "reasoning_output_tokens": 3668,
+        "total_tokens": 516094,
+        "response_count": 22,
+        "responses_with_cached_input": 22,
+        "response_cache_hit_ratio": 1.0,
+        "uncached_input_tokens": 30442,
+        "cached_input_ratio": 0.9400003941896447
+      },
+      "dsh": {
+        "responses": 33,
+        "uncached_input_tokens": 72695,
+        "cached_input_tokens": 756992,
+        "output_tokens": 13523,
+        "native_total_tokens": 843210,
+        "cache_write_missing_responses": 33,
+        "native_reported_input_tokens": 829687
+      }
+    },
+    "modeling": {
+      "codex": {
+        "input_tokens": 1679681,
+        "cached_input_tokens": 1600256,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 12412,
+        "reasoning_output_tokens": 2210,
+        "total_tokens": 1692093,
+        "response_count": 43,
+        "responses_with_cached_input": 42,
+        "response_cache_hit_ratio": 0.9767441860465116,
+        "uncached_input_tokens": 79425,
+        "cached_input_ratio": 0.9527142356197397
+      },
+      "dsh": {
+        "responses": 35,
+        "uncached_input_tokens": 82209,
+        "cached_input_tokens": 1486720,
+        "output_tokens": 9466,
+        "native_total_tokens": 1578395,
+        "cache_write_missing_responses": 35,
+        "native_reported_input_tokens": 1568929
+      }
+    },
+    "judge": {
+      "codex": {
+        "input_tokens": 495268,
+        "cached_input_tokens": 421568,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 2845,
+        "reasoning_output_tokens": 86,
+        "total_tokens": 498113,
+        "response_count": 15,
+        "responses_with_cached_input": 15,
+        "response_cache_hit_ratio": 1.0,
+        "uncached_input_tokens": 73700,
+        "cached_input_ratio": 0.8511916780409798
+      },
+      "dsh": {
+        "responses": 12,
+        "uncached_input_tokens": 58447,
+        "cached_input_tokens": 299584,
+        "output_tokens": 3611,
+        "native_total_tokens": 361642,
+        "cache_write_missing_responses": 12,
+        "native_reported_input_tokens": 358031
+      }
+    },
+    "consumer": {
+      "codex": {
+        "input_tokens": 191510,
+        "cached_input_tokens": 127168,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 2343,
+        "reasoning_output_tokens": 243,
+        "total_tokens": 193853,
+        "response_count": 14,
+        "responses_with_cached_input": 13,
+        "response_cache_hit_ratio": 0.9285714285714286,
+        "uncached_input_tokens": 64342,
+        "cached_input_ratio": 0.6640279880946165
+      },
+      "dsh": {
+        "responses": 15,
+        "uncached_input_tokens": 69145,
+        "cached_input_tokens": 137728,
+        "output_tokens": 3403,
+        "native_total_tokens": 210276,
+        "cache_write_missing_responses": 15,
+        "native_reported_input_tokens": 206873
+      }
+    }
+  },
+  "native_response_count": 190,
+  "provider_response_count": 190,
+  "native_event_conflicts": [],
+  "native_sources": [
+    {
+      "path": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low/native/dsh-wire.jsonl",
+      "bytes": 3760177,
+      "sha256": "5afa0eda6e7f8f4b2cb91bf1c18de2705b08e4134549d7d338861fce951902ba"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-r1/evidence/dsh-wire.jsonl",
+      "bytes": 1560078,
+      "sha256": "95b56d80cc335f6311b3cdc592c6ab172f401fb05be43450b63f41638145ad8a"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-r1/acceptance-runtime/d668e96a025341dd818d958e23d80090/evidence/dsh-wire.jsonl",
+      "bytes": 170596,
+      "sha256": "8b14cd567081ec56120cff06507246b822299b9f15b0449e6f105c5ca2092852"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-r1/acceptance-runtime/6930e25e9660490896b191bd149bfbaa/evidence/dsh-wire.jsonl",
+      "bytes": 116014,
+      "sha256": "aa45b2b6d210917c0df071c15f49872667289b6ef3409f468cdf85b4834c5952"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-r1/acceptance-runtime/1e5983b52cc044c2b70f8b321153c153/evidence/dsh-wire.jsonl",
+      "bytes": 382651,
+      "sha256": "b324d0fe11c46820bd23eaa41d378c96aa4980a6637704c8a5dbd40ef11ce2b4"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-r1/acceptance-runtime/b6f36a704c0445bfac86764fa749f5e0/evidence/dsh-wire.jsonl",
+      "bytes": 106153,
+      "sha256": "74c9e0b83929030627d7fe84756d0279c8b60ca45cee3336e2de65560f0090a2"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-r1/acceptance-runtime/bdcb25a238e1403d8f8484a377563bdb/evidence/dsh-wire.jsonl",
+      "bytes": 114815,
+      "sha256": "da5e9f77b3697521d3e2de516dbf04dc4906676d8777ce7ffaaa19d021bca354"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-r1/acceptance-runtime/4ffd4ede0301476d87b2aef9148d36a2/evidence/dsh-wire.jsonl",
+      "bytes": 137948,
+      "sha256": "faf2686a49574c3e716df7a3720efef0dc42605fb0fb46977c1d2ffebdf4f778"
+    }
+  ],
+  "host_cost": {
+    "collected_at": "2026-10-19T01:23:30.202849+00:00",
+    "models_in_thread": [
+      "gpt-6.1-sol"
+    ],
+    "source": {
+      "path": "/home/yangxiang/.codex/sessions/2026/10/19/rollout-2026-10-19T08-52-40-01a151a5-769c-7720-aff8-65ee11b09532.jsonl",
+      "bytes": 3223996,
+      "sha256": "6c95f79c9a6e3a8319e00e27a2d3b972c03bb5fc648ccc0f0903afedd1e9e9aa"
+    },
+    "semantic_start_boundary": "2026-10-19T01:07:58.459970+00:00",
+    "attribution": "Entire responses bucketed by receipt timestamp before/after first semantic start, not estimated effective labor time. Current root thread includes compatibility implementation and ongoing supervision; no delegated engineering agent.",
+    "compatibility_preparation": {
+      "input_tokens": 9050507,
+      "cached_input_tokens": 8696320,
+      "output_tokens": 29134,
+      "reasoning_output_tokens": 9079,
+      "total_tokens": 9079641,
+      "responses": 62,
+      "uncached_input_tokens": 354187
+    },
+    "supervision_and_comparison": {
+      "input_tokens": 16352288,
+      "cached_input_tokens": 16257024,
+      "output_tokens": 27448,
+      "reasoning_output_tokens": 13664,
+      "total_tokens": 16379736,
+      "responses": 68,
+      "uncached_input_tokens": 95264
+    },
+    "total_to_cutoff": {
+      "input_tokens": 25402795,
+      "cached_input_tokens": 24953344,
+      "output_tokens": 56582,
+      "reasoning_output_tokens": 22743,
+      "total_tokens": 25459377,
+      "responses": 130,
+      "uncached_input_tokens": 449451
+    },
+    "conflicts": [],
+    "limitations": [
+      "Current root response and future tail after cutoff not included.",
+      "Different Host models/scopes from Codex C; this is disclosed experiment overhead, not a controlled per-runtime causal comparison.",
+      "Interrupted requests without numerical receipts and provider billing unknown."
+    ]
+  },
+  "lifecycle": "accepted readonly standby; original Team, evaluation owners and Delivery retained. No user stop was requested.",
+  "technical_interventions": [
+    "Two normal Host CQ reviews, same as baseline.",
+    "Host replayed original dispatches; all nine inputs settled, no gap/conflict. No platform code repair.",
+    "Host consult was rejected before readonly (operator entrypoint error); retained. Correct delivery_guidance prompted Coordinator bound pause.",
+    "Bound guidance accepted and actual same-session recovery effective; no new modeling round."
+  ],
+  "remaining_limits": [
+    "GLM Messages proxy input capture did not support input fields at stream tail. Native DSH data preserved actual final usage; proxy raw numeric completeness remains partial.",
+    "Native input uses totalTokens-outputTokens and recorded uncached/cache read; cache-write and reasoning fields absent are unknown, not zero. No provider bill or full expense claim.",
+    "Different protocol, context/output limits, Host model and repair path; one run is not causal proof.",
+    "Actual readonly standby and complete acceptance receipts outrank stale pending derivation still listing historical issue_wait/cq_acceptance_closure.",
+    "Delivery described Host technical recovery as platform repair; no code was modified to recover the run.",
+    "Post-cutoff Host final/commit response usage remains unknown."
+  ]
+}
