@@ -1,0 +1,1732 @@
+{
+  "collected_at": "2026-10-19T15:42:08.396803+00:00",
+  "scope": "Read-only retained-evidence cost retrospective, latest complete task plus nearest same-code normal-path reference; no model call or semantic regrading. Original evidence unchanged.",
+  "metric": "Known native input = totalTokens - outputTokens; known task total = sum(totalTokens) once per native session+seq. Cache and reasoning subsets are never added again. Missing provider usage remains unknown.",
+  "goal": {
+    "confirmed_total_token_ceiling": 10000000,
+    "unit": "decimal tokens",
+    "scope": "Complete minimal business task including Delivery, production/CQ, independent evaluation, failed/replaced runs, retries, compaction, Host/auxiliary work and necessary finalization. Current numeric totals omit unallocated Host/auxiliary usage and remain partial.",
+    "automatic_run_termination": false
+  },
+  "tasks": [
+    {
+      "session": "minimal-chain-20261019-dsh-glm-low-140728",
+      "code": "594c9be2c85f6f74f09f6d46b091a5db181de854",
+      "runtime": "dsh",
+      "model": "glm-5.3-flash",
+      "effort": "low",
+      "rounds": {
+        "authorized": 3,
+        "consumed": 2,
+        "fresh_starts": 2,
+        "substantive_remodeling": 0
+      },
+      "sources": [
+        {
+          "path": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-140728/native/dsh-wire.jsonl",
+          "bytes": 5225892,
+          "sha256": "b9f03def3f517bb33df0acb6c323b9a5afb053b27d178e4f0e3cf15a221d97c7",
+          "prior_snapshot_bytes": 5225892,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r1/evidence/dsh-wire.jsonl",
+          "bytes": 2442037,
+          "sha256": "e33648c62283d05516e0d3a71d5e9aecb8e468fe6bbb0f44665d356b2d1ca111",
+          "prior_snapshot_bytes": 2442037,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r2/evidence/dsh-wire.jsonl",
+          "bytes": 1696019,
+          "sha256": "049f455e2ed72f32692fc2181a3a50b1e8235c16d1719eeb1ac0578fc7a0a544",
+          "prior_snapshot_bytes": 1696019,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-140728-1019-r2-acceptance-hidden.owner/acceptance-runtime/a3ee9ccdeed244ad9c3a90aef6af4332/evidence/dsh-wire.jsonl",
+          "bytes": 428961,
+          "sha256": "898cc062c80f449e9d5b471af45196dd30d345f3fa7ccf3ce34bd42e05faef67",
+          "prior_snapshot_bytes": 428961,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-140728-1019-r2-acceptance-hidden.owner/acceptance-runtime/9b82293257df43cdbe7ab556b58aae0d/evidence/dsh-wire.jsonl",
+          "bytes": 110320,
+          "sha256": "5070118f58925b2d07995f03f76977c746e7984a0b1dcab7f7aa2189c62101d7",
+          "prior_snapshot_bytes": 110320,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-140728-1019-r2-acceptance-hidden.owner/acceptance-runtime/653f27e1c6d548f1876fa16227f2cd6d/evidence/dsh-wire.jsonl",
+          "bytes": 147523,
+          "sha256": "700c98ded56d82642f5405696bb693b40760a46c2dfbfafb3536a1953459f776",
+          "prior_snapshot_bytes": 147523,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-140728-1019-r2-acceptance-hidden.owner/acceptance-runtime/063db56995f4413cafd70f3cd6421325/evidence/dsh-wire.jsonl",
+          "bytes": 116271,
+          "sha256": "c64c91f12a9bb98fcfe4bfe92bf559eeeccfcac4d8c353f845cf009f44bee1c8",
+          "prior_snapshot_bytes": 116271,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-140728-1019-r2-acceptance-public.owner/acceptance-runtime/a059e3d1935a44f8a40d1d46fe5a5d63/evidence/dsh-wire.jsonl",
+          "bytes": 176653,
+          "sha256": "9174867b515008373585d41d804f21b73a3bbba50a0fa65d14022084b8536c49",
+          "prior_snapshot_bytes": 176653,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-140728-1019-r2-acceptance-public.owner/acceptance-runtime/b5ec307aaec146fe89c2666ae2bcf559/evidence/dsh-wire.jsonl",
+          "bytes": 172370,
+          "sha256": "e2f6bb4546c9778849aee14126293e47928c62e3182e7f7da8c7009c4f060c64",
+          "prior_snapshot_bytes": 172370,
+          "prior_prefix_matches": true
+        }
+      ],
+      "snapshot_collected_at": "2026-10-19T14:40:45.229069+00:00",
+      "prior_snapshot_total": {
+        "responses": 404,
+        "uncached_input_tokens": 1385010,
+        "cached_input_tokens": 49000896,
+        "output_tokens": 142581,
+        "native_total_tokens": 50528487,
+        "cache_write_missing_responses": 404,
+        "native_reported_input_tokens": 50385906
+      },
+      "current_total": {
+        "responses": 404,
+        "input": 50385906,
+        "output": 142581,
+        "total": 50528487,
+        "cached": 49000896,
+        "uncached": 1385010
+      },
+      "roles": {
+        "acceptance": {
+          "responses": 12,
+          "input": 409913,
+          "output": 3996,
+          "total": 413909,
+          "cached": 333760,
+          "uncached": 76153
+        },
+        "competency-question": {
+          "responses": 26,
+          "input": 301927,
+          "output": 7628,
+          "total": 309555,
+          "cached": 247680,
+          "uncached": 54247
+        },
+        "coordinator": {
+          "responses": 98,
+          "input": 2971959,
+          "output": 35855,
+          "total": 3007814,
+          "cached": 2801408,
+          "uncached": 170551
+        },
+        "delivery": {
+          "responses": 139,
+          "input": 41644343,
+          "output": 50028,
+          "total": 41694371,
+          "cached": 41017280,
+          "uncached": 627063
+        },
+        "modeling": {
+          "responses": 111,
+          "input": 4772082,
+          "output": 39940,
+          "total": 4812022,
+          "cached": 4484672,
+          "uncached": 287410
+        },
+        "platform-examiner": {
+          "responses": 18,
+          "input": 285682,
+          "output": 5134,
+          "total": 290816,
+          "cached": 116096,
+          "uncached": 169586
+        }
+      },
+      "tail_correction": {
+        "responses": 0,
+        "input": 0,
+        "output": 0
+      },
+      "conflicts": [],
+      "delivery_threads": [
+        {
+          "native": "delivery-c09b6830aa544a80a9e178e8b6e28166",
+          "responses": 139,
+          "input": 41644343,
+          "output": 50028,
+          "total": 41694371,
+          "cached": 41017280,
+          "uncached": 627063,
+          "first": {
+            "role": "delivery",
+            "native": "delivery-c09b6830aa544a80a9e178e8b6e28166",
+            "seq": 10,
+            "time": "2026-10-19T14:07:45.658000+00:00",
+            "turn": 1,
+            "step": 1,
+            "type": "assistant/message",
+            "input": 26620,
+            "output": 202,
+            "cached": 0,
+            "uncached": 26620,
+            "cache_write_present": false,
+            "reasoning_present": false,
+            "source": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-140728/native/dsh-wire.jsonl",
+            "line": 16
+          },
+          "last": {
+            "role": "delivery",
+            "native": "delivery-c09b6830aa544a80a9e178e8b6e28166",
+            "seq": 1008,
+            "time": "2026-10-19T14:39:00.730000+00:00",
+            "turn": 21,
+            "step": 6,
+            "type": "assistant/message",
+            "input": 622292,
+            "output": 201,
+            "cached": 615872,
+            "uncached": 6420,
+            "cache_write_present": false,
+            "reasoning_present": false,
+            "source": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-140728/native/dsh-wire.jsonl",
+            "line": 1281
+          },
+          "mean_input": 299599.58992805757,
+          "median_input": 262169,
+          "p95_input": 592616,
+          "peak_input": 622292
+        }
+      ],
+      "delivery_windows": {
+        "before_r2": {
+          "responses": 70,
+          "input": 10957831,
+          "output": 27481,
+          "total": 10985312,
+          "cached": 10693248,
+          "uncached": 264583
+        },
+        "from_r2": {
+          "responses": 69,
+          "input": 30686512,
+          "output": 22547,
+          "total": 30709059,
+          "cached": 30324032,
+          "uncached": 362480
+        }
+      },
+      "delivery_tools": {
+        "start_run": 2,
+        "get_run_status": 1,
+        "yield_delivery": 71,
+        "request_host_action": 9,
+        "read_delivery_artifact": 9,
+        "freeze_cq": 2,
+        "submit_instruction": 5,
+        "stop_run": 1,
+        "complete_cq_handoff": 3,
+        "start_evaluation": 4,
+        "complete_cq_acceptance": 1,
+        "emit_user_message": 1,
+        "finish_delivery": 1
+      },
+      "yield_only": {
+        "responses": 71,
+        "input": 21065251,
+        "output": 35969,
+        "total": 21101220,
+        "cached": 20709760,
+        "uncached": 355491
+      },
+      "no_tool_response": {
+        "responses": 31,
+        "input": 9785999,
+        "output": 591,
+        "total": 9786590,
+        "cached": 9757632,
+        "uncached": 28367
+      },
+      "turn_ends": 21,
+      "delivered_inputs": 120,
+      "input_kind_counts": {
+        "delivery_start": 1,
+        "null": 1,
+        "user_input": 5,
+        "host_observation": 113
+      },
+      "explicit_boundaries": [
+        {
+          "seq": 918,
+          "time": "2026-10-19T14:35:55.839000+00:00",
+          "input_id": "ba5abed753354dd2a41e08efb2133f88",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "turn": 18
+        },
+        {
+          "seq": 932,
+          "time": "2026-10-19T14:36:34.315000+00:00",
+          "input_id": "7b8c618cb71d4675ac68c99c5bb9acca",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "turn": 19
+        },
+        {
+          "seq": 941,
+          "time": "2026-10-19T14:36:46.517000+00:00",
+          "input_id": "19e3872aa38a4f8093b11a204ab1c6fa",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "turn": 19
+        },
+        {
+          "seq": 949,
+          "time": "2026-10-19T14:36:59.185000+00:00",
+          "input_id": "f1ae7eabe59849e9bc439f1f39cb122a",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "turn": 19
+        },
+        {
+          "seq": 962,
+          "time": "2026-10-19T14:37:23.835000+00:00",
+          "input_id": "2f0159ffef46443e92d6f856d8a96d57",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "turn": 20
+        },
+        {
+          "seq": 984,
+          "time": "2026-10-19T14:38:11.231000+00:00",
+          "input_id": "e3be399362cf40daa61a5749cc84e8e8",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "turn": 21
+        },
+        {
+          "seq": 1002,
+          "time": "2026-10-19T14:38:51.359000+00:00",
+          "input_id": "c29cc1d7f56b4cce91875ec9fdb2ac7d",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "turn": 21
+        }
+      ],
+      "phase_thread_history": [],
+      "accepted_yield_records": 69,
+      "decision_packets": 109,
+      "phase_guard_checks": [
+        {
+          "input_id": "ba5abed753354dd2a41e08efb2133f88",
+          "recorded_at": "2026-10-19T14:35:56.091773+00:00",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "blocking_uncorrelated": [
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+              "uncorrelated_count": 3,
+              "ledger_offsets": [
+                1179,
+                1370,
+                1561
+              ]
+            },
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "uncorrelated_count": 2,
+              "ledger_offsets": [
+                0,
+                1373
+              ]
+            }
+          ]
+        },
+        {
+          "input_id": "7b8c618cb71d4675ac68c99c5bb9acca",
+          "recorded_at": "2026-10-19T14:36:34.581306+00:00",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "blocking_uncorrelated": [
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+              "uncorrelated_count": 3,
+              "ledger_offsets": [
+                1179,
+                1370,
+                1561
+              ]
+            },
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "uncorrelated_count": 2,
+              "ledger_offsets": [
+                0,
+                1373
+              ]
+            }
+          ]
+        },
+        {
+          "input_id": "19e3872aa38a4f8093b11a204ab1c6fa",
+          "recorded_at": "2026-10-19T14:36:46.826310+00:00",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "blocking_uncorrelated": [
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+              "uncorrelated_count": 3,
+              "ledger_offsets": [
+                1179,
+                1370,
+                1561
+              ]
+            },
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "uncorrelated_count": 2,
+              "ledger_offsets": [
+                0,
+                1373
+              ]
+            }
+          ]
+        },
+        {
+          "input_id": "f1ae7eabe59849e9bc439f1f39cb122a",
+          "recorded_at": "2026-10-19T14:36:59.383262+00:00",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "blocking_uncorrelated": [
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+              "uncorrelated_count": 3,
+              "ledger_offsets": [
+                1179,
+                1370,
+                1561
+              ]
+            },
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "uncorrelated_count": 2,
+              "ledger_offsets": [
+                0,
+                1373
+              ]
+            }
+          ]
+        },
+        {
+          "input_id": "2f0159ffef46443e92d6f856d8a96d57",
+          "recorded_at": "2026-10-19T14:37:24.426751+00:00",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "blocking_uncorrelated": [
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+              "uncorrelated_count": 3,
+              "ledger_offsets": [
+                1179,
+                1370,
+                1561
+              ]
+            },
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "uncorrelated_count": 2,
+              "ledger_offsets": [
+                0,
+                1373
+              ]
+            }
+          ]
+        },
+        {
+          "input_id": "e3be399362cf40daa61a5749cc84e8e8",
+          "recorded_at": "2026-10-19T14:38:11.438092+00:00",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "blocking_uncorrelated": [
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+              "uncorrelated_count": 3,
+              "ledger_offsets": [
+                1179,
+                1370,
+                1561
+              ]
+            },
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "uncorrelated_count": 2,
+              "ledger_offsets": [
+                0,
+                1373
+              ]
+            }
+          ]
+        },
+        {
+          "input_id": "c29cc1d7f56b4cce91875ec9fdb2ac7d",
+          "recorded_at": "2026-10-19T14:38:51.669101+00:00",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-140728-1019-r2-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2"
+          },
+          "blocking_uncorrelated": [
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+              "uncorrelated_count": 3,
+              "ledger_offsets": [
+                1179,
+                1370,
+                1561
+              ]
+            },
+            {
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "uncorrelated_count": 2,
+              "ledger_offsets": [
+                0,
+                1373
+              ]
+            }
+          ]
+        }
+      ],
+      "null_request_ledger": [
+        {
+          "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r1/control/host-requests.jsonl",
+          "byte_offset": 1179,
+          "byte_length": 191,
+          "action": "instruction",
+          "request_id": null,
+          "submitted_at": "2026-10-19T14:11:12.060606+00:00"
+        },
+        {
+          "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r1/control/host-requests.jsonl",
+          "byte_offset": 1370,
+          "byte_length": 191,
+          "action": "instruction",
+          "request_id": null,
+          "submitted_at": "2026-10-19T14:13:46.474267+00:00"
+        },
+        {
+          "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r1/control/host-requests.jsonl",
+          "byte_offset": 1561,
+          "byte_length": 191,
+          "action": "instruction",
+          "request_id": null,
+          "submitted_at": "2026-10-19T14:16:20.711086+00:00"
+        },
+        {
+          "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r2/control/host-requests.jsonl",
+          "byte_offset": 0,
+          "byte_length": 191,
+          "action": "instruction",
+          "request_id": null,
+          "submitted_at": "2026-10-19T14:24:00.968960+00:00"
+        },
+        {
+          "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r2/control/host-requests.jsonl",
+          "byte_offset": 1373,
+          "byte_length": 191,
+          "action": "instruction",
+          "request_id": null,
+          "submitted_at": "2026-10-19T14:27:55.759701+00:00"
+        }
+      ],
+      "journal_prefix": {
+        "path": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-140728/session-events.jsonl",
+        "bytes": 22969909,
+        "sha256": "3cdaab0fadfa5b089d55071d0f45f89d7f6398132858dfb0ff80d4e660733951"
+      },
+      "cache_write_missing": 404,
+      "reasoning_missing": 404,
+      "phase_hints": {
+        "count": 11,
+        "phases": [
+          "acceptance"
+        ],
+        "first": {
+          "seq": 915,
+          "time": "2026-10-19T14:35:45.204000+00:00",
+          "kind": "host_observation",
+          "input_id": "fc16f1ccb3734ab0a5254e2f67f69c31",
+          "bytes": 21684,
+          "changed_paths": [
+            [
+              "operations",
+              "dsh-glm-140728-1019-r2-acceptance-hidden"
+            ],
+            [
+              "operations",
+              "dsh-glm-140728-1019-r2-acceptance-public"
+            ]
+          ],
+          "hint": {
+            "thread_boundary": {
+              "phase": "acceptance",
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "request_ids": [
+                "dsh-glm-140728-1019-r2-handoff-0003"
+              ]
+            },
+            "next_action": "include thread_boundary in yield_delivery, retain effective decisions, then end this turn"
+          }
+        },
+        "last": {
+          "seq": 1007,
+          "time": "2026-10-19T14:38:51.689000+00:00",
+          "kind": "host_observation",
+          "input_id": "d191a3b37490457ba2fc1f2e2bdc5f2e",
+          "bytes": 16145,
+          "changed_paths": [
+            [
+              "runs",
+              "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "requests",
+              "data",
+              "coverage",
+              "total"
+            ],
+            [
+              "runs",
+              "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "status",
+              "data",
+              "recorded_state",
+              "extra_fields",
+              "standby_request_id"
+            ],
+            [
+              "session",
+              "activity"
+            ],
+            [
+              "session",
+              "work_result"
+            ]
+          ],
+          "hint": {
+            "thread_boundary": {
+              "phase": "acceptance",
+              "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+              "request_ids": [
+                "dsh-glm-140728-1019-r2-handoff-0003"
+              ]
+            },
+            "next_action": "include thread_boundary in yield_delivery, retain effective decisions, then end this turn"
+          }
+        }
+      },
+      "delivery_share": 0.8251656337938637,
+      "production_total": 8129391,
+      "evaluation_total": 704725,
+      "non_delivery_total": 8834116
+    },
+    {
+      "session": "minimal-chain-20261019-dsh-glm-low-103635",
+      "code": "594c9be2c85f6f74f09f6d46b091a5db181de854",
+      "runtime": "dsh",
+      "model": "glm-5.3-flash",
+      "effort": "low",
+      "rounds": {
+        "authorized": 3,
+        "consumed": 1,
+        "fresh_starts": 1,
+        "substantive_remodeling": 0
+      },
+      "sources": [
+        {
+          "path": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-103635/native/dsh-wire.jsonl",
+          "bytes": 3494721,
+          "sha256": "851a88b023f5a8c76b0a9aae9e6c7219f912a5c4e233bba53be07fc779802c47",
+          "prior_snapshot_bytes": 3488809,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-103635-r1/evidence/dsh-wire.jsonl",
+          "bytes": 1835794,
+          "sha256": "7197ac945b5fed39a1e393f8fb8f27573911e9c5041fc0577686bdee39fab02f",
+          "prior_snapshot_bytes": 1835794,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-103635-1019-accept-hidden-0001.owner/acceptance-runtime/1c0f0dd5f58e43248cb617c0d80b9be9/evidence/dsh-wire.jsonl",
+          "bytes": 378689,
+          "sha256": "e4c5b5d7700b8d66e74a248cd38d9ae7159c0109ebfb73d977ed2799dc695d99",
+          "prior_snapshot_bytes": 378689,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-103635-1019-accept-hidden-0001.owner/acceptance-runtime/4aa6cea246974bfaa3fd5c225a2dfb51/evidence/dsh-wire.jsonl",
+          "bytes": 111861,
+          "sha256": "6451c67e27978f9b4a90d221a579b2cac18a2bc0c68de7940b74bf355eac5976",
+          "prior_snapshot_bytes": 111861,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-103635-1019-accept-hidden-0001.owner/acceptance-runtime/99acbb43f38b4aebae230410169b5570/evidence/dsh-wire.jsonl",
+          "bytes": 123798,
+          "sha256": "45a8aeb68bcc4a8dbdfd8f4f429e8c32cac3957a64fa63fe7a3909973df1550e",
+          "prior_snapshot_bytes": 123798,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-103635-1019-accept-hidden-0001.owner/acceptance-runtime/d46133362e024ec982de1ba6d813ffbc/evidence/dsh-wire.jsonl",
+          "bytes": 136400,
+          "sha256": "db9a160674c5d22fd9b04e5f76c198bd537a9ded097e9efd72095fd9c6f576a1",
+          "prior_snapshot_bytes": 136400,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-103635-1019-accept-public-0001.owner/acceptance-runtime/8078e73679af496e902ef55d2447bc5f/evidence/dsh-wire.jsonl",
+          "bytes": 117203,
+          "sha256": "8ce0365a4fb05ced305eb48616feb7512997ac4f15013e98e3b3f513dba67fe5",
+          "prior_snapshot_bytes": 117203,
+          "prior_prefix_matches": true
+        },
+        {
+          "path": ".delivery-ops/dsh-glm-103635-1019-accept-public-0001.owner/acceptance-runtime/6db920274efe4a6d894de7efd639b186/evidence/dsh-wire.jsonl",
+          "bytes": 174566,
+          "sha256": "87cf00611c82b95fbbd2d2e2c614e9902a03854f505c23abb511fdcc97e242a9",
+          "prior_snapshot_bytes": 174566,
+          "prior_prefix_matches": true
+        }
+      ],
+      "snapshot_collected_at": "2026-10-19T10:52:17.512153+00:00",
+      "prior_snapshot_total": {
+        "responses": 205,
+        "uncached_input_tokens": 1097700,
+        "cached_input_tokens": 9948352,
+        "output_tokens": 71422,
+        "native_total_tokens": 11117474,
+        "cache_write_missing_responses": 205,
+        "native_reported_input_tokens": 11046052
+      },
+      "current_total": {
+        "responses": 206,
+        "input": 11158498,
+        "output": 71608,
+        "total": 11230106,
+        "cached": 10060032,
+        "uncached": 1098466
+      },
+      "roles": {
+        "acceptance": {
+          "responses": 10,
+          "input": 287761,
+          "output": 3650,
+          "total": 291411,
+          "cached": 168384,
+          "uncached": 119377
+        },
+        "competency-question": {
+          "responses": 16,
+          "input": 193197,
+          "output": 4334,
+          "total": 197531,
+          "cached": 162112,
+          "uncached": 31085
+        },
+        "coordinator": {
+          "responses": 48,
+          "input": 1344925,
+          "output": 18242,
+          "total": 1363167,
+          "cached": 1281728,
+          "uncached": 63197
+        },
+        "delivery": {
+          "responses": 76,
+          "input": 7290490,
+          "output": 29172,
+          "total": 7319662,
+          "cached": 6669504,
+          "uncached": 620986
+        },
+        "modeling": {
+          "responses": 42,
+          "input": 1846139,
+          "output": 12349,
+          "total": 1858488,
+          "cached": 1705728,
+          "uncached": 140411
+        },
+        "platform-examiner": {
+          "responses": 14,
+          "input": 195986,
+          "output": 3861,
+          "total": 199847,
+          "cached": 72576,
+          "uncached": 123410
+        }
+      },
+      "tail_correction": {
+        "responses": 1,
+        "input": 112446,
+        "output": 186
+      },
+      "conflicts": [],
+      "delivery_threads": [
+        {
+          "native": "delivery-96c062d15977453a998736b25735384b",
+          "responses": 35,
+          "input": 3590312,
+          "output": 9477,
+          "total": 3599789,
+          "cached": 3272448,
+          "uncached": 317864,
+          "first": {
+            "role": "delivery",
+            "native": "delivery-96c062d15977453a998736b25735384b",
+            "seq": 10,
+            "time": "2026-10-19T10:36:56.185000+00:00",
+            "turn": 1,
+            "step": 1,
+            "type": "assistant/message",
+            "input": 26613,
+            "output": 237,
+            "cached": 0,
+            "uncached": 26613,
+            "cache_write_present": false,
+            "reasoning_present": false,
+            "source": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-103635/native/dsh-wire.jsonl",
+            "line": 16
+          },
+          "last": {
+            "role": "delivery",
+            "native": "delivery-96c062d15977453a998736b25735384b",
+            "seq": 264,
+            "time": "2026-10-19T10:43:08.405000+00:00",
+            "turn": 4,
+            "step": 16,
+            "type": "assistant/message",
+            "input": 158703,
+            "output": 6,
+            "cached": 151552,
+            "uncached": 7151,
+            "cache_write_present": false,
+            "reasoning_present": false,
+            "source": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-103635/native/dsh-wire.jsonl",
+            "line": 337
+          },
+          "mean_input": 102580.34285714285,
+          "median_input": 107189,
+          "p95_input": 158122,
+          "peak_input": 158703
+        },
+        {
+          "native": "delivery-34fa869c36e546e3ae30a788598aad4f",
+          "responses": 27,
+          "input": 2491883,
+          "output": 14264,
+          "total": 2506147,
+          "cached": 2306048,
+          "uncached": 185835,
+          "first": {
+            "role": "delivery",
+            "native": "delivery-34fa869c36e546e3ae30a788598aad4f",
+            "seq": 9,
+            "time": "2026-10-19T10:43:16.658000+00:00",
+            "turn": 1,
+            "step": 1,
+            "type": "assistant/message",
+            "input": 30100,
+            "output": 160,
+            "cached": 0,
+            "uncached": 30100,
+            "cache_write_present": false,
+            "reasoning_present": false,
+            "source": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-103635/native/dsh-wire.jsonl",
+            "line": 353
+          },
+          "last": {
+            "role": "delivery",
+            "native": "delivery-34fa869c36e546e3ae30a788598aad4f",
+            "seq": 225,
+            "time": "2026-10-19T10:49:13.891000+00:00",
+            "turn": 1,
+            "step": 27,
+            "type": "assistant/message",
+            "input": 179530,
+            "output": 38,
+            "cached": 178560,
+            "uncached": 970,
+            "cache_write_present": false,
+            "reasoning_present": false,
+            "source": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-103635/native/dsh-wire.jsonl",
+            "line": 628
+          },
+          "mean_input": 92291.96296296296,
+          "median_input": 79993,
+          "p95_input": 178622,
+          "peak_input": 179530
+        },
+        {
+          "native": "delivery-c8cfd9ceff1f4a8cb339fb756d10e74e",
+          "responses": 14,
+          "input": 1208295,
+          "output": 5431,
+          "total": 1213726,
+          "cached": 1091008,
+          "uncached": 117287,
+          "first": {
+            "role": "delivery",
+            "native": "delivery-c8cfd9ceff1f4a8cb339fb756d10e74e",
+            "seq": 14,
+            "time": "2026-10-19T10:49:22.144000+00:00",
+            "turn": 1,
+            "step": 1,
+            "type": "assistant/message",
+            "input": 29137,
+            "output": 219,
+            "cached": 0,
+            "uncached": 29137,
+            "cache_write_present": false,
+            "reasoning_present": false,
+            "source": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-103635/native/dsh-wire.jsonl",
+            "line": 654
+          },
+          "last": {
+            "role": "delivery",
+            "native": "delivery-c8cfd9ceff1f4a8cb339fb756d10e74e",
+            "seq": 108,
+            "time": "2026-10-19T10:52:28.640000+00:00",
+            "turn": 3,
+            "step": 7,
+            "type": "assistant/message",
+            "input": 112446,
+            "output": 186,
+            "cached": 111680,
+            "uncached": 766,
+            "cache_write_present": false,
+            "reasoning_present": false,
+            "source": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-103635/native/dsh-wire.jsonl",
+            "line": 771
+          },
+          "mean_input": 86306.78571428571,
+          "median_input": 93954,
+          "p95_input": 112446,
+          "peak_input": 112446
+        }
+      ],
+      "delivery_windows": {},
+      "delivery_tools": {
+        "start_run": 1,
+        "get_run_status": 2,
+        "yield_delivery": 41,
+        "read_delivery_artifact": 8,
+        "request_host_action": 4,
+        "freeze_cq": 1,
+        "submit_instruction": 1,
+        "get_team_work_board": 1,
+        "complete_cq_handoff": 3,
+        "start_evaluation": 2,
+        "complete_cq_acceptance": 1,
+        "emit_user_message": 1,
+        "finish_delivery": 1
+      },
+      "yield_only": {
+        "responses": 41,
+        "input": 3957433,
+        "output": 20808,
+        "total": 3978241,
+        "cached": 3715520,
+        "uncached": 241913
+      },
+      "no_tool_response": {
+        "responses": 12,
+        "input": 1266955,
+        "output": 490,
+        "total": 1267445,
+        "cached": 1251968,
+        "uncached": 14987
+      },
+      "turn_ends": 8,
+      "delivered_inputs": 84,
+      "input_kind_counts": {
+        "delivery_start": 1,
+        "null": 3,
+        "user_input": 1,
+        "host_observation": 79
+      },
+      "explicit_boundaries": [
+        {
+          "seq": 241,
+          "time": "2026-10-19T10:42:39.082000+00:00",
+          "input_id": "da86800bfaba408eb41375c1c03a04c1",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "turn": 4
+        },
+        {
+          "seq": 253,
+          "time": "2026-10-19T10:42:55.149000+00:00",
+          "input_id": "b8899d3ac6a4432591121bec28d2b04a",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "turn": 4
+        },
+        {
+          "seq": 260,
+          "time": "2026-10-19T10:43:03.119000+00:00",
+          "input_id": "11288821a99747429c9b294387407e3c",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "turn": 4
+        },
+        {
+          "seq": 18,
+          "time": "2026-10-19T10:43:29.086000+00:00",
+          "input_id": "86695ddc924843a2897258ac2226a7ac",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "turn": 1
+        },
+        {
+          "seq": 26,
+          "time": "2026-10-19T10:43:47.242000+00:00",
+          "input_id": "8629adfba7fe403496483288906ce1a7",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "turn": 1
+        },
+        {
+          "seq": 33,
+          "time": "2026-10-19T10:43:59.238000+00:00",
+          "input_id": "2397b2c6cbc94e91836412bbf1ea1371",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "turn": 1
+        },
+        {
+          "seq": 45,
+          "time": "2026-10-19T10:44:17.657000+00:00",
+          "input_id": "9149ee6bf720453686cc086d4f58dcd4",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "turn": 1
+        },
+        {
+          "seq": 221,
+          "time": "2026-10-19T10:49:07.555000+00:00",
+          "input_id": "d51352390ea84abfa90be2ef6d6d14b7",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-103635-1019-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "turn": 1
+        }
+      ],
+      "phase_thread_history": [
+        {
+          "event": "delivery_phase_thread",
+          "attempt_id": "30d103db990348cd98d2f5c8e2f69c63",
+          "phase": "production",
+          "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1",
+          "input_id": "11288821a99747429c9b294387407e3c",
+          "requested_input_id": "11288821a99747429c9b294387407e3c",
+          "from_identity": {
+            "runtime": "dsh",
+            "process_instance": "9d6079deaf9a4076b0d9d0fb02bd9a45",
+            "runtime_session_id": "delivery-96c062d15977453a998736b25735384b",
+            "activity_id": null
+          },
+          "status": "switched",
+          "reason": "生产实质建模推进中，无新增决策点",
+          "request_ids": [
+            "dsh-glm-103635-1019-freeze-0001",
+            "dsh-glm-103635-1019-freeze-notify-0001"
+          ],
+          "started_at": "2026-10-19T10:43:08.423252+00:00",
+          "to_identity": {
+            "runtime": "dsh",
+            "process_instance": "9d6079deaf9a4076b0d9d0fb02bd9a45",
+            "runtime_session_id": "delivery-34fa869c36e546e3ae30a788598aad4f",
+            "activity_id": null
+          },
+          "ended_at": "2026-10-19T10:43:08.428508+00:00"
+        },
+        {
+          "event": "delivery_phase_thread",
+          "attempt_id": "9c658150200b4363bf21ea131e12a85e",
+          "phase": "acceptance",
+          "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1",
+          "input_id": "d51352390ea84abfa90be2ef6d6d14b7",
+          "requested_input_id": "d51352390ea84abfa90be2ef6d6d14b7",
+          "from_identity": {
+            "runtime": "dsh",
+            "process_instance": "9d6079deaf9a4076b0d9d0fb02bd9a45",
+            "runtime_session_id": "delivery-34fa869c36e546e3ae30a788598aad4f",
+            "activity_id": null
+          },
+          "status": "switched",
+          "reason": "两个 cq-acceptance 评估运行中，等待有效报告",
+          "request_ids": [
+            "dsh-glm-103635-1019-handoff-0003"
+          ],
+          "started_at": "2026-10-19T10:49:13.933555+00:00",
+          "to_identity": {
+            "runtime": "dsh",
+            "process_instance": "9d6079deaf9a4076b0d9d0fb02bd9a45",
+            "runtime_session_id": "delivery-c8cfd9ceff1f4a8cb339fb756d10e74e",
+            "activity_id": null
+          },
+          "ended_at": "2026-10-19T10:49:13.954442+00:00"
+        }
+      ],
+      "accepted_yield_records": 41,
+      "decision_packets": 75,
+      "phase_guard_checks": [
+        {
+          "input_id": "da86800bfaba408eb41375c1c03a04c1",
+          "recorded_at": "2026-10-19T10:42:39.146421+00:00",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "blocking_uncorrelated": []
+        },
+        {
+          "input_id": "b8899d3ac6a4432591121bec28d2b04a",
+          "recorded_at": "2026-10-19T10:42:55.228769+00:00",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "blocking_uncorrelated": []
+        },
+        {
+          "input_id": "11288821a99747429c9b294387407e3c",
+          "recorded_at": "2026-10-19T10:43:03.195856+00:00",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "blocking_uncorrelated": []
+        },
+        {
+          "input_id": "86695ddc924843a2897258ac2226a7ac",
+          "recorded_at": "2026-10-19T10:43:29.113542+00:00",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "blocking_uncorrelated": []
+        },
+        {
+          "input_id": "8629adfba7fe403496483288906ce1a7",
+          "recorded_at": "2026-10-19T10:43:47.337579+00:00",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "blocking_uncorrelated": []
+        },
+        {
+          "input_id": "2397b2c6cbc94e91836412bbf1ea1371",
+          "recorded_at": "2026-10-19T10:43:59.260848+00:00",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "blocking_uncorrelated": []
+        },
+        {
+          "input_id": "9149ee6bf720453686cc086d4f58dcd4",
+          "recorded_at": "2026-10-19T10:44:17.747141+00:00",
+          "boundary": {
+            "phase": "production",
+            "request_ids": [
+              "dsh-glm-103635-1019-freeze-0001",
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "blocking_uncorrelated": []
+        },
+        {
+          "input_id": "d51352390ea84abfa90be2ef6d6d14b7",
+          "recorded_at": "2026-10-19T10:49:07.722061+00:00",
+          "boundary": {
+            "phase": "acceptance",
+            "request_ids": [
+              "dsh-glm-103635-1019-handoff-0003"
+            ],
+            "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1"
+          },
+          "blocking_uncorrelated": []
+        }
+      ],
+      "null_request_ledger": [],
+      "journal_prefix": {
+        "path": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-glm-low-103635/session-events.jsonl",
+        "bytes": 38149735,
+        "sha256": "9678d66f2124d9d1451bf3a77acb99712919cf7890f9259559d7b4e2e7615ca7"
+      },
+      "cache_write_missing": 206,
+      "reasoning_missing": 206,
+      "phase_hints": {
+        "count": 6,
+        "phases": [
+          "acceptance",
+          "production"
+        ],
+        "first": {
+          "seq": 239,
+          "time": "2026-10-19T10:42:26.838000+00:00",
+          "kind": "host_observation",
+          "input_id": "da86800bfaba408eb41375c1c03a04c1",
+          "bytes": 10492,
+          "changed_paths": [
+            [
+              "runs",
+              "minimal-chain-20261019-dsh-glm-low-103635-r1",
+              "requests",
+              "data",
+              "coverage",
+              "total"
+            ],
+            [
+              "runs",
+              "minimal-chain-20261019-dsh-glm-low-103635-r1",
+              "events"
+            ]
+          ],
+          "hint": {
+            "thread_boundary": {
+              "phase": "production",
+              "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1",
+              "request_ids": [
+                "dsh-glm-103635-1019-freeze-0001"
+              ]
+            },
+            "next_action": "add the actual accepted freeze-notification instruction request_id to thread_boundary.request_ids, retain effective decisions in yield_delivery, then end this turn; do not select an unrelated instruction",
+            "notification_request_ids": [
+              "dsh-glm-103635-1019-freeze-notify-0001"
+            ]
+          }
+        },
+        "last": {
+          "seq": 219,
+          "time": "2026-10-19T10:48:50.869000+00:00",
+          "kind": "host_observation",
+          "input_id": "d51352390ea84abfa90be2ef6d6d14b7",
+          "bytes": 17535,
+          "changed_paths": [
+            [
+              "host_actions",
+              "completed",
+              2
+            ],
+            [
+              "host_actions",
+              "pending"
+            ],
+            [
+              "host_actions",
+              "results",
+              "dsh-glm-103635-1019-report-broker-0002"
+            ]
+          ],
+          "hint": {
+            "thread_boundary": {
+              "phase": "acceptance",
+              "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1",
+              "request_ids": [
+                "dsh-glm-103635-1019-handoff-0003"
+              ]
+            },
+            "next_action": "include thread_boundary in yield_delivery, retain effective decisions, then end this turn"
+          }
+        }
+      },
+      "delivery_share": 0.651789217305696,
+      "production_total": 3419186,
+      "evaluation_total": 491258,
+      "non_delivery_total": 3910444
+    }
+  ],
+  "report_identity_checks": [
+    {
+      "session_suffix": "140728",
+      "group": "public",
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r2/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "7ce9ec0ba12060b7c63c7d16c51fcfe52e7adb80dcd8ac0c33839ed0bb40a25b",
+      "recorded_sha_matches": true,
+      "full_pass": true,
+      "blind_status": "non-blind-regression",
+      "executed_count": 1,
+      "freeze_digest_matches": true,
+      "model_binding_digest_matches": true
+    },
+    {
+      "session_suffix": "140728",
+      "group": "hidden",
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r2/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "90c8cd07135be7a17abe74043dff924c23004612393ee0db0d5811605748f0c7",
+      "recorded_sha_matches": true,
+      "full_pass": true,
+      "blind_status": "non-blind-regression",
+      "executed_count": 3,
+      "freeze_digest_matches": true,
+      "model_binding_digest_matches": true
+    },
+    {
+      "session_suffix": "103635",
+      "group": "public",
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-103635-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "4fe0e7e43993dc04557e694ff21a948b6736b1149d6bb8dae479cfa204ab1be5",
+      "recorded_sha_matches": true,
+      "full_pass": true,
+      "blind_status": "non-blind-regression",
+      "executed_count": 1,
+      "freeze_digest_matches": true,
+      "model_binding_digest_matches": true
+    },
+    {
+      "session_suffix": "103635",
+      "group": "hidden",
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-103635-r1/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "d4bbaaeaf0af6a5ef192b0f4da65dc04236b3e60df2e9cf2067c38c177b94a40",
+      "recorded_sha_matches": true,
+      "full_pass": true,
+      "blind_status": "non-blind-regression",
+      "executed_count": 3,
+      "freeze_digest_matches": true,
+      "model_binding_digest_matches": true
+    }
+  ],
+  "proposed_budget_not_yet_confirmed": {
+    "delivery": 4000000,
+    "production_including_cq": 4000000,
+    "independent_evaluation": 1000000,
+    "host_and_recovery_reserve": 1000000
+  },
+  "limitations": [
+    "Known native totals already exceed 10M; complete Host/auxiliary usage and provider billing are unavailable. No below-ceiling or billing claim.",
+    "Cache-write and reasoning breakdown absent; never asserted zero. All present native fields are retained.",
+    "Failure count differs between tasks; observed difference is not a controlled causal gain or loss.",
+    "Yield-only and no-tool responses can carry necessary decision/control/finalization work and are not wholly removable.",
+    "Guard snapshot inspection proves an independently blocking condition; transient busy, queued decisions and latest-input gates may also defer switching.",
+    "Semantic task results are original independent non-blind bounded L1 reports; only identity, denominator and digest checked here. No fresh blind/L2/L3 conclusion."
+  ],
+  "r1_submission_result_recheck": {
+    "source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r1/evidence/dsh-wire.jsonl",
+    "original_completion_count": 19,
+    "current_deduplicated_results": 20,
+    "response_code_counts": {
+      "cq_freeze_pending": 3,
+      "change_schema_mismatch": 2,
+      "unsupported_change_field": 15
+    },
+    "results": [
+      {
+        "native_seq": 27,
+        "time": 1792418923991,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "cq_freeze_pending"
+        ]
+      },
+      {
+        "native_seq": 64,
+        "time": 1792418994725,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "cq_freeze_pending"
+        ]
+      },
+      {
+        "native_seq": 107,
+        "time": 1792419058708,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "cq_freeze_pending"
+        ]
+      },
+      {
+        "native_seq": 125,
+        "time": 1792419082569,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "change_schema_mismatch"
+        ]
+      },
+      {
+        "native_seq": 131,
+        "time": 1792419106706,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "change_schema_mismatch"
+        ]
+      },
+      {
+        "native_seq": 136,
+        "time": 1792419122943,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 142,
+        "time": 1792419141992,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 147,
+        "time": 1792419153691,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 152,
+        "time": 1792419172383,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 157,
+        "time": 1792419194770,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 197,
+        "time": 1792419286017,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 214,
+        "time": 1792419317388,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 232,
+        "time": 1792419350985,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 254,
+        "time": 1792419404579,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 271,
+        "time": 1792419436376,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 278,
+        "time": 1792419470831,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 307,
+        "time": 1792419536651,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 327,
+        "time": 1792419591464,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 364,
+        "time": 1792419674265,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      },
+      {
+        "native_seq": 398,
+        "time": 1792419755175,
+        "status": "not_written",
+        "batch_count": 0,
+        "error_codes": [
+          "unsupported_change_field"
+        ]
+      }
+    ],
+    "all_not_written": true,
+    "all_batches_empty": true,
+    "note": "Original completion/authorization retained unchanged; typed results include readiness waits and schema rejections, not 20 identical semantic failures."
+  },
+  "other_delivery_feedback": [
+    {
+      "native_seq": 191,
+      "tool": "read_delivery_artifact",
+      "code": "artifact_changed",
+      "reason": "original artifact identity changed",
+      "retryable": true
+    },
+    {
+      "native_seq": 197,
+      "tool": "read_delivery_artifact",
+      "code": "artifact_selection_invalid",
+      "reason": "byte interval exceeds captured source",
+      "retryable": true
+    },
+    {
+      "native_seq": 236,
+      "tool": "yield_delivery",
+      "code": "delivery_yield_binding_invalid",
+      "reason": "input_id is outside this session's retained decision inputs",
+      "retryable": true
+    },
+    {
+      "native_seq": 270,
+      "tool": "request_host_action",
+      "code": "host_action_evidence_unbound",
+      "reason": "evidence is outside current session/run",
+      "retryable": true
+    },
+    {
+      "native_seq": 792,
+      "tool": "read_delivery_artifact",
+      "code": "artifact_selection_invalid",
+      "reason": "byte interval exceeds captured source",
+      "retryable": true
+    },
+    {
+      "native_seq": 845,
+      "tool": "request_host_action",
+      "code": "host_action_evidence_unbound",
+      "reason": "evidence is outside current session/run",
+      "retryable": true
+    },
+    {
+      "native_seq": 895,
+      "tool": "start_evaluation",
+      "code": "delivery_arguments_missing",
+      "reason": "start_evaluation: missing required parameters: mode",
+      "retryable": true
+    },
+    {
+      "native_seq": 897,
+      "tool": "start_evaluation",
+      "code": "delivery_arguments_missing",
+      "reason": "start_evaluation: missing required parameters: mode",
+      "retryable": true
+    },
+    {
+      "native_seq": 911,
+      "tool": "yield_delivery",
+      "code": "delivery_yield_invalid",
+      "reason": "Additional properties are not allowed ('references' was unexpected)",
+      "retryable": true
+    },
+    {
+      "native_seq": 997,
+      "tool": "finish_delivery",
+      "code": "outer_input_channel_unavailable",
+      "reason": "the run's recorded state 'CLEANED' is terminal; the outer admission path is closed",
+      "retryable": false
+    }
+  ]
+}

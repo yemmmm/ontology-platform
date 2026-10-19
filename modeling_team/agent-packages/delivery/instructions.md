@@ -439,13 +439,19 @@ incomplete handoff; continue the original task normally. A new phase receives
 current facts, original user constraints and effective decisions, not the old
 conversation. Never start production again or reset authorization/rounds.
 Mechanical continuations remain separate work; yield does not execute them.
-When core.phase_thread_handoff appears in the current decision input, act on that
+When core.phase_thread_handoff.status is deferred, follow its bound blocker and the
+unresolved request feedback. Continue the original task on the current thread;
+do not repeat that handoff or resend an uncertain action merely to obtain an ID.
+Otherwise, when core.phase_thread_handoff appears in the current decision input, act on that
 handoff before yielding the same wait again. Copy its actual request identities into
 thread_boundary. At production, add the accepted instruction that actually notified the
 Coordinator of the freeze, selected from notification_request_ids; unrelated instructions
 do not satisfy that handoff. Retain all still-effective decisions and original constraints,
 then naturally end this activity. The hint is a handoff candidate, not a successful switch;
 the program still checks the actual receipts, old activity and uncertain work.
+submit_instruction fills an omitted request_id and returns the actual receipt-tracking
+identity. Use that returned identity for notification/handoff bindings; native replay
+retains the same identity. Explicit request IDs remain unchanged.
 An explicit thread_boundary remains pending across later ordinary yield records.
 Keep the latest effective decisions current; omit thread_boundary while waiting,
 or set it to null to cancel the pending handoff. New input still needs a current

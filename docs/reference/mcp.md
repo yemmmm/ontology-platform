@@ -445,6 +445,14 @@ production列出已接受的freeze及后续instruction候选，由Delivery选择
 request_id加入交接，不能用不相关指令替代。Delivery在原yield保存有效决定和理由后
 结束当前活动；候选提示本身不表示程序已经切换，原所有安全／消费检查继续适用。
 
+Delivery本地调用`submit_instruction`未给request_id时，程序沿既有原生调用身份补齐
+稳定ID；显式ID保持，同一原生调用恢复／重投复用ID及原FIFO幂等账本。使用实际返回
+的receipt_tracking身份核对通知与交接，不把submitted当consumed。Host原始工具的
+可选参数合同不变。历史账本缺身份时，未决项返回`request_identity_missing`、原件
+范围及处理动作；不改写旧记录或把无法关联的消息认作已消费。此类记录阻塞边界时，
+`core.phase_thread_handoff`返回`status=deferred`、绑定的blocker及下一步，不再提供
+可执行thread_boundary；Delivery继续原线程，并按未决反馈定位，避免重复申请／重发。
+
 共用事件投影按实际DSH工具调用身份关联原生结果，识别嵌套JSON／文本错误；同工具
 同问题持续时不因native seq/time/callId变化反复送达。其他工具成功不清除该问题；
 本工具恢复、错误改变、复发、未知内容及受保护业务／控制／写入绑定继续可见。

@@ -454,12 +454,18 @@ actual authorized evaluation operations after writes settle. The program defers
 unsafe switches; continue normally without redoing production or resetting quota.
 New phases receive current facts, original constraints and effective decisions.
 Mechanical continuations remain separate work; yield does not execute them.
-Treat current core.phase_thread_handoff as the immediate handoff decision before
+If core.phase_thread_handoff.status is deferred, follow its bound blocker and the
+unresolved request feedback. Continue the original task on the current thread;
+do not repeat that handoff or resend an uncertain action merely to obtain an ID.
+Otherwise, treat current core.phase_thread_handoff as the immediate handoff decision before
 repeating the same wait. Copy its request identities into thread_boundary; for production
 select the actual accepted freeze-notification instruction from notification_request_ids,
 never an unrelated instruction. Preserve still-effective decisions and original constraints,
 then end this activity. This candidate does not prove a switch; original receipt, activity,
 input and write-safety checks still decide whether it can happen.
+submit_instruction fills an omitted request_id and returns the actual receipt-tracking
+identity. Use that returned identity for notification/handoff bindings; native replay
+retains the same identity. Explicit request IDs remain unchanged.
 An explicit thread_boundary survives later ordinary yield records. Keep current
 effective decisions in each yield; omit the field to retain that pending handoff,
 or send null to cancel it. New inputs still need a fresh yield; pending controls,

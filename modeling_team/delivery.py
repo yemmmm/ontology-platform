@@ -2471,7 +2471,8 @@ class DeliverySession:
                 if deadline.tzinfo is None or datetime.now(UTC) >= deadline:
                     raise ValueError("original authorization expired; no automatic renewal")
             args = dict(arguments)
-            if name in {"standby_run", "complete_cq_acceptance"} and args.get("request_id") is None:
+            if (name in {"submit_instruction", "standby_run", "complete_cq_acceptance"}
+                    and args.get("request_id") is None):
                 identity = (hashlib.sha256(_json_bytes([self.session_id, name, args, call_identity])).hexdigest()
                             if call_identity else uuid.uuid4().hex)
                 args["request_id"] = "delivery-" + identity[:32]
@@ -2640,7 +2641,16 @@ class DeliverySession:
                     raise ValueError("incomplete or non-object ledger line")
                 request_id = entry.get("request_id")
                 if not isinstance(request_id, str) or not request_id:
-                    uncorrelated.append({"outcome": "uncorrelated", "ledger_ref": locator})
+                    uncorrelated.append({"run_id": run_id, "action": entry.get("action"),
+                        "content_digest": entry.get("content_digest"),
+                        "outcome": "uncorrelated", "ledger_ref": locator,
+                        "result": {"ok": False, "error": {
+                            "code": "request_identity_missing", "object": "request_id",
+                            "reason": "retained request has no identity for receipt correlation",
+                            "retryable": True,
+                            "next_action": "inspect ledger_ref and the original action admission, delivery "
+                                "and consumption evidence; do not resend to manufacture an identity; "
+                                "continue the original task on the current thread while unresolved"}}})
                 else:
                     entries[request_id] = (entry, locator)
             except (ValueError, UnicodeError):
@@ -2843,6 +2853,14 @@ class DeliverySession:
                 matches = [row for row in settled if row.get("action") == action]
                 if not matches:
                     continue
+                for blocked_run_id, blocked_run in current.get("runs", {}).items():
+                    for item in blocked_run.get("requests", {}).get("data", {}).get("pending", []):
+                        if item.get("outcome") == "uncorrelated":
+                            return {"status": "deferred", "phase": phase, "run_id": run_id,
+                                "blocker": {"run_id": blocked_run_id,
+                                    "code": "request_identity_missing", "ledger_ref": item["ledger_ref"]},
+                                "next_action": "follow the unresolved request feedback; keep the current "
+                                    "thread and do not repeat the handoff or resend the original action"}
                 request_id = matches[-1]["request_id"]
                 hint = {"thread_boundary": {"phase": phase, "run_id": run_id,
                                             "request_ids": [request_id]},
