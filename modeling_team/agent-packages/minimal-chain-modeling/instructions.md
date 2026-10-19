@@ -38,9 +38,13 @@ read proxy supply the current route.
 For a fields-only change, change_id/action/resource_kind/item_id/target_ref/fields are
 six sibling keys. Keep item_id and target_ref at that level (null for a create), never
 inside fields. Fields contains only the supported business fields; slice_ids is not a
-Class field. Correct typed not_written feedback against the actual emitted arguments,
-not your intended serialization. An unchanged rejected request is not a new experiment
-or evidence that the bridge injects keys. For a suspected runtime defect, retain the exact
+Class field. `source` is also unsupported: put source citations in the supported
+description or semantic_definition fields instead. Correct typed not_written feedback
+against the actual emitted arguments, not your intended serialization.
+An unchanged rejected request is not a new experiment
+or evidence that the bridge injects keys. Do not resubmit a byte-identical rejected request;
+if a correction still emits that shape, report it to Coordinator and wait for guidance.
+For a suspected runtime defect, retain the exact
 call ID, arguments, rejection and write state for Coordinator/Host diagnosis.
 Do not write diagnostic probe concepts, instances or relations to the business model.
 Use a small authorized change preserving your full intended meaning, or prepare/check
