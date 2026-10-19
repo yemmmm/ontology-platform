@@ -3,10 +3,13 @@
 - 日期：2026-10-19。
 - 权威范围：[R4.4-001](../../requirements/requirements-v4.4.md#r4-4-001)。
 - 状态：需求／设计完成，独立设计Round 1 PASS，0 Critical／0 High，无关键未决假设；
-  后续澄清复核见第7节及审阅记录。未实现，未启动任何真实运行。
+  后续澄清复核见第7节及审阅记录。历史查询／统计关联增量独立复核PASS，0 Critical／High。
+  未实现，未启动任何真实运行。
 - 代码基线：`cb60bd57f372080f15b12ef531a24e14c3f858b0`；现有 README、v4.3、优化跟踪及
   复盘／演示材料变更属于其他工作。本轮只新增本需求／设计／审阅记录并更新文档导航。
-- 决策 D1—D10 以权威需求为主表，本设计不再复制理由表。首版提供结构化展台与 CLI
+- 历史／复盘增量基线：`0f491b1`；定向读取当前019／036的已实现数值及关闭入口，
+  不修改v4.3在途条目或接管相关实现。
+- 决策 D1—D13 以权威需求为主表，本设计不再复制理由表。首版提供结构化展台与 CLI
   汇总；当前 Delivery 会话页可在后续消费同一投影，本轮不设计新管理页面。
 
 ## 1. 已有能力与必要增量
@@ -19,6 +22,7 @@
 | `modeling_team/delivery.py` 的 `yield_delivery`、v2输入、私有journal | Delivery等待／计划理由、既有请求及按需变化输入 | 将展台作为按需工具可读原件；普通卡片更新不改变决策指纹 |
 | `modeling_team/delivery_host_actions.py` | 宿主私有CQ审核／平台修复请求与结果 | 宿主汇总可引用原待办，生产展台不复制正文 |
 | `modeling_team/runtimes/codex.py`／`dsh.py` | 隔离环境装载transport、工具白名单与运行适配 | 装载新增小模块／工具，并验证两种现有运行时的一致合同；不新增Provider |
+| `modeling_team/close_statistics.py` 的 `read_close_statistics`／`publish_close_statistics`，`usage_report.py` | 036按实际成员冻结来源，发布同源数值JSON／Markdown及scope；019负责token归属与去重 | 读取已发布数值结果；关闭时附属生成历史复盘索引，保持数值主账和统计发布独立 |
 | `frontend/src/pages/DeliveryConversationPage.tsx` | 绑定项目／session的对话和运行状态 | 首版不改；后续可只读消费相同展台投影，不从私有日志自行拼卡 |
 
 当前 `send_team_message` 没有持续任务字段，消息回复身份只表达“回复了哪条消息”；
@@ -65,6 +69,13 @@
 事件带 `schema_version=team-work-board/v1`、run身份、单调序号、真实actor、UTC时间及事件
 内容；身份和时间由程序填写。索引可在内存重建，持久事实以追加记录和原消息／运行回执为准。
 原记录不覆盖，宿主读取不写文件。不缓存另一份会被当作权威的完整看板快照。
+
+每个卡片更新事件保存本次完整本人字段，前次内容继续在原事件中，避免重建历史依赖当前
+可变文件。`member_ref`由运行端按已有成员注册／原生会话绑定附加，可包含runtime、
+runtime_session_id／Codex thread_id、process_instance和注册原件定位；模型不能自填。
+缺少真实代次绑定时保留null／限制，不能把当前进程补给旧事件。历史序列按record_seq排序，
+UTC时间用于筛选和展示，不以时间邻近关联成员。归档快照是带原序号／摘要的只读历史前缀，
+不成为可独立修改的第二份当前状态。
 
 ### 3.1 本人工作卡
 
@@ -115,7 +126,7 @@
 | `update_work_card(card)` | 仅当前端点本人的工作卡；调用结果含原／新record_seq及是否改变 |
 | `send_team_message(..., work_request?)` | 保留旧参数；可选元数据把原请求或B反馈绑定到持续记录，一次调用完成消息提交和登记 |
 | `resolve_work_request(request_id, resolution, note, update_id)` | A记录resolved或withdrawn；resolved仅本地更新，withdrawn沿原通信通道给B一条有实际内容的撤回通知 |
-| `get_work_board(agent_id?, request_id?, cursor?)` | 只读当前身份获准视图；选择、分页及覆盖信息，不能借参数切换成Host或其他Agent |
+| `get_work_board(agent_id?, request_id?, view?, from_time?, to_time?, record_seq?, cursor?, source_ref?)` | 默认current；可选history／version，按原身份过滤后分页；不能借参数切换成Host或其他Agent |
 
 `work_request`只在需要持续跟踪时存在，支持：
 
@@ -168,7 +179,7 @@ queued、实际Runtime接受、失败／未知分别读取原回执，Runtime接
 
 ## 5. 聚合、Delivery输入与用户查看
 
-新增Host只读函数／工具 `get_team_work_board(run_id, agent_id?, request_id?, cursor?)`，复用
+新增Host只读函数／工具 `get_team_work_board(run_id, agent_id?, request_id?, view?, from_time?, to_time?, record_seq?, cursor?, source_ref?, include_statistics=false)`，复用
 `host_ops.resolve_run_root`绑定；Delivery工具白名单开放流程投影，当前绑定与授权仍由Host
 决定，模型参数不提供viewer权限开关。原get_run_status可附展台是否可读及索引引用，不
 将完整卡片／请求集合塞回每次原状态查询。
@@ -192,6 +203,95 @@ Delivery／Host上下文区只读取原yield／journal，不发布到生产文�
 仍只表示该请求结束。历史没有展台的run显示unavailable，不从旧对话自动编造工作卡。
 新run可引用旧成果，但不复制旧运输身份、未结请求或授权，不能因此重放业务或建模。
 
+### 5.1 历史与指定版本入口（D11）
+
+原读取入口的三个模式如下，不新增独立历史服务：
+
+| 参数／模式 | 明确行为 |
+| --- | --- |
+| `view=current`（默认） | 当前本人卡片与关联请求；保持原有轻量读取 |
+| `view=history` | 选定Agent的卡片变化或选定request的事件，按record_seq升序；无选择时为获准run历史 |
+| `view=version, agent_id, record_seq` | 读取该Agent在指定卡片更新序号保存的完整内容；序号属于别的对象时给可修正错误，不取最近版本冒充 |
+| `from_time / to_time` | 带明确时区的半开区间`[from_time,to_time)`，仅筛选history事件的记录时间；不改变统计窗口 |
+| `source_ref / cursor` | 第一页捕获的同run来源前缀、最大完整序号及筛选条件；续页固定此范围，不能跳到新追加尾部 |
+
+每条卡片历史返回真实actor、时间、序号、完整当次卡片以及`previous_record_seq`、
+`changed_fields`；前后内容可在页内展示，超出页预算时给精确获准版本引用。前版不在当前
+时间区间或本页中也能准确定位；确实缺失／损坏则标unknown，不能对着最新卡片猜diff。
+请求历史保留原创建／反馈／关闭／晚到事件及消息回执引用，不把旧请求当作新待办。
+
+固定前缀引用至少含相对路径、byte_length、sha256和max_record_seq；只接收本run由服务
+返回的展台／归档来源，继续校验身份和材料权限，不提供任意文件读取。完整换行以前为可用
+前缀，坏行／截断给原定位与coverage限制。后续append不改变该前缀；已有前缀被改写时
+明确返回source_changed，不能悄悄换页或把当前记录补进旧查询。每页先权限过滤再计数，
+旧版本与变化字段同样执行权限校验，不能从前版或计数泄露不可读内容。
+
+CLI增加`--history`、`--from`、`--to`、`--record-seq`和服务返回的续页参数；`--record-seq`
+与`--agent`组合对应version模式。以下为拟实现命令示意，当前尚不可执行：
+
+```sh
+python -m modeling_team work-board --run-id RUN --agent AGENT --history --from 2026-10-19T01:00:00Z --to 2026-10-19T02:00:00Z --with-statistics
+python -m modeling_team work-board --run-id RUN --agent AGENT --record-seq 42
+```
+
+### 5.2 历史与数值统计共同查询（D12、D13）
+
+两类原件共同归属于`<run-root>/evidence/`：展台保持work-board-events.jsonl；统计继续
+使用036的close-statistics/report-*/report.json、report.md、scope.json和冻结sources。
+`include_statistics=true`／CLI `--with-statistics`读取`read_close_statistics`已发布的真实
+报告引用，不重新采集、扫描全Host目录或调用模型，不把卡片JSON塞进numeric usage源。
+
+联合响应包含`history`、`statistics_groups`、`bindings`及两侧独立的source／window／coverage。
+历史事件仅引用统计group身份，每个成员／会话的数值在statistics_groups列一次；不能为每个
+卡片更新复制整轮消耗后再求和。input、cache、output、reasoning、LLM／工具／活动／生命
+周期及其缺口直接消费019／036结果，不再实现计费、累计或活动并集算法。
+
+关联只取已有run／Agent／实际成员清单、原生session和process_instance；多代次逐一列出。
+已证明同一run／Agent但事件缺代次时，可给该Agent范围的既有统计摘要并标未细分；不把它
+指派给单个历史事件。绑定冲突或只有同名／时间相近时保持unallocated／unknown。任务级
+报告内的其他run或context成员不当作本run统计；会话累计跨代次按原主账展示一次，不把
+同一session累计复制给各process后相加。
+
+`--from/--to`只缩小历史列表，数值明确标为“所选统计报告内该成员／会话范围”，并单列
+statistics_window／cutoff与history_window。首版提供时间线与数值并列查看，不计算每个
+宏观任务或每张卡片的精确token。统计未发布或覆盖不足时返回unavailable／partial及已有
+引用，历史仍可读；不以零补缺，也不为了查询在关闭流程之外自动生成新统计。
+
+联合数值只在Host入口与Delivery的既有流程授权视图开放，不新增生产Agent统计权限。
+Delivery只取得本run获准生产成员数值与流程摘要，不获取验收／Host私有成员正文或任意
+原始数值采集源。Host可沿019原授权另读完整任务报告。对外返回的数值分组先筛选获准
+成员，不能从总量／占比反推出隐藏成员；无法安全拆分的任务总计只给限制，不原样返回。
+
+### 5.3 关闭后复盘留存
+
+复用036的关闭发布接点：`publish_close_statistics(view=run_close)`完成其原报告发布后，
+在原控制／工具锁之外调用work_board模块的附属归档函数。只处理这个run已有展台，不为
+历史无展台的run补造卡片。统计不可用但历史存在时仍可留历史快照，索引中如实标数值缺口。
+该分支不调用LLM、不重启Agent，不改变原停止／清理结果或数值报告ready语义。
+
+在`evidence/work-board-retrospectives/snapshot-<fingerprint>/`写入：
+
+- `work-board-events.jsonl`：本次完整行前缀，保持原序号与内容；
+- `index.json`：schema版本、run身份、历史前缀长度／摘要／末序号、历史截点、统计报告
+  相对引用／snapshot身份／scope与cutoff、实际成员关联定位、coverage及限制。
+
+同一历史前缀和统计版本生成同一fingerprint；暂存目录完整后发布，随后更新同run复盘
+指针`evidence/work-board-retrospective.json`。每次查询只读已有指针／索引；活跃run无
+归档时直接只读当前历史前缀。索引失败显示archive_unavailable，不反写036已发布的报告
+和指针，不阻塞旧统计读取。原关闭统计失败处理不接管此分支，不能把归档错误改写成统计失败。
+
+晚到反馈或迟到统计在原有获准补报时生成新复盘版本，旧索引／快照／统计原件保留；普通
+读取不触发补报。索引内使用相对run根的路径，复制／保留整个run证据目录即可一并保留两类
+材料，不依赖原Agent临时home。统计scope已经冻结的数值sources沿原036位置留存；不改写
+旧scope摘要，不复制一份另算数字。源文件缺失／摘要不符时给准确缺口，不回退到新版本
+伪装旧报告。CLI增加`--archive-ref`，Host读取参数的source_ref可选择该服务登记索引；
+先恢复其冻结历史与统计版本引用，再执行原权限过滤及历史选择，不能混入当前最新报告。
+
+复盘目录及指针为Host私有，权限沿019／036目录0700／文件0600；卡片／请求正文存于独立
+历史文件，原数值报告继续只含允许的数值和定位。生产工具仅能按原权限读取获准历史投影，
+不能直接取得Host私有索引或统计文件路径。清理保留run证据及索引，归档故障只影响复盘
+覆盖，按原技术反馈处理；不引入跨机器归档、全局索引、后台恢复或新页面。
+
 ## 6. 实施交接与验证
 
 本轮只交付文档；未来实施沿以下最小范围，不据本设计自行启动：
@@ -202,14 +302,16 @@ Delivery／Host上下文区只读取原yield／journal，不发布到生产文�
    机械引用；`runtimes/codex.py`、`runtimes/dsh.py`装载新增模块和工具并透传到原生信封，
    核对隔离副本、工具白名单及基线清单，不能只测直接Python调用。
 3. 在`host_ops.py`／`host_ops_mcp.py`、`__main__.py`及Delivery获准读取处提供同源汇总；
-   不扩展backend或frontend。运行对外接口文档同步检查并按实际新增Host工具更新对应引用。
+   包含历史／版本及可选统计读取，不扩展backend或frontend。036原run_close发布后增加
+   隔离失败的附属归档调用，数值报告与旧来源合同保持。运行对外接口文档同步检查并按
+   实际新增Host工具更新对应引用。
 4. 在现有活跃角色合同中说明卡片粒度、低频触发、可选跟踪、自然反馈与原升级职责。独立
    验收包不加生产写卡能力，宿主监督说明只加原件读取入口。运行适用合同／技能校验。
 
 | 验证层 | 覆盖及边界 |
 | --- | --- |
 | 文档／设计（本轮） | 链接、编号、示例与范围一致性；独立Reviewer核对需求／实际入口，只证明设计可实施 |
-| 工程功能（未来授权） | A1—A7；必须经过真实Broker／MCP与Runner回执绑定。覆盖多请求者、双方一致、越权、晚到、重复与部分成功，不能只测投影helper |
+| 工程功能（未来授权） | A1—A7及A10—A12；经过真实Broker／MCP、Runner回执和036发布／查询接点。覆盖多请求者、越权、晚到、重复、固定前缀历史、归档故障及统计错配，不能只测投影helper |
 | 运行时装载（未来授权） | 当前Codex及DSH环境实际发现工具、原身份绑定和授权视图；以有界装载证据为准，不新增Provider服务 |
 | 真实采用与成本（未来授权） | A8；沿已授权业务run观察实际卡片和请求使用，单独记录维护、补读、减少询问及成本转移；没有匹配对照不宣称净降耗 |
 | 独立业务语义（未来授权） | A9；沿原冻结证据和独立Consumer／Judge完成，与设计／工程结论分开 |
@@ -219,6 +321,10 @@ Delivery／Host上下文区只读取原yield／journal，不发布到生产文�
 
 ## 7. 设计审阅与状态
 
-作者已核对D1—D10、F1—F8及A1—A9的一致性和实际复用入口；非作者独立Reviewer完成
+作者已核对初版D1—D10、F1—F8及A1—A9的一致性和实际复用入口；非作者独立Reviewer完成
 Round 1设计审阅并判PASS，0 Critical／0 High，无关键未决假设。请求身份澄清和最终复核
 原件见[审阅记录](../records/2026-10-19-r4-4-001-design-review-record.md)。设计结论不覆盖工程或真实运行验收。
+
+后续按用户要求新增F9—F10、D11—D13及A10—A12，补齐历史查询和与已有用量统计共同
+留存／查询的入口。该增量已由原独立Reviewer定向复核PASS，0 Critical／0 High，无关键
+未决假设；不继承原PASS充作新增范围的审阅证据，实际新原件与结论另记。

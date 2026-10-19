@@ -22,7 +22,8 @@ delivery evidence. Use the following locations for new documentation.
 - [v4.4 modeling Team work board and collaboration requests](requirements/requirements-v4.4.md):
   R4.4-001 records Agent-maintained current work and flexible near-term goals, with one tracked
   request shown to both requester and assignee. Refinement and design are complete;
-  independent design review passed. Implementation and real-run benefits remain unverified.
+  independent review passed for both the initial design and its history-query and linked-statistics
+  extension. Implementation and real-run benefits remain unverified.
   The current Delivery token-reduction priority remains R4.3-030.
 - [v4.3 modeling efficiency, semantic retrieval, and rapid iteration](requirements/requirements-v4.3.md):
   target of at most two hours from a fresh start to complete independent semantic acceptance,
