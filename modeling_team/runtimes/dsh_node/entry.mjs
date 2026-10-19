@@ -23,12 +23,29 @@ try {
   await mount('@deepseek-ai/dsh-agent');
   await mount('@deepseek-ai/dsh-session-persistence-jsonl', {root: '/agent/home/sessions', compression: 'none'});
   await mount('@deepseek-ai/dsh-session-checkpoint-policy');
-  await mount('@deepseek-ai/dsh-llm-deepseek-api-key', {
+  const providerOptions = {
     baseURL: config.providerURL, apiKeyEnv: 'DSH_PROXY_TOKEN', streamIdleTimeoutMs: 120000,
     ...(config.deliveryTools ? {reasoningEffort: config.reasoningEffort} : {}),
     // Unknown or partially streamed requests must await explicit Host recovery, never replay.
     retryPolicy: {mode: 'normal', maxRetries: 0},
-  });
+  };
+  if (config.provider === 'glm-messages') {
+    // Reuse the pinned Messages codec without registering GLM as a DeepSeek provider.
+    const {registerDeepSeekProvider, resolveAdapterOptions, catalogModelInfo} =
+      await load('@deepseek-ai/dsh-llm-deepseek');
+    const options = () => resolveAdapterOptions({...providerOptions,
+      models: [{id: config.model}], maxTokens: 32768});
+    await ctx.plugin({name: 'ontoweave-glm-messages', inject: ['llm'], apply(child) {
+      registerDeepSeekProvider(child, 'glm-messages', {
+        options, providerName: 'GLM Messages',
+        resolveAuth: async () => ({headers: {'x-api-key': process.env.DSH_PROXY_TOKEN}}),
+        discoverModels: async provider => options().models.map(model => catalogModelInfo(provider, model)),
+      });
+    }});
+    mounted.push('ontoweave-glm-messages');
+  } else {
+    await mount('@deepseek-ai/dsh-llm-deepseek-api-key', providerOptions);
+  }
   await mount('@deepseek-ai/dsh-agent-loop', {agents: []});
   await mount('@deepseek-ai/dsh-llm-retry');
   if (config.deliveryTools) await mount('@deepseek-ai/dsh-token-meter');

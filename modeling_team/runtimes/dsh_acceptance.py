@@ -32,7 +32,7 @@ from ..acceptance_runtime import (
     v3_proxy_scope_entries,
     v3_ticket_digest,
 )
-from ..deepseek_provider_proxy import read_deepseek_credential
+from ..deepseek_provider_proxy import read_deepseek_credential, read_glm_credential
 from ..messages_provider_proxy import MessagesProviderSession
 from ..usage_capture import NumericReceiptWriter
 from ..model_routing import preflight_profile_credentials
@@ -272,16 +272,18 @@ class DshAcceptanceRuntime:
             transport._build = freeze_build(transport.harness_root)
             role = "platform-examiner" if platform else "acceptance"
             binding = self.profile.bindings[role]
+            reader = read_glm_credential if binding.provider_id == "glm-messages" else read_deepseek_credential
             credential = bytearray(
-                read_deepseek_credential(
+                reader(
                     preflight_profile_credentials(
                         dataclasses.replace(self.profile, bindings={role: binding})
-                    )["deepseek-official"]
+                    )[binding.provider_id]
                 )
             )
             try:
                 transport._provider = transport.provider_factory(
-                    credential, on_attempt=NumericReceiptWriter(evidence_root / "evidence" / "dsh-provider.jsonl")
+                    credential, **({"provider_id": binding.provider_id} if binding.provider_id == "glm-messages" else {}),
+                    on_attempt=NumericReceiptWriter(evidence_root / "evidence" / "dsh-provider.jsonl")
                 )
             finally:
                 credential[:] = b"\0" * len(credential)
@@ -416,6 +418,7 @@ class DshAcceptanceRuntime:
                     for key, path in transport._build["modules"].items()
                 },
                 "providerURL": transport._provider.base_url,
+                "provider": binding.provider_id, "model": binding.model,
                 "instructions": instructions_text,
                 "servers": servers,
             }
@@ -442,7 +445,7 @@ class DshAcceptanceRuntime:
             ):
                 raise DshRuntimeError("dsh-model-binding-drift", category="platform-contract")
             inspection = transport._rpc(agent, "host/inspect", {})
-            transport._check_tools(agent, inspection)
+            transport._check_tools(agent, inspection, provider_id=binding.provider_id)
             agent.ready = True
             child.first_turn_text = _v3_acceptance_first_turn_text(packet, role_instructions) + (
                 " Authorized handoff entries (optional; inline packet remains valid): "

@@ -49,6 +49,40 @@ def request(session, body=b'{"model":"deepseek-flash","stream":true}', **headers
     return result
 
 
+def test_glm_messages_fixed_tls_upstream_exact_body_and_provider_identity():
+    calls = []
+
+    class Connection:
+        sock = None
+
+        def __init__(self, host, **kwargs):
+            assert host == "open.bigmodel.cn"
+            assert "context" in kwargs
+
+        def request(self, method, path, body, headers):
+            calls.append((method, path, body, headers))
+
+        def getresponse(self):
+            return Response()
+
+        def close(self):
+            pass
+
+    payload = b'{"model":"glm-5.3-flash","output_config":{"effort":"low"},"stream":true}'
+    session = MessagesProviderSession(b"glm-host-secret", provider_id="glm-messages")
+    session.start()
+    try:
+        with patch("modeling_team.messages_provider_proxy.http.client.HTTPSConnection", Connection):
+            code, _, body = request(session, body=payload)
+        assert code == 200 and body == b"data: first\n\ndata: last\n\n"
+        assert session.provider_id == "glm-messages"
+        assert calls[0][:3] == ("POST", "/api/anthropic/v1/messages", payload)
+        assert calls[0][3]["x-api-key"] == "glm-host-secret"
+    finally:
+        assert session.stop()
+    assert session.secret_snapshot() == b""
+
+
 @pytest.mark.parametrize("status", [200, 401, 402, 429, 503])
 def test_fixed_messages_tls_headers_exact_stream_and_original_status(status):
     calls = []

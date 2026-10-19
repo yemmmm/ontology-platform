@@ -15,20 +15,20 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .delivery import DeliveryRuntimeError
-from .dsh_build import PLUGINS, digest, freeze_build
+from .dsh_build import composition_plugins, digest, freeze_build
 from .dsh_events import DispatchProjection
 from .role_isolation import namespace_base
-from ..deepseek_provider_proxy import read_deepseek_credential
+from ..deepseek_provider_proxy import read_deepseek_credential, read_glm_credential
 from ..messages_provider_proxy import MessagesProviderSession
 from ..usage_capture import NumericReceiptWriter
-from ..model_routing import preflight_profile_credentials
+from ..model_routing import preflight_profile_credentials, PROVIDER_CATALOG
 
 
 def validate_delivery_runtime(config, binding):
     runtime = config.get("runtime", "codex")
     if runtime not in {"codex", "dsh"}:
         raise ValueError("runtime must be codex or dsh")
-    if (binding.provider_id == "deepseek-official") != (runtime == "dsh"):
+    if (PROVIDER_CATALOG[binding.provider_id].wire_api == "messages") != (runtime == "dsh"):
         raise ValueError(f"unsupported-runtime-provider: runtime={runtime} provider={binding.provider_id}")
     if runtime == "dsh":
         for field in ("service_tier", "model_context_window", "model_auto_compact_token_limit"):
@@ -131,9 +131,10 @@ class DSHDeliveryRuntime:
         if self.profile is not None:
             from dataclasses import replace
             selected = replace(self.profile, bindings={"delivery": self.binding})
-            credential.extend(read_deepseek_credential(
-                preflight_profile_credentials(selected)["deepseek-official"]))
+            reader = read_glm_credential if self.binding.provider_id == "glm-messages" else read_deepseek_credential
+            credential.extend(reader(preflight_profile_credentials(selected)[self.binding.provider_id]))
         self.provider = self.provider_factory(credential,
+            **({"provider_id": self.binding.provider_id} if self.binding.provider_id == "glm-messages" else {}),
             on_attempt=NumericReceiptWriter(self.home / "dsh-provider.jsonl"))
         self.provider.register_usage_session(self.runtime_session_id, {
             "session_id": self.session_id, "role": "delivery", "phase": "supervision",
@@ -152,7 +153,8 @@ class DSHDeliveryRuntime:
                       for key, path in self.build["modules"].items()},
                 "instructions": self.instructions, "providerURL": self.provider.base_url,
                 "servers": [], "deliveryTools": self.tools, "sessionId": self.runtime_session_id,
-                "reasoningEffort": self.binding.effective_effort}
+                "reasoningEffort": self.binding.effective_effort,
+                "provider": self.binding.provider_id, "model": self.binding.model}
             (self.home / "home/dsh.json").write_text(json.dumps(config))
             self._stderr = (self.home / "stderr.log").open("a")
             self.process = subprocess.Popen(self.namespace_command(), stdin=subprocess.PIPE,
@@ -172,7 +174,7 @@ class DSHDeliveryRuntime:
             expected = [{"name": t["name"], "description": t["description"],
                          "parameters": t["inputSchema"]} for t in self.tools]
             if (sorted(actual["tools"], key=lambda t: t["name"]) != sorted(expected, key=lambda t: t["name"])
-                    or set(actual["plugins"]) != (set(PLUGINS) | {"@deepseek-ai/dsh-token-meter"}) - {
+                    or set(actual["plugins"]) != (set(composition_plugins(self.binding.provider_id)) | {"@deepseek-ai/dsh-token-meter"}) - {
                         "@deepseek-ai/dsh-sdk-jsonrpc-server", "@deepseek-ai/dsh-mcp-client"}):
                 raise DeliveryRuntimeError("dsh-tool-boundary-drift; correct composition and retry")
             baseline = {"build": self.build, "tools": actual, "binding": self.binding.as_dict(),

@@ -31,6 +31,13 @@ PLUGINS = tuple(
 )
 
 
+def composition_plugins(provider_id):
+    """The GLM route reuses the pinned Messages codec, with an explicit local registration."""
+    return tuple("ontoweave-glm-messages" if provider_id == "glm-messages"
+                 and name == "@deepseek-ai/dsh-llm-deepseek-api-key" else name
+                 for name in PLUGINS)
+
+
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 

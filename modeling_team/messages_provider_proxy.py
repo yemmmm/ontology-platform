@@ -15,6 +15,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler
 
 from .deepseek_provider_proxy import ResponsesProviderSession
+from .model_routing import PROVIDER_CATALOG
 from .dsh_usage import MessagesUsageObserver, safe_id
 from .usage_capture import identity, utc_now
 
@@ -95,7 +96,7 @@ class _MessagesHandler(BaseHTTPRequestHandler):
             if key.lower() in {"anthropic-version", "anthropic-beta", "x-request-id"}
         }
         connection = http.client.HTTPSConnection(
-            "api.deepseek.com",
+            session.upstream_host,
             timeout=session.connect_timeout,
             context=ssl.create_default_context(),
         )
@@ -142,7 +143,7 @@ class _MessagesHandler(BaseHTTPRequestHandler):
                     "accept": "text/event-stream",
                 }
             )
-            connection.request("POST", "/anthropic/v1/messages", body=body, headers=headers)
+            connection.request("POST", session.upstream_path, body=body, headers=headers)
             if connection.sock is not None:
                 connection.sock.settimeout(session.read_timeout)
             response = connection.getresponse()
@@ -169,7 +170,7 @@ class _MessagesHandler(BaseHTTPRequestHandler):
                             "error": {
                                 "type": diagnostic["provider_type"] or "provider_http_error",
                                 "code": diagnostic["reason_code"],
-                                "message": f"DeepSeek HTTP {status}: "
+                                "message": f"Provider HTTP {status}: "
                                            + diagnostic["reason_code"].replace("_", " "),
                             },
                             "request_shape": request_shape,
@@ -226,11 +227,19 @@ class _MessagesHandler(BaseHTTPRequestHandler):
 class MessagesProviderSession(ResponsesProviderSession):
     handler_class = _MessagesHandler
 
-    def __init__(self, credential, **kwargs):
+    def __init__(self, credential, *, provider_id="deepseek-official", **kwargs):
+        from urllib.parse import urlsplit
+
+        route = PROVIDER_CATALOG.get(provider_id)
+        if route is None or route.wire_api != "messages":
+            raise ValueError("unsupported-runtime-provider: expected a catalog Messages route")
+        upstream = urlsplit(route.upstream_url)
+        self.upstream_host, self.upstream_path = upstream.hostname, upstream.path
         # Reuse listener lifecycle/secret wiping only. The handler fixes its TLS Messages upstream.
         super().__init__(
-            credential, provider_id="deepseek-official", max_upstream_attempts=1, **kwargs
+            credential, provider_id=provider_id, max_upstream_attempts=1, **kwargs
         )
+        self.upstream_url = route.upstream_url
         self.proxy_token = secrets.token_urlsafe(32)
         self._usage_bindings = {}
         self._capture_queue = queue.Queue(maxsize=1024)

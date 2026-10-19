@@ -105,19 +105,21 @@ class ScriptedProvider(LocalMessagesProvider):
         return self.base_url
 
 
-@pytest.fixture
-def runtime(tmp_path, monkeypatch):
+@pytest.fixture(params=[PROFILE, "dsh-glm-flash-low"])
+def runtime(tmp_path, monkeypatch, request):
     from modeling_team.runtimes import dsh_acceptance
 
     monkeypatch.setattr(
-        dsh_acceptance, "preflight_profile_credentials", lambda p: {"deepseek-official": object()}
+        dsh_acceptance, "preflight_profile_credentials",
+        lambda p: {provider: object() for provider in p.provider_ids()}
     )
     monkeypatch.setattr(
         dsh_acceptance, "read_deepseek_credential", lambda b: b"fake-engineering-key"
     )
+    monkeypatch.setattr(dsh_acceptance, "read_glm_credential", lambda b: b"fake-glm-key")
     adapter = DshAcceptanceRuntime(repository_root=ROOT, provider_factory=ScriptedProvider)
     adapter._run_root = tmp_path
-    adapter.bind_acceptance_model_profile(load_team_model_profile(ROOT, PROFILE))
+    adapter.bind_acceptance_model_profile(load_team_model_profile(ROOT, request.param))
     ScriptedProvider.steps = []
     yield adapter
     if adapter.resource and not adapter.resource.destroyed:

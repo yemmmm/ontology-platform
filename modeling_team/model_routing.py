@@ -183,10 +183,19 @@ DEEPSEEK_DSH_ROUTE = ProviderRoute(
     models=frozenset({"deepseek-flash"}),
     effort_effective=MappingProxyType({tier: tier for tier in ("low", "high", "max")}),
 )
+GLM_MESSAGES_ROUTE = ProviderRoute(
+    provider_id="glm-messages",
+    wire_api="messages",
+    upstream_url="https://open.bigmodel.cn/api/anthropic/v1/messages",
+    credential_env="GLM_API_KEY",
+    models=frozenset({"glm-5.3-flash"}),
+    effort_effective=MappingProxyType({"low": "low"}),
+)
 PROVIDER_CATALOG: Mapping[str, ProviderRoute] = MappingProxyType(
     {
         route.provider_id: route
-        for route in (DEEPSEEK_DIRECT_ROUTE, GLM_DIRECT_ROUTE, OPENAI_CODEX_ROUTE, DEEPSEEK_DSH_ROUTE)
+        for route in (DEEPSEEK_DIRECT_ROUTE, GLM_DIRECT_ROUTE, OPENAI_CODEX_ROUTE,
+                      DEEPSEEK_DSH_ROUTE, GLM_MESSAGES_ROUTE)
     }
 )
 
@@ -201,14 +210,16 @@ def uses_external_credential_session(provider_id: str) -> bool:
 def validate_runtime_model_profile(runtime: str, profile: TeamModelProfile) -> None:
     """Validate before reading credentials or starting any runtime; never remap routes."""
     for binding in profile.bindings.values():
-        supported = (binding.provider_id == "deepseek-official" if runtime == "dsh"
-                     else binding.provider_id != "deepseek-official")
+        messages = PROVIDER_CATALOG[binding.provider_id].wire_api == "messages"
+        supported = messages if runtime == "dsh" else not messages
         if not supported:
             raise TeamModelProfileError(
                 f"unsupported-runtime-provider: runtime={runtime} provider={binding.provider_id} "
                 f"model={binding.model} effort={binding.requested_effort}; "
                 "select an explicitly authorized compatible model profile"
             )
+    if runtime == "dsh" and len(profile.provider_ids()) != 1:
+        raise TeamModelProfileError("unsupported-runtime-provider: DSH requires one Messages provider")
 
 
 def profile_requires_codex_subscription_auth(profile: TeamModelProfile) -> bool:
@@ -581,6 +592,7 @@ _PROVIDER_CREDENTIAL_PREFLIGHTS: Mapping[
         "deepseek-direct": preflight_deepseek_credential,
         "deepseek-official": preflight_deepseek_credential,
         "glm-direct": preflight_glm_credential,
+        "glm-messages": preflight_glm_credential,
     }
 )
 _PROVIDER_CREDENTIAL_READERS: Mapping[str, Callable[[Any], bytes]] = MappingProxyType(
@@ -588,6 +600,7 @@ _PROVIDER_CREDENTIAL_READERS: Mapping[str, Callable[[Any], bytes]] = MappingProx
         "deepseek-direct": read_deepseek_credential,
         "deepseek-official": read_deepseek_credential,
         "glm-direct": read_glm_credential,
+        "glm-messages": read_glm_credential,
     }
 )
 # Every external-credential route needs all three wirings.  Asserting here turns
@@ -630,6 +643,7 @@ def preflight_profile_credentials(
         "deepseek-direct": deepseek_credential_path,
         "deepseek-official": deepseek_credential_path,
         "glm-direct": glm_credential_path,
+        "glm-messages": glm_credential_path,
     }
     bindings: dict[str, Any] = {}
     for provider_id in profile.provider_ids():

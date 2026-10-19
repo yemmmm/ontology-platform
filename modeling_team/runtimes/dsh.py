@@ -25,11 +25,14 @@ from .base import (
     RuntimeDispatchReceipt,
     RuntimeMessage,
 )
-from .dsh_build import PLUGINS, digest, freeze_build
+from .dsh_build import composition_plugins, digest, freeze_build
 from .dsh_events import DispatchProjection
 from .role_isolation import namespace_base, stage_skills
 from ..capability_mcp import ROLE_MATERIAL_TOOL
-from ..deepseek_provider_proxy import preflight_deepseek_credential, read_deepseek_credential
+from ..deepseek_provider_proxy import (
+    preflight_deepseek_credential, read_deepseek_credential,
+    preflight_glm_credential, read_glm_credential,
+)
 from ..messages_provider_proxy import MessagesProviderSession
 from ..usage_capture import NumericReceiptWriter
 from ..model_routing import validate_runtime_model_profile
@@ -150,11 +153,12 @@ class DshRuntimeAdapter(RuntimeAdapter):
         self._wait_events = queue.SimpleQueue()
         self._failures = queue.SimpleQueue()
         self._build = freeze_build(self.harness_root)
-        credential = bytearray(
-            read_deepseek_credential(run.provider_credential_bindings["deepseek-official"])
-        )
+        provider_id = next(iter(run.team_model_profile.provider_ids()))
+        reader = read_glm_credential if provider_id == "glm-messages" else read_deepseek_credential
+        credential = bytearray(reader(run.provider_credential_bindings[provider_id]))
         self._provider = self.provider_factory(
-            credential, on_attempt=NumericReceiptWriter(run.root / "evidence" / "dsh-provider.jsonl")
+            credential, **({"provider_id": provider_id} if provider_id == "glm-messages" else {}),
+            on_attempt=NumericReceiptWriter(run.root / "evidence" / "dsh-provider.jsonl")
         )
         credential[:] = b"\0" * len(credential)
         try:
@@ -421,12 +425,17 @@ class DshRuntimeAdapter(RuntimeAdapter):
             "to consume the original inbox, then retry once consumed. This ordinary wait "
             "requires no retrieval, rewrite, new issue or blocked terminal result."
         )
+        binding = self._run.team_model_profile.binding_for(
+            agent.package.package_id, semantic_role=agent.package.role
+        )
         config = {
             "modules": {
                 key: "/dsh/" + str(Path(value).relative_to(self.harness_root))
                 for key, value in self._build["modules"].items()
             },
             "providerURL": self._provider.base_url,
+            "provider": binding.provider_id,
+            "model": binding.model,
             "instructions": instructions,
             "servers": servers,
         }
@@ -445,7 +454,7 @@ class DshRuntimeAdapter(RuntimeAdapter):
         suffix = hashlib.sha256(f"{server}\0{raw}".encode()).hexdigest()[:12]
         return normalized[:51] + "_" + suffix
 
-    def _check_tools(self, agent, inspection):
+    def _check_tools(self, agent, inspection, *, provider_id=None):
         expected = {
             self._public_name(server, tool["name"]): tool for server, tool in agent.expected_tools
         }
@@ -464,7 +473,11 @@ class DshRuntimeAdapter(RuntimeAdapter):
                     f"dsh-tool-schema-drift: {name}; restore the original MCP schema and retry role loading",
                     category="platform-contract",
                 )
-        allowed = set(PLUGINS) - {"@deepseek-ai/dsh-sdk-jsonrpc-server"}
+        if provider_id is None:
+            provider_id = self._run.team_model_profile.binding_for(
+                agent.package.package_id, semantic_role=agent.package.role
+            ).provider_id
+        allowed = set(composition_plugins(provider_id)) - {"@deepseek-ai/dsh-sdk-jsonrpc-server"}
         if set(inspection["plugins"]) != allowed:
             raise DshRuntimeError(
                 "dsh-plugin-set-drift: restore the pinned composition and retry role loading",
@@ -1021,9 +1034,12 @@ class DshRuntimeAdapter(RuntimeAdapter):
         try:
             refresh = getattr(self._provider, "refresh_credential", None)
             if callable(refresh):
-                original = self._run.provider_credential_bindings["deepseek-official"]
-                repaired = preflight_deepseek_credential(original.path)
-                credential = bytearray(read_deepseek_credential(repaired))
+                provider_id = next(iter(self._run.team_model_profile.provider_ids()))
+                original = self._run.provider_credential_bindings[provider_id]
+                preflight = preflight_glm_credential if provider_id == "glm-messages" else preflight_deepseek_credential
+                reader = read_glm_credential if provider_id == "glm-messages" else read_deepseek_credential
+                repaired = preflight(original.path)
+                credential = bytearray(reader(repaired))
                 try:
                     refresh(credential)
                 finally:
