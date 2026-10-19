@@ -10,6 +10,8 @@ import argparse
 import decimal
 import hashlib
 import json
+import shutil
+import tempfile
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -41,7 +43,7 @@ GROUP = (
     "role",
     "phase",
 )
-SOURCE_KINDS = {"rollout", "app_server", "capture", "receipts", "timing", "metrics", "batch_report", "dsh_capture", "dsh_native"}
+SOURCE_KINDS = {"rollout", "app_server", "capture", "receipts", "timing", "metrics", "batch_report", "dsh_capture", "dsh_native", "activity"}
 
 
 class ScopeError(ValueError):
@@ -198,6 +200,7 @@ def _read_sources(scope, base, issues):
     receipts, cumulative, attempts, timings, compactions, sources = [], [], [], [], [], []
     snapshots = []
     native = []
+    activity = []
     for spec in scope.get("sources", []):
         root = (base / spec.get("root", ".")).resolve()
         path = (root / spec["path"]).resolve()
@@ -206,7 +209,7 @@ def _read_sources(scope, base, issues):
         source = {
             "id": spec["id"],
             "kind": spec.get("kind"),
-            "path": str(path),
+            "path": spec["path"] if scope.get("close_statistics") else str(path),
             "byte_offset": spec.get("byte_offset", 0),
         }
         sources.append(source)
@@ -230,6 +233,9 @@ def _read_sources(scope, base, issues):
         source.update(
             byte_length=len(raw), sha256=hashlib.sha256(raw).hexdigest(), status="observed"
         )
+        if spec.get("sha256") and source["sha256"] != spec["sha256"]:
+            _issue(issues, "source_digest_mismatch", {"source_id": spec["id"]})
+            continue
         if "byte_length" in spec and len(raw) != spec["byte_length"]:
             _issue(issues, "source_truncated", {"source_id": spec["id"]})
         if spec["kind"] == "batch_report":
@@ -256,6 +262,16 @@ def _read_sources(scope, base, issues):
                 _issue(issues, "invalid_json_line", locator)
                 continue
             kind = spec["kind"]
+            if kind in {"capture", "dsh_capture"} and spec.get("capture_session_id") is not None and event.get("session_id") != spec["capture_session_id"]:
+                continue
+            if kind == "activity":
+                from .close_statistics import safe_activity
+                observed = safe_activity(event)
+                if observed:
+                    activity.append({**observed, "source": locator})
+                else:
+                    _issue(issues, "invalid_activity_event", locator)
+                continue
             payload = event.get("payload") or {}
             if not isinstance(payload, dict):
                 _issue(issues, "invalid_payload", locator)
@@ -341,6 +357,10 @@ def _read_sources(scope, base, issues):
                                         "start",
                                         "end",
                                         "headers_at",
+                                        "monotonic_start_ns",
+                                        "monotonic_end_ns",
+                                        "clock_ref",
+                                        "purpose",
                                     )
                                 },
                                 "source": locator,
@@ -509,7 +529,7 @@ def _read_sources(scope, base, issues):
                 receipts.append(normalized)
             else:
                 _issue(issues, "unsupported_record_mode", locator)
-    return receipts, cumulative, attempts, timings, compactions, sources, snapshots, native
+    return receipts, cumulative, attempts, timings, compactions, sources, snapshots, native, activity
 
 
 def _read_consumer_snapshots(scope, spec, raw, issues):
@@ -1378,7 +1398,7 @@ def _timing(canonical, timings, task_units, task_window):
 def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
     validate_scope(scope)
     issues = []
-    receipts, cumulative, attempts, timings, compactions, sources, snapshots, native = _read_sources(
+    receipts, cumulative, attempts, timings, compactions, sources, snapshots, native, activity = _read_sources(
         scope, base, issues
     )
     canonical, ambiguous = _deduplicate(receipts, issues)
@@ -1628,6 +1648,9 @@ def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
     # copying the input object or arbitrary fields into the report.
     for r in [*canonical, *ambiguous, *units, *observed]:
         r.pop("binding", None)
+    if scope.get("close_statistics") is not None:
+        from .close_statistics import aggregate_activity
+        report["close_statistics"] = aggregate_activity(scope["close_statistics"], report, activity)
     return report
 
 
@@ -1838,6 +1861,9 @@ def render_markdown(report):
         "",
         "Full per-response fields, missing coverage, attempts, price formulas and locators: report.json.",
     ]
+    if "close_statistics" in report:
+        from .close_statistics import render_close_markdown
+        lines.append(render_close_markdown(report["close_statistics"]))
     return "\n".join(lines) + "\n"
 
 
@@ -1849,15 +1875,20 @@ def write_report(scope_path: Path, output_dir: Path):
         raise ScopeError("scope is unavailable or invalid JSON") from exc
     report = build_report(scope, base=scope_path.resolve().parent)
     output_dir = Path(output_dir)
-    # Exclusive directory creation prevents overwriting any retained report.
-    output_dir.mkdir(parents=True, mode=0o700, exist_ok=False)
-    for name, content in (
-        ("report.json", json.dumps(report, sort_keys=True, ensure_ascii=False, indent=2) + "\n"),
-        ("report.md", render_markdown(report)),
-    ):
-        with (output_dir / name).open("x", encoding="utf-8") as stream:
-            stream.write(content)
-        (output_dir / name).chmod(0o600)
+    if output_dir.exists():
+        raise FileExistsError(output_dir)
+    output_dir.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temporary = Path(tempfile.mkdtemp(prefix=".usage-report-", dir=output_dir.parent))
+    try:
+        for name, content in (
+            ("report.json", json.dumps(report, sort_keys=True, ensure_ascii=False, indent=2) + "\n"),
+            ("report.md", render_markdown(report)),
+        ):
+            (temporary / name).write_text(content, encoding="utf-8")
+            (temporary / name).chmod(0o600)
+        temporary.rename(output_dir)
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
     return report
 
 

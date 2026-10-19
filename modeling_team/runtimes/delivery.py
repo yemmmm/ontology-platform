@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from modeling_team.usage_capture import NumericReceiptWriter
+from modeling_team.close_statistics import ActivityRecorder
 
 from modeling_team.model_routing import (
     RoleModelBinding, codex_auth_cache_path, preflight_codex_subscription_auth,
@@ -136,6 +137,7 @@ class DeliveryRuntime:
         self._observations: list[dict] = []
         self._turn_id: str | None = None
         self.process_instance = uuid.uuid4().hex
+        self.activity = None
 
     @property
     def identity(self) -> dict:
@@ -145,6 +147,15 @@ class DeliveryRuntime:
     def start(self) -> None:
         if self.process is not None:
             raise DeliveryRuntimeError("Delivery runtime already started")
+        self.activity = ActivityRecorder(self.home.parent, {
+            **self._usage_writer.context, "runtime": "codex", "agent_id": "delivery",
+            "role": "delivery", "process_instance": self.process_instance,
+        }, usage_sources=[{"path": str(self.home / "usage-events.jsonl"), "kind": "capture"},
+                          *([{"path": str(self.home / "provider-attempts.jsonl"), "kind": "capture",
+                              "shared": True,
+                              "capture_session_id": self._usage_writer.context.get("session_id")}] if self.provider_base_url else [])],
+            fresh_session=True)
+        self._usage_writer.context.update(self.activity.context)
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.home, 0o700)
         work = self.home / "work"
@@ -227,6 +238,8 @@ class DeliveryRuntime:
                 "dynamicTools": [{"type": "function", **tool} for tool in self.tools],
             })
             self.thread_id = result["thread"]["id"]
+            self.activity.bind(self.thread_id)
+            self._usage_writer.context.update(self.activity.context)
             self._verify_native_tool_boundary()
         except Exception:
             self.close()
@@ -320,11 +333,13 @@ class DeliveryRuntime:
                 arguments = params.get("arguments", {})
                 if not isinstance(arguments, dict):
                     raise ValueError("invalid arguments")
-                if "call_identity" in inspect.signature(self.tool_handler).parameters:
-                    result = self.tool_handler(name, arguments,
-                        call_identity=f"{self.thread_id}:{params.get('callId', value['id'])}")
-                else:
-                    result = self.tool_handler(name, arguments)
+                from contextlib import nullcontext
+                with self.activity.tool(params.get('callId', value['id']), name) if self.activity else nullcontext():
+                    if "call_identity" in inspect.signature(self.tool_handler).parameters:
+                        result = self.tool_handler(name, arguments,
+                            call_identity=f"{self.thread_id}:{params.get('callId', value['id'])}")
+                    else:
+                        result = self.tool_handler(name, arguments)
                 response = {"success": True, "contentItems": [
                     {"type": "inputText", "text": json.dumps(result, ensure_ascii=False)}
                 ]}
@@ -403,4 +418,20 @@ class DeliveryRuntime:
                 self.process.wait(timeout=5)
         if self._stderr is not None:
             self._stderr.close()
+        if self.process is not None:
+            deadline = time.monotonic() + 1
+            while time.monotonic() < deadline:
+                try:
+                    value = self._read(0)
+                except DeliveryRuntimeError:
+                    # EOF is normal after wait(); statistics never replace the
+                    # original process/cleanup outcome with a reader failure.
+                    break
+                if value is None:
+                    break
+                if value.get("method") == "thread/tokenUsage/updated":
+                    self._handle(value)
+        if self.activity:
+            self.activity.exit(self.process.poll() if self.process else None,
+                               startup_failed=self.process is None)
         self.busy = False

@@ -11757,6 +11757,20 @@ class TeamRunner:
         }
 
     def cleanup(self) -> dict[str, Any]:
+        try:
+            return self._cleanup_resources()
+        except Exception:
+            # Keep the original cleanup exception/first failure. Statistics
+            # still describe confirmed exits and missing/residual resources.
+            if self.run is not None:
+                from .close_statistics import publish_close_statistics
+                publish_close_statistics(
+                    self.run.root, view="run_close", task_ref=self.run.configuration.task.task_id,
+                    cleanup_complete=False,
+                )
+            raise
+
+    def _cleanup_resources(self) -> dict[str, Any]:
         if self._cleanup_evidence_cache is not None:
             return deepcopy(self._cleanup_evidence_cache)
         issue_ledger = self._issue_ledger()
@@ -11932,6 +11946,11 @@ class TeamRunner:
                         },
                     )
                 self._record_runtime_core_hashes("after_cleanup")
+                from .close_statistics import publish_close_statistics
+                evidence["close_statistics"] = publish_close_statistics(
+                    self.run.root, view="run_close", task_ref=self.run.configuration.task.task_id,
+                    cleanup_complete=evidence.get("runtime", {}).get("complete"),
+                )
                 self._state(
                     "CLEANUP_INCOMPLETE" if evidence.get("runtime", {}).get("complete") is False else "CLEANED",
                     cleanup=evidence,

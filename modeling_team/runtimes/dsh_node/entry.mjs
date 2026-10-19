@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
+import { observeActivity } from './activity.mjs';
 const config = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const load = async name => import(pathToFileURL(config.modules[name]).href);
 const { Context } = await load('@deepseek-ai/cordis');
@@ -56,6 +57,7 @@ try {
     reconnect: {enabled: false},
   });
   // Use the SDK server directly so Host-only inspection stays outside model tools.
+  observeActivity(ctx, config);
   if (config.deliveryTools) {
     const { serveDelivery } = await import('./delivery.mjs');
     await serveDelivery(ctx, config, mounted, load);

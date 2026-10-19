@@ -76,6 +76,7 @@ python -m modeling_team.usage_report \
 | `timing` | 真实唯一绑定的请求／头后／首输出／turn 时间回执 |
 | `metrics` | 当前仅披露不能直接当逐响应 usage／provider TTFT 的缺口，不转换 Examiner ttft_ms |
 | `batch_report` | 完整 batch-report.json 中 Consumer task 的线程绑定及 model_usage 数值快照；不投影题目、答案或评分正文 |
+| `activity` | R4.3-036 的数值化 launch／bind／exit、LLM／工具起止及明确暂停／等待；独立于旧 numeric capture 事件合同 |
 
 未知 kind、坏行、缺文件及结构错误保留安全小计与限制，不补零。复制响应按
 (provider,key_ref,response_id)合并来源。缺response_id时仅接受带
@@ -249,3 +250,75 @@ unknown，不预置价格。请求完成及headers后速率只用实际回执与
 [034开发测试记录](../../docs/delivery/records/2026-10-18-r4-3-034-implementation-test-record.md)
 的分阶段清单；没有真实L0／独立L1前不改变新任务标准默认。旧省略runtime=codex、
 显式Codex及历史读取继续有效，旧run不热切、不盲重放，不因统计追加start或修模轮次。
+
+<a id="team-close-statistics"></a>
+
+## Team 关闭统计（R4.3-036）
+
+[需求](../../docs/requirements/requirements-v4.3.md#r4-3-036)及
+[设计](../../docs/delivery/designs/2026-10-19-r4-3-036-team-close-statistics-design.md)
+在现有账本上增加数值活动来源和原 owner 收尾接线，不产生模型调用。
+
+- run：`TeamRunner.cleanup` 在运行时／验收及资源收尾后发布 `run_close`；原清理回执、
+  `get_run_status` 和 `get_request_result` 附 `close_statistics`，不改变请求 outcome。
+- 独立 CQ：原 `EvaluationOwner` 关闭后发布 `operation_close`；公开反馈在自己的收尾
+  分支发布同一视图。`get_evaluation_status` 返回 operation 自己的报告引用。
+  公开反馈的 `--statistics-root` 仅指定数值报告目录，不创建或接入验收 owner。
+- Delivery：`runtime.close()`、`native_runtime_closed` 及 provider flush 后，程序发布
+  `task_close`，追加 `close_statistics_ready`（失败为 `close_statistics_unavailable`），
+  更新原 session／conversation 状态。早期 stopped／standby 不是统计冻结点。
+
+每个报告根的 `evidence/close-statistics.json` 是只读查询指针，包含
+`schema_version: team-close-statistics/v1`、`view`、`closure_status`、`report_status`、
+`coverage_status`、`cutoff_at`、`summary`、`report_ref`、`markdown_ref`、`scope_ref` 和
+固定限制码。路径相对该根，不是模型可选择的任意路径；不注入生产或盲测材料。
+`closed`、`ready` 和覆盖是否完整分别判断。无收尾指针的强杀／历史 run 返回
+`unknown/unavailable`，不在状态查询里重新解析日志或编造关闭时间。
+
+`statistics-members.jsonl` 记录实际 launch 实例及已注册原件，`statistics-links.jsonl`
+只连接实际 run／operation／业务 session 账本绑定的根，`activity.jsonl` 只含数值事件。
+三者均在 Host 私有 `evidence/close-statistics-capture/` 子目录，Codex 新数值 usage 也
+放在这里，避开默认 run 进度事件流；`host/activity` 通知不重复写进 DSH wire。
+无原生身份的启动失败保留唯一 process instance，
+不会变成伪 Codex thread 或 DSH session。恢复原 session 的新进程另列；生命周期相加，
+跨代次跨度和离线间隔另列；没有退出时刻证据就保持时长 unknown。
+
+统计含逐成员表、角色／runtime／精确模型及 effort 分组、各字段覆盖、已知 token 份额
+及分母、配对样本加权缓存率、实际请求／attempt、失败／取消／unfinished、根工具耗时
+Top 5、压缩子集、明确暂停及清理状态。run 的 `members` 只包含本 run 及关联子任务；
+`task_cutoff_members` 是同一任务截至 cutoff 的其他已绑定成员，含仍在线 Delivery。
+两者不能混成 run 已退出人数。缺 Host／辅助来源仍披露 unknown。
+
+时间口径：
+
+| 字段 | 数值含义 |
+| --- | --- |
+| `llm_request_seconds` | 已观察上游 attempt 起止累计，包括失败／重试、传输、排队和流式传输 |
+| `tool_execution_seconds` | 已观察根工具进入实际执行／委托边界到返回，排除调度前排队和按序提交结果等待 |
+| `active_seconds` | 同一 Agent 的 LLM 与根工具区间并集；summary 是累计 Agent 小计 |
+| `team_active_seconds` | 可比较成员区间的并集，不能用累计 Agent 时间替代 |
+| `lifecycle_seconds` | launch 至确认 exit；未退出为 null，另返截至 cutoff 的 elapsed |
+| `wall_clock_seconds` | run 的原 Host 启动记录至收尾，或任务首次已注册 launch 至 cutoff；basis 单列 |
+
+Linux Node `process.hrtime.bigint()` 与 Python `monotonic_ns()` 以 boot 绑定的
+`clock_ref` 比较；不混用进程相对时钟。不可比、倒退、冲突、截断与缺边界保留定位，
+unfinished 下界不计入完成耗时。`other_or_uncovered_seconds` 不是推断的 idle／等待。
+工具内 sleep／长轮询属于工具执行；活动时间不代表有效语义工时。
+
+| 路径 | 可观察边界及限制 |
+| --- | --- |
+| DSH 生产、Delivery、Consumer、Judge | 共用固定 Harness `tools/execute` 观察器，记录 rootCallId／callId；prepare 拒绝单列，嵌套调用不重复加总；Messages 代理记录独立 attempt 及 usage |
+| Codex Delivery | Host 动态 tool handler 的实际委托边界，原生 thread 累计 usage 及关闭前末段 |
+| Codex 生产 | Host 动态工具、受控 Modeling read proxy 及 role capability 服务端 handler；其他原生工具边界保持 unknown |
+| Codex Consumer／Judge | 独立实例生命周期、native usage、受控读取代理 handler；未代理的报告／原生工具边界保持 unknown |
+| Codex 外部代理／订阅 | 已有 Responses 代理记录实际 attempt；共享源按实际 adapter session 过滤，不能分配到 Agent 的时间在 unallocated 中单列；订阅内部请求时间 unknown |
+
+报告先在私有临时目录完成冻结来源副本、scope、JSON 和 Markdown，再原子发布目录／
+指针。两份报告完整才 ready。相同来源快照重复关闭不重复累加；迟到数值生成新版本，
+链接旧版，失败也不改旧文件。scope 保存字节长度、SHA256、绑定与配置摘要；
+`sources/…` 相对该 scope 目录，沿本页原离线命令可复算。报告失败只返回固定
+`close_statistics_generation_failed`，不替代原 stop／清理结果，也不启动任何 Agent。
+
+无完整价表时金额 unknown。工程 fixture 的 PASS 不证明真实全链统计覆盖、独立 L1、
+降耗或费用对账；真实 A9 须另有有效授权，见
+[实现测试记录](../../docs/delivery/records/2026-10-19-r4-3-036-implementation-test-record.md)。

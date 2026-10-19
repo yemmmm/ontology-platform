@@ -855,6 +855,7 @@ class _Agent:
     # any.  ``None`` means the built-in ``openai-codex`` route or no binding: a
     # provider-session failure cannot affect such a role.
     provider_id: str | None = None
+    activity: Any = None
 
 
 def _v3_child_teardown_evidence(
@@ -1305,6 +1306,8 @@ class _CodexChildResource:
         if watchdog is not None:
             watchdog.join(timeout=2.0)
         self._terminate_process()
+        if self._child_agent is not None and self._adapter is not None:
+            self._adapter._close_activity(self._child_agent)
         if self._child_agent is not None and self._child_agent.stderr_drain is not None:
             self._child_agent.stderr_drain.stop()
             if self._adapter is not None:
@@ -2014,7 +2017,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._team_model_profile = profile
 
     def _record_provider_attempt(self, event: dict) -> None:
-        root = self._run_root
+        root = getattr(self, "_statistics_parent", None) or self._run_root
         if root is None:
             # Standalone evaluation has no roster-owned run. Keep its actual
             # adapter session identity without guessing a role or task.
@@ -3455,17 +3458,35 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
         # Formal proxy authentication is deliberately absent from process env.
         env = _minimal_codex_process_env(home, deepseek_key)
-        process = self.process_factory(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            start_new_session=True,
-            cwd=str(work),
-            env=env,
-        )
+        from ..close_statistics import ActivityRecorder, CAPTURE_DIRECTORY, register_statistics_link
+        statistics_parent = getattr(self, "_statistics_parent", None) or self._run_root or self.root / "workspaces/usage-receipts" / self._usage_receipt_session
+        statistics_root = statistics_parent / "evidence/agent-statistics" / uuid4().hex
+        child_activity = ActivityRecorder(statistics_root, {
+            "runtime": "codex", "agent_id": str(spec["child_handle_digest"]),
+            "role": spec.get("v3_role", kind), "phase": "evaluation",
+            "run_id": getattr(v3_packet, "payload", {}).get("run_id") or self._run_id,
+            "batch_id": getattr(v3_packet, "batch_id", None),
+            **({"provider": child_model_override.provider_id,
+                "requested_model": child_model_override.model,
+                "requested_effort": child_model_override.requested_effort,
+                "effective_effort": child_model_override.effective_effort}
+               if isinstance(child_model_override, RoleModelBinding) else {}),
+        }, usage_sources=[{"path": str(statistics_root / CAPTURE_DIRECTORY / "codex-usage.jsonl"), "kind": "capture"},
+                          *([{"path": str(statistics_parent / "evidence/provider-attempts.jsonl"),
+                              "kind": "capture", "shared": True,
+                              "capture_session_id": self._usage_receipt_session}] if self._provider_sessions is not None else [])],
+            fresh_session=True)
+        register_statistics_link(statistics_parent, statistics_root, "acceptance-child-launch")
+        if proxy is not None:
+            proxy.activity = child_activity
+        try:
+            process = self.process_factory(
+                command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, bufsize=1, start_new_session=True, cwd=str(work), env=env,
+            )
+        except BaseException:
+            child_activity.exit(None, startup_failed=True)
+            raise
         resource = _CodexChildResource(
             spec,
             process,
@@ -3473,6 +3494,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             report_sink=report_sink,
             startup_complete=False,
         )
+        resource.statistics_root = statistics_root
         spec["_runtime_resource"] = resource
         spec.pop("_runtime_proxy", None)
         spec.pop("_runtime_report_sink", None)
@@ -3521,6 +3543,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             skills,
             process=process,
             platform_tools=frozenset(spec.get("allowed_read_tools", ())) if kind == "platform" else frozenset(),
+            activity=child_activity,
         )
         # Formal external-route children ride the loopback provider proxy
         # (barrier is a marker only); formal ``openai-codex`` children carry the
@@ -3569,6 +3592,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             # turn.  This makes a missing/extra wrapper a startup contract failure,
             # rather than an ambiguous semantic report.
             child_agent.thread_id = thread_id
+            child_activity.bind(thread_id)
             startup_stage = "mcp-preflight"
             if bool(spec.get("lean_examiner")):
                 self._require_lean_examiner_mcp_servers(child_agent)
@@ -4135,6 +4159,25 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 ),
             )
             self.agents[agent.agent_id] = agent
+            from ..close_statistics import ActivityRecorder, CAPTURE_DIRECTORY
+            binding = self._validated_model_override(package, formal=self._coordination_enabled)
+            agent.activity = ActivityRecorder(run.root, {
+                "runtime": "codex", "agent_id": agent.agent_id, "role": package.role,
+                "phase": "production",
+                "run_id": run.run_id,
+                **({"provider": binding.provider_id, "requested_model": binding.model,
+                    "requested_effort": binding.requested_effort,
+                    "effective_effort": binding.effective_effort} if isinstance(binding, RoleModelBinding) else {}),
+            }, usage_sources=[{"path": str(run.root / CAPTURE_DIRECTORY / "codex-usage.jsonl"), "kind": "capture"},
+                              *([{"path": str(run.root / "evidence/provider-attempts.jsonl"),
+                                  "kind": "capture", "shared": True,
+                                  "capture_session_id": self._usage_receipt_session}] if self._provider_sessions is not None else [])], fresh_session=True)
+            read_proxy = getattr(run, "modeling_read_proxy", None)
+            if read_proxy is not None and package.role == "modeling":
+                read_proxy.activity = agent.activity
+            endpoint = getattr(getattr(run, "acceptance", None), "_capability_endpoints", {}).get(package.role)
+            if endpoint is not None:
+                endpoint.activity = agent.activity
             try:
                 self._stage_protocol_mechanics_contract(run, agent)
                 self._stage_protocol_retrieval_mcp(run, agent)
@@ -4143,6 +4186,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 agent.process = self._start_process(agent)
                 self._initialize(agent)
             except Exception:
+                if agent.process is None and agent.activity:
+                    agent.activity.exit(None, startup_failed=True)
                 self._cleanup_startup_auth(agent)
                 # Unwind any already-started roles, children, and the shared
                 # provider proxy before exposing a startup failure.
@@ -6393,6 +6438,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         if not isinstance(thread_id, str):
             raise CodexRuntimeError("thread/start lacked Thread identity")
         agent.thread_id, agent.state = thread_id, "idle"
+        if agent.activity:
+            agent.activity.bind(thread_id)
         self._require_expected_mcp_servers(agent)
 
     def _require_expected_mcp_servers(self, agent: _Agent) -> None:
@@ -6824,6 +6871,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         return item_id
 
     def _notification(self, agent: _Agent, value: dict[str, Any]) -> None:
+        self._capture_usage(agent, value)
         if getattr(agent, "runtime_failure", None) is not None:
             return
         method, params = value.get("method"), value.get("params", {})
@@ -7000,7 +7048,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         tool = params.get("tool")
         arguments = params.get("arguments")
         metadata = self._dynamic_tool_metadata(agent, tool, arguments)
-        result = self._dynamic_tool_result(agent, tool, arguments)
+        activity = getattr(agent, "activity", None)
+        call_id = str(params.get("callId", request_id))
+        if activity:
+            activity.emit("tool_start", call_id=call_id, tool_name=str(tool))
+        result = None
+        try:
+            result = self._dynamic_tool_result(agent, tool, arguments)
+        finally:
+            if activity:
+                activity.emit("tool_end", call_id=call_id, tool_name=str(tool),
+                              status="completed" if result and result.get("success") else "failed")
         denial_category = self._dynamic_tool_denial_category(tool, arguments, result)
         self._append_runtime_evidence(
             "dynamic-tool-calls",
@@ -7057,6 +7115,38 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 for key, value in safe_arguments.items()
             },
         }
+
+    @staticmethod
+    def _capture_usage(agent, value):
+        activity = getattr(agent, "activity", None)
+        if activity and value.get("method") == "thread/tokenUsage/updated":
+            from ..usage_capture import NumericReceiptWriter
+            params = value.get("params") or {}
+            if params.get("threadId") == agent.thread_id:
+                NumericReceiptWriter(activity.path.parent / "codex-usage.jsonl", activity.context)({
+                    "event": "thread_usage", "thread_id": agent.thread_id,
+                    "turn_id": params.get("turnId"),
+                    "total": (params.get("tokenUsage") or {}).get("total") or {},
+                })
+
+    def _close_activity(self, agent):
+        activity = getattr(agent, "activity", None)
+        if not activity:
+            return
+        try:
+            process = agent.process
+            if process is not None and process.poll() is not None:
+                deadline = time.monotonic() + 1
+                while time.monotonic() < deadline:
+                    line = self._read_output_line(agent, 0)
+                    if line is None:
+                        break
+                    self._capture_usage(agent, json.loads(line))
+                activity.exit(process.poll())
+        except Exception:
+            activity.emit("capture_gap", status="unknown")
+            if agent.process is not None:
+                activity.exit(agent.process.poll())
 
     def _append_runtime_evidence(self, name: str, value: dict[str, Any]) -> None:
         if self._run_root is None:
@@ -7880,6 +7970,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         except Exception:
             cleanup_ok = False
             self._record_cleanup_error(agent.agent_id, "role-stop-failed")
+        self._close_activity(agent)
         try:
             process_surfaces.extend(self._process_surface_payloads(agent))
         except Exception:

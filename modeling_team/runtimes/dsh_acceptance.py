@@ -35,6 +35,7 @@ from ..acceptance_runtime import (
 from ..deepseek_provider_proxy import read_deepseek_credential, read_glm_credential
 from ..messages_provider_proxy import MessagesProviderSession
 from ..usage_capture import NumericReceiptWriter
+from ..close_statistics import clock_ref, register_statistics_link
 from ..model_routing import preflight_profile_credentials
 from ..read_proxy_mcp import _v3_child_tool_schema
 from ..report_sink_mcp import native_report_tool_specs
@@ -54,6 +55,7 @@ class DshAcceptanceChild:
         self.adapter, self.packet = adapter, packet
         self.submitted_reports = reports
         self.evidence_root = evidence_root
+        self.statistics_root = evidence_root
         self.spec = {"private_root": str(private_root), "_packet": packet, "v3_role": packet.role}
         self.proxy = self.report_sink = self.agent = None
         self.destroyed = self.task_closed = self.user_waiting = False
@@ -249,12 +251,15 @@ class DshAcceptanceRuntime:
         if self.resource and not self.resource.destroyed:
             raise DshRuntimeError("original child still owned; no implicit replacement session")
         instance = uuid.uuid4().hex
+        statistics_parent = getattr(self, "_statistics_parent", None) or self._run_root
         evidence_root = (
-            Path(self._run_root or tempfile.mkdtemp(prefix="dsh-acceptance-evidence-"))
+            Path(statistics_parent or tempfile.mkdtemp(prefix="dsh-acceptance-evidence-"))
             / "acceptance-runtime"
             / instance
         )
         evidence_root.mkdir(parents=True, mode=0o700)
+        if statistics_parent:
+            register_statistics_link(statistics_parent, evidence_root, "acceptance-child-launch")
         private = Path(tempfile.mkdtemp(prefix="r4333-"))
         if self.resource is not None:
             previous = self.transport
@@ -265,7 +270,7 @@ class DshAcceptanceRuntime:
             )
         child = self.resource = DshAcceptanceChild(self, packet, reports, private, evidence_root)
         transport = self.transport
-        transport._run = SimpleNamespace(root=evidence_root)
+        transport._run = SimpleNamespace(root=evidence_root, run_id=packet.payload["run_id"])
         transport._closed = transport._paused = False
         transport.agents.clear()
         try:
@@ -412,7 +417,9 @@ class DshAcceptanceRuntime:
             instructions_text = instructions.read_text() + "\n" + skill.read_text()
             entry = self.root / "modeling_team/runtimes/dsh_node/entry.mjs"
             shutil.copyfile(entry, home / "entry.mjs")
+            shutil.copyfile(entry.with_name("activity.mjs"), home / "activity.mjs")
             config = {
+                "clockRef": clock_ref(),
                 "modules": {
                     key: "/dsh/" + str(Path(path).relative_to(transport.harness_root))
                     for key, path in transport._build["modules"].items()

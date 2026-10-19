@@ -35,6 +35,7 @@ from ..deepseek_provider_proxy import (
 )
 from ..messages_provider_proxy import MessagesProviderSession
 from ..usage_capture import NumericReceiptWriter
+from ..close_statistics import ActivityRecorder, clock_ref
 from ..model_routing import validate_runtime_model_profile
 
 
@@ -78,6 +79,8 @@ class _DshAgent:
     provider_error_epoch: int = 0
     recovery_error_epoch: int = 0
     recovering: bool = False
+    activity: Any = None
+    usage_context: dict = field(default_factory=dict)
 
 
 class DshRuntimeAdapter(RuntimeAdapter):
@@ -118,12 +121,16 @@ class DshRuntimeAdapter(RuntimeAdapter):
             stream.write(json.dumps(value, ensure_ascii=False, default=str) + "\n")
 
     def _register_usage(self, agent, binding, **context):
-        self._provider.register_usage_session(agent.session_id, {
-            "role": agent.package.role, "process_instance": agent.instance,
+        agent.usage_context = {
+            "role": agent.package.role, "agent_id": agent.agent_id, "process_instance": agent.instance,
             "provider": binding.provider_id, "requested_model": binding.model,
             "requested_effort": binding.requested_effort,
             "effective_effort": binding.effective_effort, **context,
-        }, evidence_ref="dsh-baseline.jsonl")
+        }
+        if agent.activity:
+            agent.activity.context.update(agent.usage_context)
+        self._provider.register_usage_session(agent.session_id, agent.usage_context,
+                                             evidence_ref="dsh-baseline.jsonl")
 
     @staticmethod
     def _socket(path, request):
@@ -429,6 +436,7 @@ class DshRuntimeAdapter(RuntimeAdapter):
             agent.package.package_id, semantic_role=agent.package.role
         )
         config = {
+            "clockRef": clock_ref(),
             "modules": {
                 key: "/dsh/" + str(Path(value).relative_to(self.harness_root))
                 for key, value in self._build["modules"].items()
@@ -441,6 +449,7 @@ class DshRuntimeAdapter(RuntimeAdapter):
         }
         (home / "dsh.json").write_text(json.dumps(config))
         shutil.copyfile(self.root / "modeling_team/runtimes/dsh_node/entry.mjs", home / "entry.mjs")
+        shutil.copyfile(self.root / "modeling_team/runtimes/dsh_node/activity.mjs", home / "activity.mjs")
 
     @staticmethod
     def _public_name(server, raw):
@@ -524,17 +533,27 @@ class DshRuntimeAdapter(RuntimeAdapter):
         return command
 
     def _launch(self, agent):
+        profile = getattr(self._run, "team_model_profile", None) or getattr(self, "_statistics_profile", None)
+        binding = profile.binding_for(agent.package.package_id, semantic_role=agent.package.role) if profile and hasattr(agent.package, "package_id") else None
+        agent.activity = ActivityRecorder(self._run.root, {
+            "runtime": "dsh", "agent_id": agent.agent_id, "role": agent.package.role,
+            "phase": "production" if profile else "evaluation",
+            "process_instance": agent.instance, "run_id": getattr(self._run, "run_id", None),
+            **agent.usage_context,
+            **({"provider": binding.provider_id, "requested_model": binding.model,
+                "requested_effort": binding.requested_effort, "effective_effort": binding.effective_effort} if binding else {}),
+        }, usage_sources=[{"path": str(self._run.root / "evidence/dsh-provider.jsonl"), "kind": "dsh_capture"}])
         agent.stderr = (agent.base / "stderr.log").open("a", encoding="utf-8")
-        agent.process = self.process_factory(
-            self.namespace_command(agent),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=agent.stderr,
-            text=True,
-            bufsize=1,
-            start_new_session=True,
-            env={"PATH": "/usr/bin:/bin", "HOME": str(agent.base / "home"), "LANG": "C.UTF-8"},
-        )
+        try:
+            agent.process = self.process_factory(
+                self.namespace_command(agent),
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=agent.stderr,
+                text=True, bufsize=1, start_new_session=True,
+                env={"PATH": "/usr/bin:/bin", "HOME": str(agent.base / "home"), "LANG": "C.UTF-8"},
+            )
+        except BaseException:
+            agent.activity.exit(None, startup_failed=True)
+            raise
         agent.pid_identity = self._process_info(agent.process.pid)[2]
         agent.pump = threading.Thread(target=self._pump, args=(agent,), daemon=True)
         agent.pump.start()
@@ -578,18 +597,20 @@ class DshRuntimeAdapter(RuntimeAdapter):
         return response["result"]
 
     def _pump(self, agent):
+        process, activity = agent.process, agent.activity
         try:
             for line in agent.process.stdout:
                 value = json.loads(line)
-                self._record(
-                    "wire",
-                    {
-                        "agent_id": agent.agent_id,
-                        "session_id": agent.session_id,
-                        "process_instance": agent.instance,
-                        "frame": value,
-                    },
-                )
+                if value.get("method") != "host/activity":
+                    self._record(
+                        "wire",
+                        {
+                            "agent_id": agent.agent_id,
+                            "session_id": agent.session_id,
+                            "process_instance": agent.instance,
+                            "frame": value,
+                        },
+                    )
                 if "id" in value:
                     self._reconcile_enqueue(agent, value)
                     with agent.response_condition:
@@ -609,6 +630,12 @@ class DshRuntimeAdapter(RuntimeAdapter):
                 )
             )
         finally:
+            if activity and process is not None:
+                try:
+                    code = process.wait(timeout=0.2)
+                except Exception:
+                    code = None
+                activity.exit(code)
             with agent.response_condition:
                 agent.response_condition.notify_all()
             if not self._closed:
@@ -653,6 +680,15 @@ class DshRuntimeAdapter(RuntimeAdapter):
             self._record("unbound-event", {"agent_id": agent.agent_id, "frame": value})
             return
         with self._lock:
+            if agent.activity is not None and value["method"] in {"session.event", "session.status", "host/activity"}:
+                if not agent.activity.context.get("runtime_session_id"):
+                    agent.activity.bind(agent.session_id)
+                if value["method"] == "host/activity":
+                    fields = {k: v for k, v in params.items() if k != "event"}
+                    if str(fields.get("monotonic_ns", "")).isdigit():
+                        fields["monotonic_ns"] = int(fields["monotonic_ns"])
+                    agent.activity.emit(params.get("event"), **fields)
+                    return
             if value["method"] == "session.event":
                 event = params["event"]
                 fresh = agent.projection.append(event)
@@ -959,6 +995,8 @@ class DshRuntimeAdapter(RuntimeAdapter):
                     "persisted session history has unresolved gaps; no replacement session created"
                 )
             old_instance = agent.instance
+            if agent.activity:
+                agent.activity.exit(agent.process.poll(), time_known=False)
             agent.ready = False
             agent.instance = uuid.uuid4().hex
             agent.responses.clear()
@@ -1150,6 +1188,9 @@ class DshRuntimeAdapter(RuntimeAdapter):
                         "groups": groups,
                     },
                 )
+                for agent in self.agents.values():
+                    if agent.activity:
+                        agent.activity.emit("pause_start", call_id="process-pause")
                 return groups
             if time.monotonic() >= deadline:
                 self._record(
@@ -1171,6 +1212,9 @@ class DshRuntimeAdapter(RuntimeAdapter):
                     if item["pgid"] != agent.process.pid:
                         os.kill(item["pid"], signal.SIGCONT)
             self._paused = False
+            for agent in self.agents.values():
+                if agent.activity:
+                    agent.activity.emit("pause_end", call_id="process-pause", status="completed")
             self._control_epoch += 1
             self._record(
                 "control",
@@ -1283,6 +1327,8 @@ class DshRuntimeAdapter(RuntimeAdapter):
                     "pgid": process.pid,
                     "returncode": process.poll(),
                 }
+                if agent.activity:
+                    agent.activity.exit(process.poll())
                 deadline = time.monotonic() + 2
                 while (
                     any(
@@ -1302,6 +1348,10 @@ class DshRuntimeAdapter(RuntimeAdapter):
             except Exception as exc:
                 residuals.append({"agent_id": key, "reason": type(exc).__name__})
         provider_ok = self._provider.stop() if self._provider else True
+        if self._provider and hasattr(self._provider, "snapshot") and self._provider.snapshot().get("usage_capture_dropped"):
+            for agent in self.agents.values():
+                if agent.activity:
+                    agent.activity.emit("capture_gap", status="unknown")
         self._cleanup = {
             "runtime": "dsh",
             "roles": roles,

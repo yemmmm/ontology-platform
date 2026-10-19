@@ -21,6 +21,7 @@ from .role_isolation import namespace_base
 from ..deepseek_provider_proxy import read_deepseek_credential, read_glm_credential
 from ..messages_provider_proxy import MessagesProviderSession
 from ..usage_capture import NumericReceiptWriter
+from ..close_statistics import ActivityRecorder, clock_ref
 from ..model_routing import preflight_profile_credentials, PROVIDER_CATALOG
 
 
@@ -64,6 +65,7 @@ class DSHDeliveryRuntime:
         self._closed = False
         self._pump_failed = False
         self.projection = None
+        self.activity = None
 
     def _record(self, kind, **value):
         with self._lock:
@@ -104,6 +106,13 @@ class DSHDeliveryRuntime:
             "/agent/home/entry.mjs", "/agent/home/dsh.json"]
 
     def start(self):
+        self.activity = ActivityRecorder(self.home.parent, {
+            "runtime": "dsh", "agent_id": "delivery", "role": "delivery",
+            "session_id": self.session_id, "process_instance": self.process_instance,
+            "provider": self.binding.provider_id, "requested_model": self.binding.model,
+            "requested_effort": self.binding.requested_effort,
+            "effective_effort": self.binding.effective_effort,
+        }, usage_sources=[{"path": str(self.home / "dsh-provider.jsonl"), "kind": "dsh_capture"}])
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         state = self.home / "dsh-session.json"
         if self.resume:
@@ -137,7 +146,7 @@ class DSHDeliveryRuntime:
             **({"provider_id": self.binding.provider_id} if self.binding.provider_id == "glm-messages" else {}),
             on_attempt=NumericReceiptWriter(self.home / "dsh-provider.jsonl"))
         self.provider.register_usage_session(self.runtime_session_id, {
-            "session_id": self.session_id, "role": "delivery", "phase": "supervision",
+            "session_id": self.session_id, "agent_id": "delivery", "role": "delivery", "phase": "supervision",
             "process_instance": self.process_instance, "provider": self.binding.provider_id,
             "requested_model": self.binding.model,
             "requested_effort": self.binding.requested_effort,
@@ -147,9 +156,9 @@ class DSHDeliveryRuntime:
         try:
             self.provider.start()
             directory = self.root / "modeling_team/runtimes/dsh_node"
-            for name in ("entry.mjs", "delivery.mjs"):
+            for name in ("entry.mjs", "delivery.mjs", "activity.mjs"):
                 shutil.copyfile(directory / name, self.home / "home" / name)
-            config = {"modules": {key: "/dsh/" + str(Path(path).relative_to(self.harness_root))
+            config = {"clockRef": clock_ref(), "modules": {key: "/dsh/" + str(Path(path).relative_to(self.harness_root))
                       for key, path in self.build["modules"].items()},
                 "instructions": self.instructions, "providerURL": self.provider.base_url,
                 "servers": [], "deliveryTools": self.tools, "sessionId": self.runtime_session_id,
@@ -178,7 +187,7 @@ class DSHDeliveryRuntime:
                         "@deepseek-ai/dsh-sdk-jsonrpc-server", "@deepseek-ai/dsh-mcp-client"}):
                 raise DeliveryRuntimeError("dsh-tool-boundary-drift; correct composition and retry")
             baseline = {"build": self.build, "tools": actual, "binding": self.binding.as_dict(),
-                "composition": {name: digest(directory / name) for name in ("entry.mjs", "delivery.mjs")},
+                "composition": {name: digest(directory / name) for name in ("entry.mjs", "delivery.mjs", "activity.mjs")},
                 "instructions_sha256": hashlib.sha256(self.instructions.encode()).hexdigest()}
             baseline_path = self.home / "dsh-baseline.jsonl"
             if self.resume and baseline_path.exists():
@@ -234,8 +243,18 @@ class DSHDeliveryRuntime:
         try:
             for line in self.process.stdout:
                 value = json.loads(line)
-                self._record("wire", frame=value)
-                if value.get("method") == "ontoweave/delivery/tool" and "id" in value:
+                if value.get("method") != "host/activity":
+                    self._record("wire", frame=value)
+                if value.get("method") == "host/activity":
+                    params = value.get("params", {})
+                    if self.activity and params.get("sessionId") == self.runtime_session_id:
+                        if not self.activity.context.get("runtime_session_id"):
+                            self.activity.bind(self.runtime_session_id)
+                        fields = {k: v for k, v in params.items() if k != "event"}
+                        if str(fields.get("monotonic_ns", "")).isdigit():
+                            fields["monotonic_ns"] = int(fields["monotonic_ns"])
+                        self.activity.emit(params.get("event"), **fields)
+                elif value.get("method") == "ontoweave/delivery/tool" and "id" in value:
                     with self._lock:
                         self._inflight += 1
                     self._tools.submit(self._tool, value)
@@ -254,6 +273,8 @@ class DSHDeliveryRuntime:
                     if params.get("sessionId") != self.runtime_session_id:
                         raise DeliveryRuntimeError("DSH Delivery unbound session event")
                     event = params["event"]
+                    if self.activity and not self.activity.context.get("runtime_session_id"):
+                        self.activity.bind(self.runtime_session_id)
                     with self._lock:
                         fresh = self.projection.append(event)
                         if self.projection.gap:
@@ -411,5 +432,10 @@ class DSHDeliveryRuntime:
         self._tools.shutdown(wait=False, cancel_futures=True)
         if self.provider:
             self.provider.stop()
+            if self.activity and hasattr(self.provider, "snapshot") and self.provider.snapshot().get("usage_capture_dropped"):
+                self.activity.emit("capture_gap", status="unknown")
         if self._stderr:
             self._stderr.close()
+        if self.activity:
+            self.activity.exit(self.process.poll() if self.process else None,
+                               startup_failed=self.process is None)

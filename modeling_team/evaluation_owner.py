@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .outer_input import OuterInputFifo, OuterInputFramingError
 from .runtimes.base import RuntimeDelivery
+from .close_statistics import publish_close_statistics, register_statistics_link
 
 
 class EvaluationStopped(RuntimeError):
@@ -83,6 +84,9 @@ class EvaluationOwner:
         self.current = self.active[0]
         resource.spec["_evaluation_owner"] = self
         resource.spec["_owner_adapter"] = adapter
+        statistics_root = getattr(resource, "statistics_root", None)
+        if statistics_root is not None:
+            register_statistics_link(self.root, statistics_root, "evaluation-owner-bound-member")
         sink = getattr(resource, "report_sink", None)
         if sink is not None:
             sink.flow_confirmation = lambda arguments: self.confirm(resource, arguments)
@@ -313,5 +317,10 @@ class EvaluationOwner:
             self.fifo.close()
         self._closing = False
         self._save()
+        # No owner/control lock is held during offline report generation.
+        self.close_statistics = publish_close_statistics(
+            self.root, view="operation_close", task_ref=self.root.name,
+            cleanup_complete=self.closed,
+        )
         if failures:
             raise RuntimeError("evaluation cleanup is incomplete; see original owner state")

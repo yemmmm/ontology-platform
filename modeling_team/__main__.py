@@ -2420,9 +2420,13 @@ def _cq_platform_packet(contract, questions, binding, observed, read_tools):
 def _cq_runtime_adapter(args, root):
     runtime = getattr(args, "runtime", "codex")
     if runtime == "codex":
-        return CodexRuntimeAdapter(repository_root=root)
-    from .runtimes.acceptance import acceptance_runtime
-    return acceptance_runtime(runtime, repository_root=root)
+        adapter = CodexRuntimeAdapter(repository_root=root)
+    else:
+        from .runtimes.acceptance import acceptance_runtime
+        adapter = acceptance_runtime(runtime, repository_root=root)
+    owner = getattr(args, "_retained_owner", None)
+    adapter._statistics_parent = owner.root if owner is not None else getattr(args, "_statistics_parent", None)
+    return adapter
 
 
 def _cq_run_platform_session(
@@ -3401,6 +3405,7 @@ def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
         return 2
     output_root = run_root / "early-feedback" / uuid4().hex
     output_root.mkdir(parents=True, mode=0o700)
+    args._statistics_parent = getattr(args, "statistics_root", None) or output_root
     record = {"run_id": run_root.name, "checkpoint_id": args.checkpoint_id,
               "freeze_id": args.freeze_id, "question_ids": list(args.question_id),
               "purpose": "public-nonblind-production-feedback", "status": "not-executed",
@@ -3512,6 +3517,13 @@ def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
         record["examiner_first_failure"] = _cq_first_examiner_failure(reports, None)
         record["cleanup"] = _cq_cleanup_acceptance_resources(
             forwarder, child_teardowns)
+        from .close_statistics import publish_close_statistics, register_statistics_link
+        statistics_root = getattr(args, "statistics_root", None) or output_root
+        register_statistics_link(run_root, statistics_root, "public-feedback-operation-ledger")
+        record["close_statistics"] = publish_close_statistics(
+            statistics_root, view="operation_close", task_ref=record["run_id"],
+            cleanup_complete=bool(record["cleanup"]["forwarder_stopped"] and record["cleanup"]["children_destroyed"]),
+        )
         if not record["cleanup"]["forwarder_stopped"] or not record["cleanup"]["children_destroyed"]:
             if record["status"] == "observed":
                 record["status"] = "partial"
@@ -3975,6 +3987,7 @@ def main() -> int:
         help="write the all-unexecuted evidence report without starting any session",
     )
     feedback = subparsers.add_parser("public-feedback")
+    feedback.add_argument("--statistics-root", type=Path)
     feedback.add_argument("--run-root", required=True, type=Path)
     feedback.add_argument("--checkpoint-id", required=True)
     feedback.add_argument("--freeze-id", required=True)

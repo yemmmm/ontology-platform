@@ -199,3 +199,7 @@ Delivery及evaluation收尾与原查询返回接线。helper只解决重复数�
 
 决策主表在权威需求D1—D8，本设计不复制另一份。独立设计审阅Round 1 PASS，0 Critical／0 High，无设计级关键未决假设；结论见
 [审阅记录](../records/2026-10-19-r4-3-036-design-review-record.md)为准，A1—A9均未实施／验证。
+
+后续实施说明（2026-10-19）：用户另行授权按本设计实现及测试；工程变更、覆盖矩阵和
+开发证据见[实现测试记录](../records/2026-10-19-r4-3-036-implementation-test-record.md)。
+以上设计阶段结论保留；后续工程证据不替代真实 A9、独立语义或净降耗结论。

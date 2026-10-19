@@ -1727,6 +1727,7 @@ class DeliverySession:
             self._save_state(state, **extra)
 
     def _save_state(self, state: str, **extra: Any) -> None:
+        self._last_saved_state = state
         record = {"schema_version": 1, "session_id": self.session_id,
                   "project_id": self.project_id, "activity": self.activity,
                   "work_result": self.work_result,
@@ -1750,6 +1751,10 @@ class DeliverySession:
                   "runtime": self.runtime_name, "runtime_identity": self.runtime_identity,
                   "runtime_task_binding": self.runtime_task_binding,
                   "native_pid": getattr(self, "native_pid", None),
+                  "close_statistics": getattr(self, "close_statistics", {
+                      "schema_version": "team-close-statistics/v1", "view": "task_close",
+                      "closure_status": "closing", "report_status": "pending",
+                      "coverage_status": "unknown", "limitations": ["delivery_runtime_not_closed"]}),
                   "allowed_operations": sorted(self.allowed_operations), **extra}
         temporary = self.session_root / "session.tmp"
         temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2))
@@ -1757,7 +1762,7 @@ class DeliverySession:
         temporary.replace(self.session_root / "session.json")
         if self.conversation:
             state = {"activity": self.activity, "observed_at": now(), "basis": "delivery_state",
-                     "delivery_result": self.work_result}
+                     "delivery_result": self.work_result, "close_statistics": record["close_statistics"]}
             if state != getattr(self, "_public_state", None):
                 self.conversation.append("session_state", state=state)
                 self._public_state = state
@@ -3347,16 +3352,49 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
     finally:
         if server is not None:
             server.close()
-        if runtime is not None:
-            runtime.close()
-            session._append("session-events.jsonl", {
-                "event": "native_runtime_closed", "thread_id": runtime.thread_id,
-                "runtime_identity": session.runtime_identity,
-                "pid": runtime.process.pid if runtime.process is not None else None,
-                "exit_code": runtime.process.poll() if runtime.process is not None else None,
-            })
-        if providers is not None:
-            providers.stop()
+        try:
+            if runtime is not None:
+                runtime.close()
+                session._append("session-events.jsonl", {
+                    "event": "native_runtime_closed", "thread_id": runtime.thread_id,
+                    "runtime_identity": session.runtime_identity,
+                    "pid": runtime.process.pid if runtime.process is not None else None,
+                    "exit_code": runtime.process.poll() if runtime.process is not None else None,
+                })
+        finally:
+            import sys
+            close_failed = sys.exc_info()[0] is not None
+            try:
+                if providers is not None:
+                    providers.stop()
+            except Exception:
+                if not close_failed:
+                    raise
+            finally:
+                _publish_delivery_statistics(session)
+
+
+def _publish_delivery_statistics(session):
+    from .close_statistics import publish_close_statistics, register_statistics_link
+    try:
+        for run_id in sorted(session.run_ids):
+            try:
+                run_root, _ = resolve_run_root(run_id, repository_root=session.repository_root)
+                register_statistics_link(session.session_root, run_root, "delivery-session-run-ledger")
+            except (HostOpError, OSError, ValueError):
+                pass
+        for operation_id in sorted(session.operation_ids):
+            register_statistics_link(session.session_root, session.repository_root / ".delivery-ops" / (operation_id + ".owner"),
+                                     "delivery-session-operation-ledger")
+        session.close_statistics = publish_close_statistics(
+            session.session_root, view="task_close", task_ref=session.config.get("task") or session.session_id,
+        )
+        session._append("session-events.jsonl", {"event": "close_statistics_ready" if session.close_statistics["report_status"] == "ready" else "close_statistics_unavailable",
+                                                "close_statistics": session.close_statistics})
+        session._save(getattr(session, "_last_saved_state", session.activity))
+    except Exception:
+        from .usage_capture import LOG
+        LOG.warning("close_statistics_report_unavailable")
 
 
 def run_delivery(config_path: Path, *, repository_root: Path, resume: bool = False) -> int:

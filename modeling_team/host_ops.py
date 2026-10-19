@@ -1129,6 +1129,7 @@ def get_run_status(run_id: str, *, repository_root: Path | None = None) -> dict[
     """Design §7.1 snapshot; strictly read-only with per-field sources."""
 
     run_root, runs_root = resolve_run_root(run_id, repository_root=repository_root)
+    from .close_statistics import read_close_statistics
     limitations: list[str] = []
     identity, identity_limits = _identity_block(run_root, run_id)
     limitations.extend(identity_limits)
@@ -1187,6 +1188,7 @@ def get_run_status(run_id: str, *, repository_root: Path | None = None) -> dict[
     return {
         "run_id": run_id,
         "identity": identity,
+        "close_statistics": read_close_statistics(run_root),
         "recorded_state": recorded_state,
         "stage": stage,
         "last_verifiable_activity": (
@@ -2709,6 +2711,7 @@ def get_request_result(
 ) -> dict[str, Any]:
     """Design §5.4 resolution order: receipt → ledger+alive → unknown → error."""
 
+    from .close_statistics import read_close_statistics
     run_root, _runs_root = resolve_run_root(run_id, repository_root=repository_root)
     _validate_request_id(request_id)
     receipts = _receipt_entries(run_root, request_id)
@@ -2725,7 +2728,8 @@ def get_request_result(
                 next_action="inspect control/host-requests.jsonl and "
                 "evidence/outer-input-receipts.jsonl before resending",
             )
-        return _receipt_outcome(run_id, request_id, receipt)
+        return {**_receipt_outcome(run_id, request_id, receipt),
+                "close_statistics": read_close_statistics(run_root)}
     ledger = _ledger_entries(run_root, request_id)
     if not ledger:
         raise HostOpError(
@@ -2745,6 +2749,7 @@ def get_request_result(
     fifo_present = (run_root / OUTER_INPUT_FIFO).exists()
     if terminal or not fifo_present:
         return {
+            "close_statistics": read_close_statistics(run_root),
             "run_id": run_id,
             "request_id": request_id,
             "outcome": "unknown",
@@ -2762,6 +2767,7 @@ def get_request_result(
             "bypass; reconcile against the run evidence directly",
         }
     return {
+        "close_statistics": read_close_statistics(run_root),
         "run_id": run_id,
         "request_id": request_id,
         "outcome": "submitted",

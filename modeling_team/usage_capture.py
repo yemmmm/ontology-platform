@@ -13,6 +13,7 @@ from typing import Any
 LOG = logging.getLogger(__name__)
 IDENTITY_FIELDS = (
     "task_ref",
+    "agent_id",
     "session_id",
     "run_id",
     "operation_id",
@@ -111,6 +112,10 @@ class NumericReceiptWriter:
             "start",
             "end",
             "headers_at",
+            "monotonic_start_ns",
+            "monotonic_end_ns",
+            "clock_ref",
+            "purpose",
         ):
             value = event.get(key)
             if value is None or type(value) in (int, str):

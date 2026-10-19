@@ -251,6 +251,14 @@ class ModelingReadProxy:
         return dict(arguments)
 
     def handle(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        activity = getattr(self, "activity", None)
+        if activity is not None and isinstance(request, Mapping) and request.get("operation") == "tools/call":
+            from uuid import uuid4
+            return activity.execute_tool("mcp:" + uuid4().hex, str(request.get("tool")),
+                                         lambda: self._handle_request(request))
+        return self._handle_request(request)
+
+    def _handle_request(self, request: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(request, Mapping):
             raise ModelingReadError("proxy request is invalid")
         with self._lock:

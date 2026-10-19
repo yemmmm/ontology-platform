@@ -593,6 +593,7 @@ class ResponsesProviderSession:
         self._server: _SessionHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
+        self._attempt_clocks: dict[tuple, dict] = {}
         self._counts: dict[str, int] = {
             "requests": 0,
             "rejected": 0,
@@ -618,11 +619,26 @@ class ResponsesProviderSession:
         return f"http://{host}:{port}"
 
     def record_attempt(self, event: dict) -> None:
+        event = self.stamp_attempt(event)
         if self.on_attempt is not None:
             try:
                 self.on_attempt(event)
             except Exception:
                 LOG.warning("usage_capture_incomplete")
+
+    def stamp_attempt(self, event: dict) -> dict:
+        from .close_statistics import clock_stamp
+        key = (event.get("request_id"), event.get("attempt_index"))
+        with self._lock:
+            if event.get("event") == "attempt_start":
+                stamp = clock_stamp()
+                self._attempt_clocks[key] = {"clock_ref": stamp["clock_ref"],
+                    "monotonic_start_ns": stamp["monotonic_ns"]}
+            result = {**event, **self._attempt_clocks.get(key, {})}
+            if event.get("event") == "attempt_end":
+                result["monotonic_end_ns"] = clock_stamp()["monotonic_ns"]
+                self._attempt_clocks.pop(key, None)
+            return result
 
     def _count(self, key: str) -> None:
         with self._lock:

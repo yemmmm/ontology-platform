@@ -1537,8 +1537,8 @@ def start_evaluation(
         argv.extend(["--model-profile", model_profile])
     if timeout is not None:
         argv.extend(["--session-timeout", str(timeout)])
-    if mode == "cq-acceptance":
-        argv.extend(["--owner-root", str(_delivery_dir(repository_root) / (operation_id + ".owner"))])
+    argv.extend(["--owner-root" if mode == "cq-acceptance" else "--statistics-root",
+                 str(_delivery_dir(repository_root) / (operation_id + ".owner"))])
     request = _evaluation_request(
         run_root=run_root,
         mode=mode,
@@ -1577,6 +1577,7 @@ def get_evaluation_status(
 ) -> dict[str, Any]:
     """Observe one evaluation, its bounded log tails and its report binding."""
 
+    from .close_statistics import read_close_statistics
     record_path = _record_path(operation_id, repository_root)
     with _RECORD_LOCK:
         record = _read_record(operation_id, repository_root)
@@ -1628,6 +1629,7 @@ def get_evaluation_status(
     return {
         "operation_id": operation_id,
         "kind": "evaluation",
+        "close_statistics": read_close_statistics(owner_path.parent),
         "run_id": record["request"].get("run_id"),
         "mode": record["request"].get("mode"),
         "status": record.get("status"),

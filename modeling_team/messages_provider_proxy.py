@@ -249,6 +249,7 @@ class MessagesProviderSession(ResponsesProviderSession):
         self._capture_thread.start()
 
     def record_attempt(self, event):
+        event = self.stamp_attempt(event)
         if self._capture_stop.is_set():
             self._count("usage_capture_dropped")
             LOG.warning("usage_capture_incomplete")

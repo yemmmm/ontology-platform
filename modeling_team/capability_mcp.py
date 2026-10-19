@@ -835,6 +835,15 @@ class RunnerCapabilityEndpoint:
             return
 
     def handle(self, request: Any) -> dict[str, Any]:
+        activity = getattr(self, "activity", None)
+        if activity is not None and isinstance(request, Mapping) and request.get("method") == "tools/call":
+            from uuid import uuid4
+            name = (request.get("params") or {}).get("name")
+            return activity.execute_tool("mcp:" + uuid4().hex, str(name),
+                                         lambda: self._handle_request(request))
+        return self._handle_request(request)
+
+    def _handle_request(self, request: Any) -> dict[str, Any]:
         if not isinstance(request, Mapping):
             return self._error(None)
         request_id = request.get("id")
