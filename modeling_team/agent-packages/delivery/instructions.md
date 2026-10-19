@@ -446,6 +446,10 @@ Coordinator of the freeze, selected from notification_request_ids; unrelated ins
 do not satisfy that handoff. Retain all still-effective decisions and original constraints,
 then naturally end this activity. The hint is a handoff candidate, not a successful switch;
 the program still checks the actual receipts, old activity and uncertain work.
+An explicit thread_boundary remains pending across later ordinary yield records.
+Keep the latest effective decisions current; omit thread_boundary while waiting,
+or set it to null to cancel the pending handoff. New input still needs a current
+yield, and unknown receipts/writes or pending controls still defer the switch.
 
 ## Deterministic phase progression after a semantic decision
 
@@ -469,6 +473,16 @@ An accepted CQ handoff creates an acceptance binding, not an evaluation
 process. If no matching operation exists, call `start_evaluation` for each
 authorized public/hidden group with the returned handoff/freeze binding,
 selected model profile and configured timeout; only then wait for reports.
+Do not repeatedly send freeze confirmations or terminal-report reminders while
+the same production inputs are queued. Wait for actual consumption or a new
+actionable gap; repeating reminders can keep a DSH recipient's queue nonempty.
+For an acceptance runtime failure with a retained final report, request a new
+read-only attempt using complete_cq_handoff(retry_of=<current acceptance_attempt_id>)
+and a new request ID. Use its returned model_handoff and attempt for evaluation
+and completion. Plain duplicate handoffs do not allocate a retry. Preserve every
+old report and the frozen scope; do not rebuild production to retry acceptance.
+Run all requested final public/hidden groups under the new attempt binding;
+previous-attempt passes remain history and are not combined into the new PASS.
 
 For each authorized acceptance scope, track the selected public and hidden question
 groups separately. A hidden report covers only its selected questions; public CQ

@@ -444,6 +444,21 @@ freeze绑定及**新request_id**重试，无须扩大授权、补`delivery_bindi
 真正的scope授权错误继续使用`cq_batch_scope_unauthorized`；历史缺`detail/retry`的
 回执保持原格式与通用重试提示，不改写旧证据。
 
+同一live run的验收运行故障已留存最终报告后，可显式调用
+`complete_cq_handoff(retry_of=<当前acceptance_attempt_id>, ...)`，沿原freeze与scope
+分配新的只读验收attempt，不重启生产。普通重复handoff保持幂等；同一`retry_of`
+的重复请求返回已分配的同一新attempt。使用返回的`model_handoff`启动验收，再用新
+attempt完成回交，不猜文件路径或复用旧报告目录。原handoff及全部旧报告不可覆盖；
+新handoff位于`acceptance-v3/handoffs/attempt-NNNN.json`，验收CLI及Host回交均核对
+Runner实际发布的该原件。前次报告未落定、旧attempt绑定或unknown writes仍准确拒绝
+并可纠正；当前只覆盖有最终报告的重验，不把缺报告的未知执行当成已结束。
+原任务要求的最终公开／隐藏组均在新attempt下执行，旧通过保留为历史，不拼接成新的
+完整PASS；模型本身、源资料、题池分母与评分不因此改变。
+
+Delivery的`yield_delivery.thread_boundary`显式申请在后续普通yield中持续保留，省略
+字段不会取消；显式`null`取消。原journal恢复该意图，新输入仍需最新yield确认有效
+决定，空闲／控制／写入检查保持。创建失败需再次显式申请，普通等待不自动重试。
+
 `request_host_action` 是 Delivery 本地工具，不属于 `host_ops_mcp` 或平台 MCP inventory。
 它在当前 session 私有 `session-events.jsonl` 追加 `host_action_request`，只接受
 `kind=cq_review|platform_repair`，绑定 `request_id`、当前 `run_id` 和 `bindings`，不执行审核、

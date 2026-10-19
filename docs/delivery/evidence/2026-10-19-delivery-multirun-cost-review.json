@@ -1,0 +1,477 @@
+{
+  "collected_at": "2026-10-19T08:18:57.030206+00:00",
+  "scope": "Retained-evidence retrospective; no model call, modeling start, live action or semantic regrading. Freshly sum all captured native source bytes, including post-snapshot closing tail.",
+  "code": "0083d36a76d81f78018a78dc9126a18cfa40c87f",
+  "runtime": "dsh",
+  "model": "glm-5.3-flash",
+  "effort": "low",
+  "session": "minimal-chain-20261019-dsh-phase-handoff",
+  "source_prefix_checks": [
+    {
+      "path": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-phase-handoff/native/dsh-wire.jsonl",
+      "bytes": 8802783,
+      "sha256": "cd04d7eee641f2aa81663feb0891759912741f54fd8e22976a1e703556c63780",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 6800
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-phase-handoff-r1/evidence/dsh-wire.jsonl",
+      "bytes": 1370825,
+      "sha256": "b55e9c3394ef59b7bf0fe3be640aa460691d797fb3b8ded9e4154cd18c89949f",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-phase-handoff-r2/evidence/dsh-wire.jsonl",
+      "bytes": 2227689,
+      "sha256": "e9a6ebcb1f03ef54b079bf3947ed0dd5eb438c0e3bee634a1ade4f25be401002",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-accept-hidden-0001.owner/acceptance-runtime/9fbf03d9b5624fa4863cf6c89ece17c1/evidence/dsh-wire.jsonl",
+      "bytes": 124355,
+      "sha256": "e89d5f1ae39b843ab2f458324a0e68f247a54646732a000d691c084034719962",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-accept-hidden-0001.owner/acceptance-runtime/661921f56a334e2596c71880243fe026/evidence/dsh-wire.jsonl",
+      "bytes": 59528,
+      "sha256": "a911a1b8f64694ea634f8d1639a755dce82349b03cff892c6d5578f4730be15c",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-accept-hidden-0001.owner/acceptance-runtime/0a319611fe734981906caecb97656230/evidence/dsh-wire.jsonl",
+      "bytes": 318985,
+      "sha256": "ca6afc7950a53b5553e36b115858f7e2972f9d8c4516267aec6215ceb4fd76e1",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-accept-hidden-0001.owner/acceptance-runtime/25159c34f3da45d499c305aee6020b4b/evidence/dsh-wire.jsonl",
+      "bytes": 181949,
+      "sha256": "628d0a014f8c81db9f063b47bef5f1588894e540b8ef0a879db427ee691572fa",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-accept-public-0001.owner/acceptance-runtime/a0336562d75744c1b85a7748cda2c140/evidence/dsh-wire.jsonl",
+      "bytes": 114740,
+      "sha256": "65a00aa77aeb19fa774e4fc2e2d2563735b3671f4e77b6a44959d169d726784b",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-accept-public-0001.owner/acceptance-runtime/da81e4b7f9d14e06bfb8f675a4b61648/evidence/dsh-wire.jsonl",
+      "bytes": 172611,
+      "sha256": "da0cbd271e8bc45c72da08d46b2b79bbee0b7de723dded98c2bf3465257b8a23",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-r2-accept-hidden-0001.owner/acceptance-runtime/c48658f5b3504dbdb64f518d35484a79/evidence/dsh-wire.jsonl",
+      "bytes": 218761,
+      "sha256": "acb7c7e3169af48e313121b6ef26223762a9899225b43f7fc1d415958390eb73",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-r2-accept-hidden-0001.owner/acceptance-runtime/e7e0e5648c0c40ffb141077df4c3897e/evidence/dsh-wire.jsonl",
+      "bytes": 185119,
+      "sha256": "7993377412ab2e770b23e7bffc3182aabaa47a3cc7170be01b726d494316264f",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-r2-accept-hidden-0001.owner/acceptance-runtime/ce6b0e1eaad242b391b6e03ea2af5a94/evidence/dsh-wire.jsonl",
+      "bytes": 419390,
+      "sha256": "ce9c58b97a11e72197f18981275dae2e2100f4fd3dc37ea0afc709711916ac08",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-r2-accept-hidden-0001.owner/acceptance-runtime/89ef221001ba4263aa5d1462da5cfbfe/evidence/dsh-wire.jsonl",
+      "bytes": 138110,
+      "sha256": "70f0fca5e91929262c36b4b6af6d41570e7018c92f51ee2986499c28cae4f0a8",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-r2-accept-public-0001.owner/acceptance-runtime/5f0dab2f6054478c889b21003b62c2d8/evidence/dsh-wire.jsonl",
+      "bytes": 174294,
+      "sha256": "18cef3c3727144295de60dd5fe9e355db258645aeea21dde4bd86ec46c68791f",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    },
+    {
+      "path": ".delivery-ops/dsh-phase-handoff-1019-r2-accept-public-0001.owner/acceptance-runtime/48e5b2fee761418e81e2f8cba5e166b1/evidence/dsh-wire.jsonl",
+      "bytes": 206075,
+      "sha256": "d8bfe3096e9e15deffa251280794377631b8e890a665a6e3f52bb7d75e0b60b9",
+      "original_snapshot_prefix_matches": true,
+      "bytes_after_snapshot": 0
+    }
+  ],
+  "native_conflicts": [],
+  "delivery": {
+    "responses": 160,
+    "input": 43471392,
+    "output": 61379,
+    "input_plus_output": 43532771,
+    "uncached": 4905376,
+    "cached": 38566016,
+    "mean_input": 271696.2,
+    "max_input": 803704,
+    "first_input": 25124,
+    "last_input": 321296,
+    "compactions": 1
+  },
+  "chain": {
+    "responses": 438,
+    "input": 52181866,
+    "output": 154662,
+    "input_plus_output": 52336528,
+    "uncached": 6183210,
+    "cached": 45998656,
+    "mean_input": 119136.68036529681,
+    "max_input": 803704,
+    "first_input": 25124,
+    "last_input": 321296,
+    "compactions": 1
+  },
+  "roles": {
+    "competency-question": {
+      "responses": 26,
+      "input": 297739,
+      "output": 7708,
+      "input_plus_output": 305447,
+      "uncached": 71243,
+      "cached": 226496,
+      "mean_input": 11451.5,
+      "max_input": 15245,
+      "first_input": 4109,
+      "last_input": 15245,
+      "compactions": 0
+    },
+    "platform-examiner": {
+      "responses": 48,
+      "input": 818296,
+      "output": 15596,
+      "input_plus_output": 833892,
+      "uncached": 404024,
+      "cached": 414272,
+      "mean_input": 17047.833333333332,
+      "max_input": 24783,
+      "first_input": 8292,
+      "last_input": 19548,
+      "compactions": 0
+    },
+    "acceptance": {
+      "responses": 28,
+      "input": 820729,
+      "output": 7678,
+      "input_plus_output": 828407,
+      "uncached": 206777,
+      "cached": 613952,
+      "mean_input": 29311.75,
+      "max_input": 45873,
+      "first_input": 27211,
+      "last_input": 18157,
+      "compactions": 0
+    },
+    "delivery": {
+      "responses": 160,
+      "input": 43471392,
+      "output": 61379,
+      "input_plus_output": 43532771,
+      "uncached": 4905376,
+      "cached": 38566016,
+      "mean_input": 271696.2,
+      "max_input": 803704,
+      "first_input": 25124,
+      "last_input": 321296,
+      "compactions": 1
+    },
+    "coordinator": {
+      "responses": 90,
+      "input": 2854565,
+      "output": 38608,
+      "input_plus_output": 2893173,
+      "uncached": 235557,
+      "cached": 2619008,
+      "mean_input": 31717.38888888889,
+      "max_input": 58548,
+      "first_input": 5394,
+      "last_input": 58548,
+      "compactions": 0
+    },
+    "modeling": {
+      "responses": 86,
+      "input": 3919145,
+      "output": 23693,
+      "input_plus_output": 3942838,
+      "uncached": 360233,
+      "cached": 3558912,
+      "mean_input": 45571.45348837209,
+      "max_input": 74557,
+      "first_input": 11410,
+      "last_input": 74557,
+      "compactions": 0
+    }
+  },
+  "delivery_threads": [
+    {
+      "runtime_session_id": "delivery-e8ad44ee7c244314a71256c9aaf6d053",
+      "responses": 26,
+      "input": 2196929,
+      "output": 7824,
+      "input_plus_output": 2204753,
+      "uncached": 255617,
+      "cached": 1941312,
+      "mean_input": 84497.26923076923,
+      "max_input": 129490,
+      "first_input": 25124,
+      "last_input": 129490,
+      "compactions": 0
+    },
+    {
+      "runtime_session_id": "delivery-72af1085418b47e1a2571c90ee02818f",
+      "responses": 22,
+      "input": 1611396,
+      "output": 9086,
+      "input_plus_output": 1620482,
+      "uncached": 326276,
+      "cached": 1285120,
+      "mean_input": 73245.27272727272,
+      "max_input": 122560,
+      "first_input": 28621,
+      "last_input": 122560,
+      "compactions": 0
+    },
+    {
+      "runtime_session_id": "delivery-867f44d998c448d3821f5f883073e0c0",
+      "responses": 112,
+      "input": 39663067,
+      "output": 44469,
+      "input_plus_output": 39707536,
+      "uncached": 4323483,
+      "cached": 35339584,
+      "mean_input": 354134.52678571426,
+      "max_input": 803704,
+      "first_input": 27648,
+      "last_input": 321296,
+      "compactions": 1
+    }
+  ],
+  "delivery_windows": {
+    "before_second_semantic_start": {
+      "responses": 79,
+      "input": 6892923,
+      "output": 30134,
+      "input_plus_output": 6923057,
+      "uncached": 997627,
+      "cached": 5895296,
+      "mean_input": 87252.18987341772,
+      "max_input": 147272,
+      "first_input": 25124,
+      "last_input": 147272,
+      "compactions": 0
+    },
+    "second_semantic_start_and_later": {
+      "responses": 81,
+      "input": 36578469,
+      "output": 31245,
+      "input_plus_output": 36609714,
+      "uncached": 3907749,
+      "cached": 32670720,
+      "mean_input": 451586.037037037,
+      "max_input": 803704,
+      "first_input": 154472,
+      "last_input": 321296,
+      "compactions": 1
+    }
+  },
+  "yield_only_responses": 76,
+  "yield_only_input": 25069851,
+  "yield_only_input_share": 0.5766976820065941,
+  "native_turn_ends": 10,
+  "phase_thread_history": [
+    {
+      "event": "delivery_phase_thread",
+      "attempt_id": "a866a0a6f0c54a56975858725fcb24c7",
+      "phase": "production",
+      "run_id": "minimal-chain-20261019-dsh-phase-handoff-r1",
+      "input_id": "1d707dcba69849ca9e59648366951c77",
+      "from_identity": {
+        "runtime": "dsh",
+        "process_instance": "00624172d0cf45ebb8bec11ddb8cb12e",
+        "runtime_session_id": "delivery-e8ad44ee7c244314a71256c9aaf6d053",
+        "activity_id": null
+      },
+      "status": "switched",
+      "reason": "生产收尾中，readiness 尚未确认。",
+      "request_ids": [
+        "dsh-phase-handoff-1019-freeze-cq-0001",
+        "dsh-phase-handoff-1019-freeze-notify-0001"
+      ],
+      "started_at": "2026-10-19T07:13:42.608469+00:00",
+      "to_identity": {
+        "runtime": "dsh",
+        "process_instance": "00624172d0cf45ebb8bec11ddb8cb12e",
+        "runtime_session_id": "delivery-72af1085418b47e1a2571c90ee02818f",
+        "activity_id": null
+      },
+      "ended_at": "2026-10-19T07:13:42.623381+00:00"
+    },
+    {
+      "event": "delivery_phase_thread",
+      "attempt_id": "fc096ec84287489b82e342be0a9b78d3",
+      "phase": "acceptance",
+      "run_id": "minimal-chain-20261019-dsh-phase-handoff-r1",
+      "input_id": "0cd2d1df72b3443eb6e6a148fb472508",
+      "from_identity": {
+        "runtime": "dsh",
+        "process_instance": "00624172d0cf45ebb8bec11ddb8cb12e",
+        "runtime_session_id": "delivery-72af1085418b47e1a2571c90ee02818f",
+        "activity_id": null
+      },
+      "status": "switched",
+      "reason": "两个 Examiner 正在运行，尚无新报告；无需新动作。",
+      "request_ids": [
+        "dsh-phase-handoff-1019-cq-handoff-0003"
+      ],
+      "started_at": "2026-10-19T07:18:28.584748+00:00",
+      "to_identity": {
+        "runtime": "dsh",
+        "process_instance": "00624172d0cf45ebb8bec11ddb8cb12e",
+        "runtime_session_id": "delivery-867f44d998c448d3821f5f883073e0c0",
+        "activity_id": null
+      },
+      "ended_at": "2026-10-19T07:18:28.605467+00:00"
+    }
+  ],
+  "r2_boundary_loss_trace": [
+    {
+      "run_id": "minimal-chain-20261019-dsh-phase-handoff-r2",
+      "phase": "production",
+      "boundary_call_seq": 517,
+      "boundary_call_at": "2026-10-19T07:35:45.582000+00:00",
+      "next_turn_end_seq": 771,
+      "next_turn_end_at": "2026-10-19T07:44:11.317000+00:00",
+      "intervening_yield_calls": 20,
+      "last_intervening_yield_seq": 765,
+      "last_intervening_yield_has_boundary": false,
+      "intervening_user_input_kinds": {
+        "host_observation": 39,
+        "user_input": 2
+      }
+    },
+    {
+      "run_id": "minimal-chain-20261019-dsh-phase-handoff-r2",
+      "phase": "acceptance",
+      "boundary_call_seq": 757,
+      "boundary_call_at": "2026-10-19T07:43:43.200000+00:00",
+      "next_turn_end_seq": 771,
+      "next_turn_end_at": "2026-10-19T07:44:11.317000+00:00",
+      "intervening_yield_calls": 1,
+      "last_intervening_yield_seq": 765,
+      "last_intervening_yield_has_boundary": false
+    }
+  ],
+  "prior_snapshot_correction": {
+    "snapshot_input": 43150096,
+    "closing_tail_input": 321296,
+    "snapshot_responses": 159,
+    "closing_tail_responses": 1
+  },
+  "independent_report_checks": [
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-phase-handoff-r2/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "f0b839fd818e57f29deeb9a0f47c4e4f5bf6631af29b31f3019510fec9239cf7",
+      "full_pass": true,
+      "executed_count": 3,
+      "unexecuted_count": 0
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-phase-handoff-r2/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "acac8f796b5bf0c749496b65bb9812919db1c8436b8ad8a4b991082650d04a90",
+      "full_pass": true,
+      "executed_count": 1,
+      "unexecuted_count": 0
+    }
+  ],
+  "quality_scope": {
+    "first_run": "PARTIAL: public 1/1, hidden executed 2/3 pass, one infrastructure TIMEOUT unexecuted; no model-quality failure established",
+    "second_run": "bounded independent non-blind full original 1+3 pass; report hashes and denominator checked, no regrading",
+    "autonomous_delivery": "not established; Host technical recovery, retry selection, schema guidance and queue-drain guidance recorded"
+  },
+  "source_verification": {
+    "path": "workspaces/minimal-chain-20261019-dsh-phase-handoff/report-verification.json",
+    "sha256": "5220988d80ee37ad899270f3d20267cff0f81acc90307e8930656fd58209886b"
+  },
+  "limitations": [
+    "Input includes cached tokens. Cache-read and reasoning are subsets, not extra cost. Native compaction is included once.",
+    "Earlier group failures, number of modeling rounds, Host models and codec/runtime differ; comparisons describe observations, not controlled causal savings.",
+    "Window totals include normal work and shared history, not removable defect cost.",
+    "No complete provider bill, cache-write/reasoning breakdown or latest Host total. Effective semantic work-time unknown.",
+    "Boundary-loss evidence confirms last_yield replacement before idle; it does not assert every subsequent safety condition was met or a savings amount."
+  ],
+  "comparison_metrics": [
+    {
+      "label": "codex-c",
+      "code": "ffd55e7",
+      "rounds": 1,
+      "fresh_starts": 1,
+      "input": 6919702,
+      "output": 9481,
+      "uncached": 168534,
+      "responses": 49,
+      "source": "docs/delivery/evidence/2026-10-19-token-optimization-usage.json"
+    },
+    {
+      "label": "dsh-glm",
+      "code": "bb51c4e",
+      "rounds": 1,
+      "fresh_starts": 1,
+      "source": "docs/delivery/evidence/2026-10-19-dsh-glm-low-comparison.json",
+      "input": 21418062,
+      "output": 28565,
+      "uncached": 473870,
+      "responses": 78
+    },
+    {
+      "label": "dsh-wake-guard",
+      "code": "9287c81",
+      "rounds": 1,
+      "fresh_starts": 1,
+      "source": "docs/delivery/evidence/2026-10-19-delivery-common-wake-guard.json",
+      "input": 12014191,
+      "output": 16487,
+      "uncached": 631599,
+      "responses": 68
+    },
+    {
+      "label": "dsh-input-fixes",
+      "code": "9945ea2",
+      "rounds": 1,
+      "fresh_starts": 1,
+      "input": 27786274,
+      "output": 27478,
+      "uncached": 967010,
+      "responses": 117,
+      "source": "docs/delivery/evidence/2026-10-19-dsh-input-fixes-delivery-analysis.json"
+    },
+    {
+      "label": "dsh-phase-handoff",
+      "code": "0083d36",
+      "rounds": 2,
+      "fresh_starts": 2,
+      "input": 43471392,
+      "output": 61379,
+      "uncached": 4905376,
+      "responses": 160,
+      "source": "this artifact current native capture"
+    }
+  ]
+}

@@ -896,7 +896,7 @@ _LOCAL_SPECS = [
              "required": ["decision_id", "text", "source_references", "replaces"],
              "additionalProperties": False}},
          "evidence_references": {"type": "array", "items": {"type": "object"}},
-         "thread_boundary": {"type": "object", "properties": {
+         "thread_boundary": {"type": ["object", "null"], "description": "Request a phase handoff. Omit to retain a pending handoff across later waits; null explicitly cancels it.", "properties": {
              "phase": {"enum": ["production", "acceptance"]},
              "run_id": {"type": "string", "minLength": 1},
              "request_ids": {"type": "array", "minItems": 1, "uniqueItems": True,
@@ -2789,6 +2789,8 @@ class DeliverySession:
                   "recorded_at": now(), **copy.deepcopy(arguments)}
         offset, length = append_session_event(self.session_root, record)
         self.last_yield = record
+        if "thread_boundary" in arguments:
+            self.pending_thread_handoff = record if arguments["thread_boundary"] else None
         return {"ok": True, "data": {"status": "waiting_recorded", "end_current_turn": True,
             "evidence": self._journal_reference(offset, length),
             "note": "End this turn now. All bindings remain under program observation; this is not turn completion."}}
@@ -2845,7 +2847,8 @@ class DeliverySession:
     def maybe_switch_phase_thread(self, runtime, *, pending_inputs=()) -> bool:
         """Honor an explicit phase handoff only after the original activity settles."""
         handoff = self.last_yield or {}
-        boundary = handoff.get("thread_boundary", {})
+        pending = self.pending_thread_handoff or {}
+        boundary = pending.get("thread_boundary") or {}
         phase, run_id = boundary.get("phase"), boundary.get("run_id")
         if (phase not in self.config.get("phase_thread_boundaries", [])
                 or runtime.busy or pending_inputs or self._pending_decisions
@@ -2894,10 +2897,14 @@ class DeliverySession:
                 return False
         record = {"event": "delivery_phase_thread", "attempt_id": uuid.uuid4().hex,
                   "phase": phase, "run_id": run_id, "input_id": handoff["input_id"],
+                  "requested_input_id": pending["input_id"],
                   "from_identity": copy.deepcopy(runtime.identity), "status": "attempted",
                   "reason": handoff["reason"], "request_ids": ids, "started_at": now()}
         self.phase_thread_history.append(record)
         self._append("session-events.jsonl", record)
+        # A failed or uncertain creation still needs a new explicit request;
+        # ordinary waits must not hot-retry the same native session creation.
+        self.pending_thread_handoff = None
         try:
             identity = runtime.new_thread()
         except Exception as exc:
@@ -2984,6 +2991,7 @@ class DeliverySession:
         self._input_ids = set()
         self._latest_input_id = None
         self.last_yield = None
+        self.pending_thread_handoff = None
         path = self.session_root / "session-events.jsonl"
         if not path.exists():
             return
@@ -3011,9 +3019,12 @@ class DeliverySession:
                     for key, value in record.get("decision_event_state", {}).items()}
             elif event == "delivery_yield":
                 self.last_yield = record
+                if "thread_boundary" in record:
+                    self.pending_thread_handoff = record if record["thread_boundary"] else None
             elif event == "delivery_phase_thread":
                 self.phase_thread_history = [row for row in self.phase_thread_history
                     if row["attempt_id"] != record["attempt_id"]] + [record]
+                self.pending_thread_handoff = None
             elif event == "delivery_input_dispatch":
                 for item in list(self._pending_decisions):
                     if item["input_id"] != record["input_id"]:

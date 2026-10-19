@@ -15,11 +15,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 # --- closed vocabularies ------------------------------------------------------
+
+def cq_published_handoff_path(run_root: Path, handoff: dict[str, Any]) -> Path:
+    """Resolve only the Runner's fixed original or attempt-specific publication."""
+    if handoff.get("retry_of") is None:
+        return run_root / "acceptance-v3" / "production-handoff.json"
+    attempt = handoff.get("acceptance_attempt_id")
+    if not isinstance(attempt, str) or not re.fullmatch(r"attempt-[0-9]{4}", attempt):
+        raise ValueError("the retry handoff has an invalid acceptance attempt identity")
+    return run_root / "acceptance-v3" / "handoffs" / f"{attempt}.json"
+
 
 CQ_ROLE = "competency-question"
 # Shared canonical role name: ``contracts.py`` registers the same value in its

@@ -460,6 +460,10 @@ select the actual accepted freeze-notification instruction from notification_req
 never an unrelated instruction. Preserve still-effective decisions and original constraints,
 then end this activity. This candidate does not prove a switch; original receipt, activity,
 input and write-safety checks still decide whether it can happen.
+An explicit thread_boundary survives later ordinary yield records. Keep current
+effective decisions in each yield; omit the field to retain that pending handoff,
+or send null to cancel it. New inputs still need a fresh yield; pending controls,
+unknown receipts/writes and active inference continue to defer the switch.
 
 ## Deterministic phase progression after a semantic decision
 
@@ -483,6 +487,17 @@ An accepted CQ handoff creates an acceptance binding, not an evaluation
 process. If no matching operation exists, call `start_evaluation` for each
 authorized public/hidden group with the returned handoff/freeze binding,
 selected model profile and configured timeout; only then wait for reports.
+Do not resend the same freeze or terminal-report reminder while its production
+inputs are queued. Let the recipient consume them and react to actual results or
+a new actionable gap; repeated reminders can prevent a DSH terminal report.
+After an acceptance runtime failure retains its final report, explicitly call
+complete_cq_handoff with retry_of=<current acceptance_attempt_id> and a new
+request ID to allocate read-only reacceptance. Evaluate and complete using the
+returned model_handoff/attempt, retaining the old reports and full frozen scope.
+An ordinary duplicate handoff remains idempotent; do not rebuild the model for
+an acceptance-only retry.
+Execute all requested final public/hidden groups on that new binding; preserve
+prior passes as history rather than mixing attempts to declare a new full PASS.
 
 For each authorized acceptance scope, track the selected public and hidden question
 groups separately. A hidden report covers only its selected questions; public CQ

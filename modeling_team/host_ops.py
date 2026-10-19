@@ -67,6 +67,7 @@ from .competency_questions import (
     CQContractError,
     batch_report_acceptance_verdict,
     content_digest,
+    cq_published_handoff_path,
     reload_frozen_pool,
 )
 
@@ -986,6 +987,9 @@ def _cq_pending(run_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
     acceptance_records, acceptance_limits = _evidence_source(run_root, "cq-acceptance-complete")
     limitations.extend(acceptance_limits)
     acceptance = _latest(acceptance_records)
+    if handoff is not None and acceptance is not None and (
+            acceptance.get("acceptance_attempt_id") != handoff.get("acceptance_attempt_id")):
+        acceptance = None
     if freeze is not None and handoff is None:
         items.append(
             {
@@ -2299,6 +2303,7 @@ def complete_cq_handoff(
     freeze_id: str,
     freeze_digest: str,
     delivery_binding: str | None = None,
+    retry_of: str | None = None,
     request_id: str | None = None,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
@@ -2311,6 +2316,8 @@ def complete_cq_handoff(
     }
     if delivery_binding is not None:
         envelope["delivery_binding"] = delivery_binding
+    if retry_of is not None:
+        envelope["retry_of"] = retry_of
     return submit_fifo_action(
         run_id, "cq_handoff_complete", envelope,
         request_id=request_id, repository_root=repository_root,
@@ -2325,7 +2332,11 @@ def _cq_completion_binding(
     freeze = _latest(_evidence_records(run_root, "cq-freeze"))
     handoffs = _evidence_records(run_root, "cq-handoff-complete")
     published_handoff: dict[str, Any] | None = None
-    handoff_path = run_root / "acceptance-v3" / "production-handoff.json"
+    try:
+        handoff_path = cq_published_handoff_path(run_root, _latest(handoffs) or {})
+    except ValueError as exc:
+        raise HostOpError("cq_review_stale", str(exc), obj="cq_acceptance_complete",
+                          retryable=True, next_action="use the current Runner-published attempt binding") from exc
     if handoff_path.is_file() and not handoff_path.is_symlink():
         value, _limitation = _read_json_file(handoff_path)
         if isinstance(value, dict):

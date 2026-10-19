@@ -302,6 +302,7 @@ def tool_complete_cq_handoff(
     freeze_digest: str,
     delivery_binding: str | None = None,
     request_id: str | None = None,
+    retry_of: str | None = None,
 ) -> dict[str, Any]:
     """Release the CQ production handoff after the pool is frozen.
 
@@ -311,7 +312,11 @@ def tool_complete_cq_handoff(
     ``model_handoff_relative``).  The Runner publishes that file at
     ``<run-root>/acceptance-v3/production-handoff.json``; in-flight or unknown
     staged writes keep their original typed rejection.  A completed handoff
-    is not the whole run's completion.
+    is not the whole run's completion. After an attempt retains its final
+    report, pass retry_of=<current acceptance_attempt_id> explicitly to
+    allocate a read-only reacceptance; use the returned handoff path and new
+    attempt. Ordinary duplicate calls remain idempotent, and old reports stay
+    immutable. Repeating the same retry_of returns its already allocated attempt.
     """
     return _call(
         complete_cq_handoff,
@@ -319,6 +324,7 @@ def tool_complete_cq_handoff(
         freeze_id=freeze_id,
         freeze_digest=freeze_digest,
         delivery_binding=delivery_binding,
+        retry_of=retry_of,
         request_id=request_id,
     )
 

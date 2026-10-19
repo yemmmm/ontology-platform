@@ -127,6 +127,62 @@ def test_new_observation_requires_fresh_effective_decisions_before_switch(tmp_pa
     assert runtime.switches == 0
 
 
+def test_phase_handoff_survives_a_later_wait_on_fresh_observation(tmp_path, monkeypatch):
+    host, raw = ready(tmp_path, monkeypatch)
+    runtime = PhaseRuntime()
+    runtime.busy = True
+    assert not host.maybe_switch_phase_thread(runtime)
+    raw["runs"]["run"]["status"]["data"]["stage"] = {"phase": "acceptance"}
+    host.record_observation(raw)
+    current = ack(host)
+    args = yield_args(current["input_id"])
+    args["waiting_for"] = [{"operation_id": "op", "condition": "independent report"}]
+    assert host.call_tool("yield_delivery", args)["ok"]
+    assert "thread_boundary" not in host.last_yield
+    runtime.busy = False
+    assert host.maybe_switch_phase_thread(runtime)
+    assert runtime.switches == 1
+    packet = ack(host)
+    assert packet["continuation"]["input_id"] == current["input_id"]
+    assert packet["continuation"]["active_decisions"] == args["active_decisions"]
+
+
+def test_pending_phase_handoff_is_recovered_after_a_later_wait(tmp_path, monkeypatch):
+    host, raw = ready(tmp_path, monkeypatch)
+    host.record_observation(raw, force_delivery=True)
+    args = yield_args(ack(host)["input_id"])
+    assert host.call_tool("yield_delivery", args)["ok"]
+    reopened = DeliverySession(repository_root=ROOT, session_root=host.session_root,
+                               config=host.config, resume=True)
+    assert reopened.maybe_switch_phase_thread(PhaseRuntime())
+
+
+def test_phase_handoff_can_be_explicitly_cancelled(tmp_path, monkeypatch):
+    host, raw = ready(tmp_path, monkeypatch)
+    args = yield_args(host.last_yield["input_id"])
+    args["thread_boundary"] = None
+    assert host.call_tool("yield_delivery", args)["ok"]
+    runtime = PhaseRuntime()
+    assert not host.maybe_switch_phase_thread(runtime)
+    assert runtime.switches == 0
+
+
+def test_later_wait_does_not_retry_failed_thread_creation(tmp_path, monkeypatch):
+    host, raw = ready(tmp_path, monkeypatch)
+    runtime = PhaseRuntime()
+
+    def fail():
+        runtime.switches += 1
+        raise RuntimeError("creation receipt unavailable")
+
+    runtime.new_thread = fail
+    assert not host.maybe_switch_phase_thread(runtime)
+    host.record_observation(raw, force_delivery=True)
+    assert host.call_tool("yield_delivery", yield_args(ack(host)["input_id"]))["ok"]
+    assert not host.maybe_switch_phase_thread(runtime)
+    assert runtime.switches == 1
+
+
 def test_explicit_empty_effective_decisions_can_cross_a_settled_boundary(tmp_path, monkeypatch):
     host, raw = ready(tmp_path, monkeypatch)
     args = {key: value for key, value in host.last_yield.items() if key in {

@@ -9108,7 +9108,7 @@ class TeamRunner:
         """Host-only ``cq_handoff_complete``: release the CQ terminal report."""
 
         self._cq_selector_required()
-        allowed = {"action", "freeze_id", "freeze_digest", "delivery_binding"}
+        allowed = {"action", "freeze_id", "freeze_digest", "delivery_binding", "retry_of"}
         if set(message) - allowed:
             raise CQContractError(
                 "cq_selector_incompatible",
@@ -9136,7 +9136,31 @@ class TeamRunner:
                 phase="frozen",
                 retry="send the current freeze id and snapshot digest",
             )
-        if self._cq_handoff_complete:
+        retry_of = message.get("retry_of")
+        attempt = self._cq_acceptance_attempt or {}
+        if retry_of is not None:
+            if (self._acceptance_target != "cq_semantic" or not self._cq_handoff_complete
+                    or not isinstance(retry_of, str)
+                    or not re.fullmatch(r"attempt-[0-9]{4}", retry_of)):
+                raise CQContractError(
+                    "cq_review_stale", "retry_of must identify an existing read-only acceptance attempt",
+                    obj="retry_of", phase=self._cq_acceptance_phase,
+                    retry="use the current published acceptance_attempt_id after its report is retained")
+            if attempt.get("retry_of") == retry_of:
+                return {"ok": True, **attempt, "acceptance_phase": self._cq_acceptance_phase,
+                        "idempotent": True}
+            if retry_of != attempt.get("acceptance_attempt_id"):
+                raise CQContractError(
+                    "cq_review_stale", "retry_of does not match the current acceptance attempt",
+                    obj="retry_of", phase=self._cq_acceptance_phase,
+                    retry="use the current published acceptance_attempt_id")
+            report_path = self.run.root / attempt["report_directory"] / "batch-report.json"
+            if not report_path.is_file() or report_path.is_symlink():
+                raise CQContractError(
+                    "cq_acceptance_report_mismatch", "the prior attempt has no retained final report",
+                    obj="retry_of", phase=self._cq_acceptance_phase,
+                    retry="let the original acceptance finish and retain its report before requesting a new attempt")
+        elif self._cq_handoff_complete:
             # T1-10/T1-14 analog: an already-released handoff only acknowledges
             # a duplicate complete.  The immutable handoff file and its events
             # are never rewritten, and the acknowledgment carries no new state.
@@ -9146,6 +9170,8 @@ class TeamRunner:
                 "freeze_id": self._cq_freeze["batch_id"],
                 "model_handoff": str(model_handoff),
                 "model_handoff_relative": model_handoff.relative_to(self.repository_root).as_posix(),
+                **attempt,
+                "acceptance_phase": self._cq_acceptance_phase,
                 "idempotent": True,
             }
         readiness = self._cq_production_readiness()
@@ -9220,6 +9246,7 @@ class TeamRunner:
             sealed = self.standby()
             self._state("READ_ONLY_WAIT", **sealed)
         self._cq_handoff_complete = True
+        self._cq_acceptance_result = None
         self._cq_wait_windows.close_window("cq-handoff-request", now)
         if self._acceptance_target == "cq_semantic":
             # R3.0-012 (design §4.5): the same transition that closes the
@@ -9237,6 +9264,7 @@ class TeamRunner:
             {
                 "freeze_id": self._cq_freeze["batch_id"],
                 "freeze_digest": self._cq_freeze["snapshot_digest"],
+                **({"retry_of": retry_of} if retry_of is not None else {}),
                 "delivery_binding": message.get("delivery_binding"),
                 "readiness": readiness,
                 "handoff_digest": handoff["handoff_digest"],
@@ -9378,6 +9406,8 @@ class TeamRunner:
             "batch_id": batch_id,
             "report_directory": attempt["report_directory"],
         }
+        if message.get("retry_of") is not None:
+            payload["retry_of"] = message["retry_of"]
         map_path = self.run.root / "scenario-map" / "scenario-map.json"
         if map_path.is_file() and not map_path.is_symlink():
             from .scenario_map import MULTIVIEW_SCENARIO_MAP_SCHEMA
@@ -9388,7 +9418,10 @@ class TeamRunner:
                     "path": "scenario-map/scenario-map.json", "digest": digest_file(map_path),
                 }
         encoded = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode()
-        path = self.run.root / "acceptance-v3" / "production-handoff.json"
+        from .competency_questions import cq_published_handoff_path
+
+        path = cq_published_handoff_path(self.run.root, payload)
+        path.parent.mkdir(parents=True, exist_ok=True)
         try:
             descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o444)
         except FileExistsError as exc:
@@ -9408,6 +9441,7 @@ class TeamRunner:
         model_handoff_relative = path.relative_to(self.repository_root).as_posix()
         self._cq_acceptance_attempt = {
             **attempt,
+            **({"retry_of": message["retry_of"]} if message.get("retry_of") is not None else {}),
             "batch_id": batch_id,
             "freeze_digest": self._cq_freeze["snapshot_digest"],
             "handoff_digest": handoff_digest,
@@ -9417,14 +9451,15 @@ class TeamRunner:
         # R3.0-015 S1: a published handoff is the automatic production_handoff
         # save point (design §3.1).  The admission phase is read-only here, so
         # the capture barrier is a no-op and the write state is settled.
-        self._save_checkpoint_after_trigger(
-            CHECKPOINT_KIND_PRODUCTION_HANDOFF,
-            trigger="production-handoff",
-            scope_refs={
-                "freeze_id": batch_id,
-                "acceptance_attempt_id": attempt["acceptance_attempt_id"],
-            },
-        )
+        if message.get("retry_of") is None:
+            self._save_checkpoint_after_trigger(
+                CHECKPOINT_KIND_PRODUCTION_HANDOFF,
+                trigger="production-handoff",
+                scope_refs={
+                    "freeze_id": batch_id,
+                    "acceptance_attempt_id": attempt["acceptance_attempt_id"],
+                },
+            )
         return {
             **attempt,
             "handoff_digest": handoff_digest,

@@ -124,3 +124,10 @@ message and any effective user control, but do not ask Modeling to repeat a comp
 write because an older correction arrived late. For unconsumed DSH input at terminal
 reporting, end the activity, consume the queued handoffs next activity, then retry the
 report; do not keep sending the same completion or correction while that queue drains.
+Send each freeze confirmation or terminal-report reminder once, retaining its
+delivery identity and the actual peer acknowledgement. While that input is queued
+or the peer is closing, wait for its real result instead of creating a fresh
+delivery ID for the same reminder. A new business/control change, concrete error
+or necessary liveness intervention still warrants an accurately scoped message.
+An accepted newer map/topology receipt supersedes older technical correction
+advice; do not reverse the accepted path or repeat completed writes from that advice.

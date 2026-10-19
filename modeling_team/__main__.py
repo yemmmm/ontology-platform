@@ -2116,7 +2116,12 @@ def _cq_consume_production_handoff(
     process published at the handoff's own attempt directory stays untouched.
     """
 
-    published_path = run_root / "acceptance-v3" / "production-handoff.json"
+    from .competency_questions import cq_published_handoff_path
+
+    try:
+        published_path = cq_published_handoff_path(run_root, handoff)
+    except ValueError as exc:
+        raise TeamConfigurationError(f"cq_model_binding_missing: {exc}") from exc
     if not published_path.is_file() or published_path.is_symlink():
         raise TeamConfigurationError(
             "cq_model_binding_missing: the run root has no Runner-published "
