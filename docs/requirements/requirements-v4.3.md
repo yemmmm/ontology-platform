@@ -3708,3 +3708,25 @@ core／coverage及引用包装反复输入有离线文本证据，采用本地�
 完整验收14.19对10.86分钟，未证明降耗。GLM流尾input采集缺口由原生数值保留补充，
 cache-write／reasoning、账单和后续Host尾部仍未知；019／034计量完整性保持PARTIAL。
 确认队友issue的既有pause合同后补一句权威提示，未重载旧run或启动新轮次。
+
+
+## 2026-10-19 DSH GLM Delivery优化覆盖补查
+
+用户要求分析额外token集中Delivery是否因优化未覆盖DSH。依据同组保留原件，见
+[覆盖补查](../delivery/records/2026-10-19-dsh-glm-compatibility-comparison.md#2026-10-19-delivery-优化覆盖补查)
+及[数值证据](../delivery/evidence/2026-10-19-dsh-delivery-optimization-analysis.json)。
+本次不修改运行代码、不发送模型请求或控制原run，不追加建模／验收授权。
+
+- **030／022／032：部分验证，追加GLM计量告警分支待调整。** 共用Delivery源码及
+  package／skill在Codex C与DSH启动版本间相同；DSH实际v2与稳定输入省略成立。
+  但85个HTTP 200成功生产响应的流尾input／cache-read被采集器标为位置无效，
+  不满足既有成功回执降噪条件，42个逻辑决策输入只有此类告警变化；不把观察输入数
+  当模型调用数。DSH响应78对49、平均请求输入274,591对141,218，Delivery增加
+  14,498,360输入，占全链增加的98.92%；单包字节更小不证明整轮降耗。
+- **019／034保持PARTIAL。** 原生数值统计可复算；流尾采集缺口、cache-write／
+  reasoning缺值及账单边界仍未闭合，不用填零消除告警。只提出兼容位置和沿原通路
+  减少同类持续计量告警的建议，本次不宣称修复或净节省量。
+- 共用工具schema保留必填mode，DSH四次start_evaluation漏字段被通用ValidationError
+  包装隐藏具体原因，另有既述issue恢复成本；不是全部额外输入都由计量告警导致。
+  F3／F4两边均未实施／启用，021仍暂停；原820／522故障本次未触发，待实测子项保留。
+  原最小链四题独立非盲L1通过不改写，不外推自主交付或同条件净成本通过。

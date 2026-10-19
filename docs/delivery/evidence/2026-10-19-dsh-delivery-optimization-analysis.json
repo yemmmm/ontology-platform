@@ -1,0 +1,204 @@
+{
+  "scope": "Retained-evidence analysis only; no new model request, semantic start, code change or lifecycle action.",
+  "runs": {
+    "codex": "minimal-chain-20261019-token-opt-c-r1",
+    "dsh": "minimal-chain-20261019-dsh-glm-low-r1"
+  },
+  "loaded_versions": {
+    "codex_c": "ffd55e7",
+    "dsh_launch": "bb51c4e"
+  },
+  "shared_optimization_sources": [
+    {
+      "path": "modeling_team/delivery.py",
+      "sha256": "c8b596e701ae63a9b35114e321ed37aa97a1200f44b0cc0fd93c11d75d24366b",
+      "equal_at_codex_c_and_dsh_launch": true
+    },
+    {
+      "path": "modeling_team/agent-packages/delivery/instructions.md",
+      "sha256": "b59f3965b36e88b51f1b4d8204ffa5f593e9a589ce85cdd657f50e3dfb0dfeac",
+      "equal_at_codex_c_and_dsh_launch": true
+    },
+    {
+      "path": "modeling_team/skills/delivery/SKILL.md",
+      "sha256": "631dcff743b82ee731eb55dff4c54bcf87db3a03c6594b215d20aea38dc63515",
+      "equal_at_codex_c_and_dsh_launch": true
+    }
+  ],
+  "comparison_evidence": {
+    "path": "docs/delivery/evidence/2026-10-19-dsh-glm-low-comparison.json",
+    "sha256": "ea8debc40305a59b472494f007c4fe25d7ee4a74e21aa5aef8a7bf4d6b9674f9"
+  },
+  "private_analysis": {
+    "path": "workspaces/dsh-delivery-analysis-20261019/analysis.json",
+    "sha256": "e223ddf49f60d22b750a09614e6e3b0dbfaf3781c39382662603ef0cf3d133aa"
+  },
+  "metrics": {
+    "codex": {
+      "decisions": 57,
+      "events_only_decisions": 20,
+      "events_only_provider_only_decisions": 0,
+      "yields": 16,
+      "tool_call_total": 37,
+      "tool_calls": {
+        "start_run": 1,
+        "yield_delivery": 16,
+        "request_host_action": 2,
+        "read_delivery_artifact": 5,
+        "freeze_cq": 1,
+        "submit_instruction": 1,
+        "complete_cq_handoff": 2,
+        "get_pending_actions": 1,
+        "start_evaluation": 2,
+        "complete_cq_acceptance": 1,
+        "stop_delivery_operation": 2,
+        "stop_run": 1,
+        "emit_user_message": 1,
+        "finish_delivery": 1
+      },
+      "actual_packets": 56,
+      "unique_input_ids": 56,
+      "actual_schemas": {
+        "delivery-decision-input/v2": 56
+      },
+      "actual_packet_bytes": {
+        "sum": 594816,
+        "min": 5484,
+        "max": 27320,
+        "mean": 10621.714285714286
+      },
+      "omitted_sections": {
+        "settled_history": 56,
+        "unchanged_task_context": 55,
+        "unchanged_snapshot": 55,
+        "unchanged_delivery_objective": 55,
+        "unchanged_run_identity": 54
+      },
+      "request_count": 49,
+      "input_sum": 6919702,
+      "mean_request_input": 141218.4081632653,
+      "max_input": 278740,
+      "first5_inputs": [
+        30290,
+        49120,
+        49638,
+        53114,
+        56446
+      ],
+      "last5_inputs": [
+        259780,
+        265939,
+        276284,
+        276626,
+        278740
+      ]
+    },
+    "dsh": {
+      "decisions": 109,
+      "events_only_decisions": 71,
+      "events_only_provider_only_decisions": 42,
+      "yields": 47,
+      "tool_call_total": 70,
+      "tool_calls": {
+        "start_run": 1,
+        "get_run_status": 1,
+        "yield_delivery": 47,
+        "request_host_action": 3,
+        "read_delivery_artifact": 2,
+        "freeze_cq": 1,
+        "submit_instruction": 1,
+        "complete_cq_handoff": 3,
+        "start_evaluation": 6,
+        "complete_cq_acceptance": 1,
+        "get_request_result": 2,
+        "emit_user_message": 1,
+        "finish_delivery": 1
+      },
+      "actual_packets": 112,
+      "unique_input_ids": 109,
+      "actual_schemas": {
+        "delivery-decision-input/v2": 112
+      },
+      "actual_packet_bytes": {
+        "sum": 1016096,
+        "min": 2637,
+        "max": 22454,
+        "mean": 9072.285714285714
+      },
+      "omitted_sections": {
+        "settled_history": 108,
+        "unchanged_task_context": 107,
+        "unchanged_snapshot": 107,
+        "unchanged_delivery_objective": 107,
+        "unchanged_run_identity": 106
+      },
+      "request_count": 78,
+      "input_sum": 21418062,
+      "mean_request_input": 274590.53846153844,
+      "max_input": 471164,
+      "first5_inputs": [
+        24490,
+        25315,
+        37778,
+        50291,
+        53143
+      ],
+      "last5_inputs": [
+        457306,
+        464626,
+        465200,
+        465756,
+        471164
+      ]
+    }
+  },
+  "delivery_fraction_of_chain_input_increase": 0.9892233418161438,
+  "glm_metering_wake_gap": {
+    "production_completed_http_200_responses": 85,
+    "usage_complete_false_responses": 85,
+    "usage_issues": [
+      "input_outside_start:cache_read_input_tokens",
+      "input_outside_start:input_tokens"
+    ],
+    "provider_only_event_change_inputs": 42,
+    "provider_response_events_in_those_inputs": 46,
+    "events_per_provider_only_input": {
+      "2": 4,
+      "1": 38
+    },
+    "limitations": "Decision inputs can be steered and coalesced; 42 is not a count of model responses or a token saving estimate. Missing cache-write/reasoning fields remain unknown."
+  },
+  "dsh_native_turns": {
+    "start": 8,
+    "end": 8,
+    "yield_tools": 47,
+    "note": "yield is not equivalent to turn completion; continuous incoming changes can keep an existing turn active."
+  },
+  "evaluation_schema_rework": {
+    "dsh_start_evaluation_calls": 6,
+    "dsh_schema_validation_failures": 4,
+    "actual_evaluations_started": 2,
+    "missing_required_property": "mode",
+    "retained_error_type": "ValidationError",
+    "model_visible_error": {
+      "code": "delivery_tool_failed",
+      "message": "check tool schema and bound inputs"
+    },
+    "shared_contract": "mode was required in the schema; generic error handling hid the missing property. Codex supplied mode and started two evaluations.",
+    "retained_runtime_inspect_required": [
+      "run_id",
+      "operation_id",
+      "mode",
+      "freeze_id"
+    ]
+  },
+  "method": {
+    "packet_bytes": "Canonical compact UTF-8 JSON of actual delivery-decision-input/v2 payloads; not protocol wire size or provider token count. DSH initial bootstrap paging accounts for three extra packets over unique input IDs. Codex logical decisions include one unconsumed closing tail.",
+    "tokens": "Original numerical response records at the prior comparison cutoff. Input includes cached input; no provider bill or causal token saving estimate.",
+    "unimplemented_in_both": [
+      "R4.3-030 F3 phase threads",
+      "R4.3-030 F4 mechanical continuations"
+    ],
+    "not_attributed": "Runtime, protocol, host intervention and error paths differ; issue recovery and schema rework are additional costs, not all overhead or DSH engine cost."
+  }
+}
