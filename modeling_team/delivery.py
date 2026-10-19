@@ -841,7 +841,9 @@ _LOCAL_SPECS = [
         "Prefer the immutable session-events.jsonl evidence range over a stale observation.json."),
      "inputSchema": {"type": "object", "properties": {
          "path": {"type": "string"},
-         "source_ref": {"type": "object", "description": "Copy the source identity; requires selection."},
+         "source_ref": {"type": "object",
+             "required": ["path", "scope", "byte_length", "content_digest"],
+             "description": "Copy the complete source identity including byte_length; requires selection."},
          "selection": {"type": "object", "properties": {
              "kind": {"type": "string", "enum": ["bytes", "json"]},
              "offset": {"type": "integer", "minimum": 0},

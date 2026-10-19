@@ -1,0 +1,318 @@
+{
+  "collected_at": "2026-10-19T03:10:16.042699+00:00",
+  "run_id": "minimal-chain-20261019-dsh-wake-guard-r1",
+  "baseline_run_id": "minimal-chain-20261019-dsh-glm-low-r1",
+  "guard_code_at_start": "9287c81",
+  "parent_code_with_timing": "162ab03",
+  "runtime": "dsh",
+  "model": "glm-5.3-flash",
+  "effort": "low",
+  "modeling_rounds": 1,
+  "fresh_starts": 1,
+  "substantive_repairs": 0,
+  "semantic_start": "2026-10-19T02:50:54.212214+00:00",
+  "acceptance_complete": "2026-10-19T03:03:45.575682+00:00",
+  "wake_gate_before_glm_change": {
+    "verified_at": "2026-10-19T03:05:28.823760+00:00",
+    "before_glm_capture_change": true,
+    "unchanged_capture_hashes": {
+      "modeling_team/dsh_usage.py": "013c20c7b0fba39aa3ab8f1d7f7b780a1c5abb32b859a2d4d5f03d06778dbf7b",
+      "modeling_team/messages_provider_proxy.py": "0ce95ee84c6e00c9c0abcaf0859f96bed893c9fdd1abaf8e8d687c549750d1a5"
+    },
+    "acceptance_completed_at": "2026-10-19T03:03:45.575682+00:00",
+    "production_warning_receipts": 89,
+    "delivery_meter_diagnostics": 3,
+    "public_pass": 1,
+    "hidden_pass": 3,
+    "new_rounds": 1,
+    "fresh_starts": 1
+  },
+  "raw_meter_warning_receipts": 89,
+  "meter_events_in_delivery_inputs": 3,
+  "meter_first_events_by_role": {
+    "coordinator": 1,
+    "competency-question": 1,
+    "modeling": 1
+  },
+  "repeated_meter_events_folded": 86,
+  "meter_only_decision_inputs_including_firsts": 0,
+  "logical_decision_inputs": 67,
+  "yield_count": 13,
+  "tool_calls": {
+    "start_run": 1,
+    "get_run_status": 1,
+    "submit_instruction": 3,
+    "read_delivery_artifact": 15,
+    "get_request_result": 7,
+    "get_pending_actions": 5,
+    "request_host_action": 3,
+    "yield_delivery": 13,
+    "freeze_cq": 1,
+    "complete_cq_handoff": 2,
+    "start_evaluation": 2,
+    "complete_cq_acceptance": 1,
+    "emit_user_message": 1,
+    "finish_delivery": 1
+  },
+  "tool_failures": {
+    "artifact_changed": 12
+  },
+  "comparison": {
+    "delivery_responses": {
+      "previous_dsh_glm": 78,
+      "wake_guard_run": 68,
+      "change_percent": -12.82051282051282
+    },
+    "delivery_input": {
+      "previous_dsh_glm": 21418062,
+      "wake_guard_run": 12014191,
+      "change_percent": -43.90626472180349
+    },
+    "delivery_uncached_input": {
+      "previous_dsh_glm": 473870,
+      "wake_guard_run": 631599,
+      "change_percent": 33.28528921434148
+    },
+    "delivery_yields": {
+      "previous_dsh_glm": 47,
+      "wake_guard_run": 13,
+      "change_percent": -72.34042553191489
+    },
+    "chain_input": {
+      "previous_dsh_glm": 24586921,
+      "wake_guard_run": 15383687,
+      "change_percent": -37.43142136422857
+    },
+    "chain_uncached_input": {
+      "previous_dsh_glm": 787881,
+      "wake_guard_run": 1050823,
+      "change_percent": 33.37331399031071
+    },
+    "chain_output": {
+      "previous_dsh_glm": 62959,
+      "wake_guard_run": 53009,
+      "change_percent": -15.803935894788667
+    },
+    "chain_responses": {
+      "previous_dsh_glm": 190,
+      "wake_guard_run": 190,
+      "change_percent": 0.0
+    },
+    "semantic_to_acceptance_minutes": {
+      "previous_dsh_glm": 14.18687055,
+      "wake_guard_run": 12.8560578,
+      "change_percent": -9.380594157884946
+    }
+  },
+  "roles": {
+    "delivery": {
+      "responses": 68,
+      "uncached_input_tokens": 631599,
+      "cached_input_tokens": 11382592,
+      "output_tokens": 16487,
+      "native_total_tokens": 12030678,
+      "cache_write_missing_responses": 68,
+      "native_reported_input_tokens": 12014191
+    },
+    "coordinator": {
+      "responses": 31,
+      "uncached_input_tokens": 52915,
+      "cached_input_tokens": 606784,
+      "output_tokens": 10310,
+      "native_total_tokens": 670009,
+      "cache_write_missing_responses": 31,
+      "native_reported_input_tokens": 659699
+    },
+    "competency-question": {
+      "responses": 19,
+      "uncached_input_tokens": 62910,
+      "cached_input_tokens": 173312,
+      "output_tokens": 5012,
+      "native_total_tokens": 241234,
+      "cache_write_missing_responses": 19,
+      "native_reported_input_tokens": 236222
+    },
+    "modeling": {
+      "responses": 39,
+      "uncached_input_tokens": 70297,
+      "cached_input_tokens": 1614336,
+      "output_tokens": 12088,
+      "native_total_tokens": 1696721,
+      "cache_write_missing_responses": 39,
+      "native_reported_input_tokens": 1684633
+    },
+    "acceptance": {
+      "responses": 14,
+      "uncached_input_tokens": 67276,
+      "cached_input_tokens": 418624,
+      "output_tokens": 4096,
+      "native_total_tokens": 489996,
+      "cache_write_missing_responses": 14,
+      "native_reported_input_tokens": 485900
+    },
+    "platform-examiner": {
+      "responses": 19,
+      "uncached_input_tokens": 165826,
+      "cached_input_tokens": 137216,
+      "output_tokens": 5016,
+      "native_total_tokens": 308058,
+      "cache_write_missing_responses": 19,
+      "native_reported_input_tokens": 303042
+    }
+  },
+  "native_sources": [
+    {
+      "path": "workspaces/delivery-sessions/minimal-chain-20261019-dsh-wake-guard/native/dsh-wire.jsonl",
+      "bytes": 2553656,
+      "sha256": "eccb76a12a194e397bebe3397603432eaf300d44e4dcbbaae9bf2b6e8d36f9b7"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261019-dsh-wake-guard-r1/evidence/dsh-wire.jsonl",
+      "bytes": 1530933,
+      "sha256": "6b612a52829790f7ae93d99c97aa8a5ba67c7dd177fe72e70e260a2eb4c709d3"
+    },
+    {
+      "path": ".delivery-ops/dsh-wake-1019-acceptance-hidden.owner/acceptance-runtime/99714d8e3fea44b1b7248a5975e140cc/evidence/dsh-wire.jsonl",
+      "bytes": 401829,
+      "sha256": "07622dd8a710bf6617935e0def8564981c4eb78c89812d2c11bc83a940d2c9e0"
+    },
+    {
+      "path": ".delivery-ops/dsh-wake-1019-acceptance-hidden.owner/acceptance-runtime/024a0774a26046938c97c2be11bea848/evidence/dsh-wire.jsonl",
+      "bytes": 156273,
+      "sha256": "219aaa50d27d12697ebc7492481f587b4c37c090da18bea08eb7d73b65d0ced7"
+    },
+    {
+      "path": ".delivery-ops/dsh-wake-1019-acceptance-hidden.owner/acceptance-runtime/e9b20a6aedee4a71b6d28b6d0de9e00b/evidence/dsh-wire.jsonl",
+      "bytes": 135705,
+      "sha256": "16452075319703d85e1264e55f35224635e0a2a90220f39eca482c3c80ae782c"
+    },
+    {
+      "path": ".delivery-ops/dsh-wake-1019-acceptance-hidden.owner/acceptance-runtime/e513d6b575c344988c481d86c36dcc61/evidence/dsh-wire.jsonl",
+      "bytes": 115006,
+      "sha256": "a7943fabdbbc50aeb3117def910a259dd24b0afa367f937ce6f2ab85880d137b"
+    },
+    {
+      "path": ".delivery-ops/dsh-wake-1019-acceptance-public.owner/acceptance-runtime/98ddb2d97c364807ae0f87afc0654047/evidence/dsh-wire.jsonl",
+      "bytes": 236385,
+      "sha256": "4981d299f2149019fe6403fc7a6b12ffa0f968e93cfbef912a64568987737591"
+    },
+    {
+      "path": ".delivery-ops/dsh-wake-1019-acceptance-public.owner/acceptance-runtime/7919960e034443158d2747352acd8630/evidence/dsh-wire.jsonl",
+      "bytes": 147172,
+      "sha256": "ad311ae5f0e7f62927aa7f52422bdd19801d08af7d414052aa8c49be312006a8"
+    }
+  ],
+  "native_response_count": 190,
+  "provider_response_count": 190,
+  "native_event_conflicts": [],
+  "independent_acceptance": [
+    {
+      "full_pass": true,
+      "question_count": 1,
+      "runtime": "dsh",
+      "freeze_digest": "sha256:fb66972940728d1bdb58569e6600e3f1ff9bab4a052126b70c22ef93c94fe0df",
+      "model_binding_digest": "sha256:62051c3812ea2519fb26986f2059a79a0f2b54745ec174c48dc93bfbf53a52be",
+      "unexecuted_question_ids": [],
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-concepts": "stable"
+        },
+        "replayed_responses": 2,
+        "unavailable": []
+      },
+      "ref": "workspaces/modeling-runs/minimal-chain-20261019-dsh-wake-guard-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "70c811b221fe83397609130664bdbc60d72bac31b646984e2db17a7c65e6a10d",
+      "blind_status": "non-blind-regression"
+    },
+    {
+      "full_pass": true,
+      "question_count": 3,
+      "runtime": "dsh",
+      "freeze_digest": "sha256:fb66972940728d1bdb58569e6600e3f1ff9bab4a052126b70c22ef93c94fe0df",
+      "model_binding_digest": "sha256:62051c3812ea2519fb26986f2059a79a0f2b54745ec174c48dc93bfbf53a52be",
+      "unexecuted_question_ids": [],
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-direction": "stable",
+          "mic-ownership": "stable",
+          "mic-unknowns": "stable"
+        },
+        "replayed_responses": 5,
+        "unavailable": []
+      },
+      "ref": "workspaces/modeling-runs/minimal-chain-20261019-dsh-wake-guard-r1/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "d2f2d42d69b41dde0a3deb26bd71f8629397ffa075a1453aac8b802bd6820b6b",
+      "blind_status": "non-blind-regression"
+    }
+  ],
+  "host_cost_to_cutoff": {
+    "collected_at": "2026-10-19T03:07:49.000207+00:00",
+    "authorization_boundary": "2026-10-19T02:42:03.426Z",
+    "semantic_start_boundary": "2026-10-19T02:50:54.212214+00:00",
+    "acceptance_complete_boundary": "2026-10-19T03:03:45.575682+00:00",
+    "source": {
+      "path": "/home/yangxiang/.codex/sessions/2026/10/19/rollout-2026-10-19T08-52-40-01a151a5-769c-7720-aff8-65ee11b09532.jsonl",
+      "bytes": 7779103,
+      "sha256": "c2bba956d5987c62f8481ca571e1d4ceb66d274c95fe3269c8d4c833ed47c463"
+    },
+    "host_models": [
+      "gpt-6.1-sol"
+    ],
+    "guard_preparation": {
+      "responses": 18,
+      "input_tokens": 4161120,
+      "cached_input_tokens": 4098176,
+      "output_tokens": 23625,
+      "reasoning_output_tokens": 13172,
+      "uncached_input_tokens": 62944
+    },
+    "live_supervision": {
+      "responses": 35,
+      "input_tokens": 9492736,
+      "cached_input_tokens": 9439488,
+      "output_tokens": 25904,
+      "reasoning_output_tokens": 17184,
+      "uncached_input_tokens": 53248
+    },
+    "post_validation_repairs_and_reporting": {
+      "responses": 8,
+      "input_tokens": 2449425,
+      "cached_input_tokens": 2430976,
+      "output_tokens": 10222,
+      "reasoning_output_tokens": 6132,
+      "uncached_input_tokens": 18449
+    },
+    "total_to_cutoff": {
+      "responses": 61,
+      "input_tokens": 16103281,
+      "cached_input_tokens": 15968640,
+      "output_tokens": 59751,
+      "reasoning_output_tokens": 36488,
+      "uncached_input_tokens": 134641
+    },
+    "limitations": [
+      "Whole numerical responses attributed by receipt timestamp, not effective work time.",
+      "Current response and future reporting tail excluded. No provider bill or complete cost conclusion.",
+      "The Host model and implementation scope differ from prior comparisons."
+    ]
+  },
+  "engineering_checks": {
+    "guard_tests": 243,
+    "post_validation_tests": 290,
+    "external_model_calls_in_engineering": false
+  },
+  "technical_interventions": [
+    "Two normal private CQ reviews",
+    "One Host source_ref.byte_length guidance; no business facts or modeling revision",
+    "Read-only Host diagnosis closed a handoff-repair request already resolved by the original Team; no platform repair before acceptance"
+  ],
+  "remaining_limits": [
+    "Delivery and chain uncached input increased; provider billing and total financial savings unverified.",
+    "Host implementation/supervision/post-repair inputs disclosed separately; tail after cutoff unknown.",
+    "Different quota/objective and new timing implementation; one sample is not a controlled single-cause cost comparison.",
+    "Opaque changed payloads and effectful bindings remain visible; no blanket suppression of unknown errors.",
+    "F3/F4 remain unimplemented; no new semantic start after the later GLM capture removal and nested-parameter fix."
+  ]
+}

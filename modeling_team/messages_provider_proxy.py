@@ -103,7 +103,7 @@ class _MessagesHandler(BaseHTTPRequestHandler):
         response = None
         started = False
         status = None
-        observer = MessagesUsageObserver()
+        observer = None if session.provider_id == "glm-messages" else MessagesUsageObserver()
         native_session = safe_id(self.headers.get("x-deepseek-harness-session-id"))
         with session._lock:
             binding = dict(session._usage_bindings.get(native_session, {}))
@@ -183,12 +183,13 @@ class _MessagesHandler(BaseHTTPRequestHandler):
                     self.wfile.write(chunk)
                     self.wfile.flush()
                     client_write = False
-                    # Observation never changes forwarded bytes or triggers another request.
-                    try:
-                        observer.feed(chunk)
-                    except Exception:
-                        observer.disabled = True
-                        observer.issues.add("invalid_sse_event")
+                    if observer is not None:
+                        # Observation never changes forwarded bytes or triggers another request.
+                        try:
+                            observer.feed(chunk)
+                        except Exception:
+                            observer.disabled = True
+                            observer.issues.add("invalid_sse_event")
                 outcome = "completed"
         except (BrokenPipeError, ConnectionResetError):
             outcome = "client_disconnected" if client_write else outcome
@@ -205,14 +206,15 @@ class _MessagesHandler(BaseHTTPRequestHandler):
             connection.close()
             session._count("requests")
             end = utc_now()
-            session.record_attempt({
-                **receipt, **observer.finish(), "event": "response_usage",
-                "headers_at": headers_at, "provider_request_id": provider_request_id,
-                "end": end, "status": outcome, "http_status": status,
-                "time_basis": "usage_completion", "clock_ref": "host-utc",
-                **({"provider_error": diagnostic, "request_shape": request_shape}
-                   if diagnostic is not None else {}),
-            })
+            if observer is not None:
+                session.record_attempt({
+                    **receipt, **observer.finish(), "event": "response_usage",
+                    "headers_at": headers_at, "provider_request_id": provider_request_id,
+                    "end": end, "status": outcome, "http_status": status,
+                    "time_basis": "usage_completion", "clock_ref": "host-utc",
+                    **({"provider_error": diagnostic, "request_shape": request_shape}
+                       if diagnostic is not None else {}),
+                })
             session.record_attempt(
                 {
                     **receipt,
@@ -220,6 +222,8 @@ class _MessagesHandler(BaseHTTPRequestHandler):
                     "http_status": status,
                     "stream_started": started,
                     "headers_at": headers_at, "end": end, "status": outcome,
+                    **({"provider_error": diagnostic, "request_shape": request_shape}
+                       if diagnostic is not None and observer is None else {}),
                 }
             )
 

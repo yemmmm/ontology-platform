@@ -20,3 +20,68 @@ GitNexus未收录_decision_events，采用直接调用点与回归，不声称�
 真实任务：minimal-chain-20261019-dsh-wake-guard-r1，DSH、glm-5.3-flash／low，
 新项目／scope、同一最小安装链与原公开1／隐藏3题；仅授权初建一轮，不自行增加
 实质修模或fresh start。原旧run与证据保留，只读待命。
+
+## 真实验证与收口
+
+采用9287c81，用户授权于02:42:03Z，02:50:54.212214Z发生semantic-start，
+8.85分钟内真实启动。新run初建1轮／fresh start 1次，无实质修模。
+03:03:45.575682Z接受完整验收，03:04:18.607168Z接受standby；原Team与独立
+验收owner保留只读。派生session仍为read_only_wait、pending仍列历史验收收口，
+以实际accepted回执区分完成事实，不改历史事件伪造干净状态。
+
+公开1/1与隐藏3/3独立非盲回归PASS，同一freeze及model binding，未执行题、
+模型漂移和证据重验漂移均为空；两批原子application、治理读回及资源封口成立。
+完整逐角色／来源／截止点见[数值证据](../evidence/2026-10-19-delivery-common-wake-guard.json)。
+
+**防护效果在GLM采集未改时成立：89条真实成功响应的同类计量告警，只送达3条
+首次诊断，三个生产角色各1条；没有只含计量告警变化的决策输入。** 原错误仍在
+原件中，验证门保留采集器与代理源码hash，之后才开始删除额外采集。陌生插件、
+状态改变／恢复、旧会话恢复及关键绑定的工程反例见243项相关回归。
+这验证本次共用防护的有界效果，不意味着可静默丢弃所有未知或有内容变化的事件。
+
+| 指标 | 前次DSH GLM | 共用防护本轮 | 观察变化 |
+| --- | ---: | ---: | ---: |
+| Delivery原生响应 | 78 | 68 | -12.82% |
+| Delivery输入token | 21,418,062 | 12,014,191 | -43.91% |
+| Delivery未缓存输入 | 473,870 | 631,599 | +33.29% |
+| yield_delivery调用 | 47 | 13 | -72.34% |
+| 全链输入token | 24,586,921 | 15,383,687 | -37.43% |
+| 全链未缓存输入 | 787,881 | 1,050,823 | +33.37% |
+| 全链原生响应 | 190 | 190 | 无减少 |
+| semantic-start至完整验收 | 14.19分钟 | 12.86分钟 | -9.38% |
+
+190个数值响应对应190个provider响应，无重复冲突；含Delivery、生产及6个独立
+Consumer/Judge session，不漏掉.delivery-ops owner下的验收原件。缓存是输入子集，
+缺cache-write／reasoning及账单仍unknown。额度／目标提示和计时实现与前次不同，
+单样本不作纯因果结论；全链响应未减少、未缓存反增，**不宣称费用或完整净成本下降**。
+Host另计：截止点前准备输入4,161,120、实时监督9,492,736、后续修复／记录2,449,425，
+合计16,103,281，未缓存134,641；当前及后续尾部未知，不隐藏到运行收益中。
+
+### 真实返工与宿主介入
+
+- CQ曾错误使用材料身份；Modeling五次收到unconsumed-input准确反馈，Coordinator
+  两次等待Modeling终态，均由原Team后续消费／报告落定。handoff-0001明确被拒，
+  handoff-0002于02:59:39.960570Z接受；没有平台循环等待或需删除终态守卫的证据。
+- Delivery15次原件补读中12次artifact_changed，实际缺source_ref.byte_length；有
+  摘要未变仍拒绝的反例。Host给一次技术参数指导；另在03:03:19Z将平台修复请求
+  以“原链路已恢复、无需代码修复”的只读诊断闭合。handoff接受早于该诊断，不能
+  采信Delivery结论中“经宿主诊断后报告才落定”的因果描述。原件及12次返工成本保留。
+- 两次正常CQ私审与以上技术补位分开，不称完全自主交付。没有向生产注入隐藏
+  题目／答案或旧模型，没有新的实质修模、apply重放或额度追加。
+
+### 验证后处理
+
+验证门完成且采集源码hash仍与启动一致后，按前面删除要求移除glm-messages的
+额外SSE用量观察和response_usage输出；保留attempt起止、请求身份、故障分类、
+原字节流、DSH原生日志及DeepSeek原采集。新GLM运行的provider数字主账不再采集，
+原生统计可用但完整对账仍PARTIAL，不填零。网页插件配置未修改。
+
+同时为read_delivery_artifact.source_ref声明path／scope／byte_length／content_digest
+四项必填，沿已修复的共用反馈返回delivery_arguments_missing、
+missing_parameters=["byte_length"]、object=arguments.source_ref；不再把缺字段误报
+为原件变化。真实内容改变的身份校验继续保留。
+
+三项新增反例先红，最终相关**290 passed，104.65秒**，涵盖GLM流／错误元数据、
+DeepSeek原采集、Delivery／DSH工具桥与独立验收runtime。工程中没有外部模型调用。
+这些后续变更未重载旧run，未追加真实建模；不把本次旧run当成删除采集或新schema
+的实测。未改backend/frontend，无产品服务重启。030整条与032其他范围仍部分验证。

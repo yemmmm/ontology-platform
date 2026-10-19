@@ -95,6 +95,22 @@ def test_artifact_reader_returns_exact_approved_business_source(tmp_path):
     assert result['ok'] and result['data']['text'] == '经确认：退货不计入销售额。'
 
 
+def test_source_reference_missing_length_is_not_reported_as_artifact_change(tmp_path):
+    host = session(tmp_path)
+    path = str(tmp_path / "business.md")
+    reference = host.call_tool("read_delivery_artifact", {"path": path})["data"]["source_ref"]
+    arguments = {"path": path, "selection": {"kind": "bytes", "offset": 0},
+                 "source_ref": {key: value for key, value in reference.items() if key != "byte_length"}}
+    result = host.call_tool("read_delivery_artifact", arguments)
+    assert not result["ok"]
+    assert result["error"]["code"] == "delivery_arguments_missing"
+    assert result["error"]["missing_parameters"] == ["byte_length"]
+    assert result["error"]["object"] == "arguments.source_ref"
+    assert result["error"]["retryable"] is True
+    arguments["source_ref"] = reference
+    assert host.call_tool("read_delivery_artifact", arguments)["ok"]
+
+
 @pytest.mark.parametrize("kind", ["evaluation", "repair", "verification"])
 def test_finish_conclusion_cannot_hide_unfinished_bound_owner(tmp_path, kind):
     host = session(tmp_path)

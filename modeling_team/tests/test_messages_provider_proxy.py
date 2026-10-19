@@ -83,6 +83,51 @@ def test_glm_messages_fixed_tls_upstream_exact_body_and_provider_identity():
     assert session.secret_snapshot() == b""
 
 
+@pytest.mark.parametrize("status", [200, 400])
+def test_glm_skips_usage_capture_and_preserves_transport_diagnostics(status):
+    from modeling_team.tests.test_dsh_usage import stream
+
+    rows, calls = [], []
+    raw = stream() if status == 200 else json.dumps({"error": {
+        "type": "invalid_request_error", "message": "maximum context length exceeded PRIVATE"}}).encode()
+
+    class Connection:
+        sock = None
+
+        def __init__(self, *a, **kw):
+            pass
+
+        def request(self, *a, **kw):
+            calls.append(1)
+
+        def getresponse(self):
+            return Response(status=status, chunks=[raw])
+
+        def close(self):
+            pass
+
+    session = MessagesProviderSession(b"glm-test-secret", provider_id="glm-messages",
+                                      on_attempt=rows.append)
+    session.start()
+    try:
+        with patch("modeling_team.messages_provider_proxy.http.client.HTTPSConnection", Connection), \
+                patch("modeling_team.messages_provider_proxy.MessagesUsageObserver") as observer:
+            code, _, body = request(session, body=b'{"model":"glm-5.3-flash","stream":true}')
+            assert code == status and len(calls) == 1
+            if status == 200:
+                assert body == raw
+            else:
+                assert json.loads(body)["error"]["code"] == "context_window_exceeded"
+            observer.assert_not_called()
+    finally:
+        session.stop()
+    assert [row["event"] for row in rows] == ["attempt_start", "attempt_end"]
+    assert all("raw_usage" not in row and "usage_complete" not in row for row in rows)
+    if status == 400:
+        assert rows[-1]["provider_error"]["reason_code"] == "context_window_exceeded"
+    assert "PRIVATE" not in json.dumps(rows) and "glm-test-secret" not in json.dumps(rows)
+
+
 @pytest.mark.parametrize("status", [200, 401, 402, 429, 503])
 def test_fixed_messages_tls_headers_exact_stream_and_original_status(status):
     calls = []
