@@ -45,6 +45,37 @@ def test_host_control_and_private_path_arguments_are_not_model_selected(tmp_path
         assert 'host_session_ref' not in tool['inputSchema'].get('properties', {})
 
 
+@pytest.mark.parametrize("missing", [("mode",), ("freeze_id", "mode")])
+def test_missing_evaluation_parameters_are_named_and_correctable(tmp_path, monkeypatch, missing):
+    module = importlib.import_module("modeling_team.delivery")
+    host = session(tmp_path)
+    host.allowed_operations.add("evaluation")
+    host.run_ids.add("bound-run")
+    calls = []
+
+    def start(**kwargs):
+        calls.append(kwargs)
+        return {"status": "started", "operation_id": kwargs["operation_id"]}
+
+    monkeypatch.setattr(module.host_ops_mcp, "start_evaluation", start)
+    complete = {"run_id": "bound-run", "operation_id": "evaluation-1",
+                "mode": "cq-acceptance", "freeze_id": "freeze-1",
+                "model_handoff": "PRIVATE-HANDOFF-PATH"}
+    result = host.call_tool("start_evaluation", {
+        key: value for key, value in complete.items() if key not in missing})
+    assert result["ok"] is False
+    error = result["error"]
+    assert error["code"] == "delivery_arguments_missing"
+    assert error["missing_parameters"] == list(missing)
+    assert error["object"] == "arguments" and error["retryable"] is True
+    assert all(name in error["reason"] for name in missing)
+    assert "retry" in error["next_action"]
+    assert "PRIVATE-HANDOFF-PATH" not in json.dumps(error)
+    assert not calls and not host.operation_ids
+    assert host.call_tool("start_evaluation", complete)["ok"] is True
+    assert len(calls) == 1 and host.operation_ids == {"evaluation-1"}
+
+
 def test_business_input_retains_original_text_and_explicit_model_inheritance(tmp_path):
     host = session(tmp_path)
     text = '第一行\n第二行  原始空格'

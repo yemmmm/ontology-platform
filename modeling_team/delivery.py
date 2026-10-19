@@ -2064,6 +2064,13 @@ class DeliverySession:
                 if name == "yield_delivery":
                     raise HostOpError("delivery_yield_invalid", exc.message,
                         retryable=True, next_action="correct the yield schema using the current input_id and bound object identities") from exc
+                if exc.validator == "required":
+                    missing = sorted(field for field in exc.validator_value if field not in exc.instance)
+                    raise HostOpError("delivery_arguments_missing",
+                        f"{name}: missing required parameters: {', '.join(missing)}",
+                        obj=".".join(["arguments", *map(str, exc.absolute_path)]), retryable=True,
+                        next_action=f"provide the named parameters according to the {name} tool schema and retry",
+                        passthrough={"tool": name, "missing_parameters": missing}) from exc
                 if name != "read_delivery_artifact":
                     raise
                 raise HostOpError("artifact_selection_invalid", "invalid artifact read parameters",
