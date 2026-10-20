@@ -6385,6 +6385,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 line, _, agent.stdout_buffer = agent.stdout_buffer.partition(b"\n")
                 return line.decode("utf-8")
             remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
             readable, _, _ = select.select(
                 [agent.process.stdout], [], [], min(remaining, 0.25)
             )

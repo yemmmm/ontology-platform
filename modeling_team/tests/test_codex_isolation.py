@@ -1281,6 +1281,29 @@ class CodexIsolationTests(unittest.TestCase):
             finally:
                 os.close(write_fd)
 
+    def test_output_reader_returns_when_deadline_expires_before_select(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            agent = _Agent(
+                "coordinator",
+                _load_package(root, "coordinator"),
+                base / "home",
+                base / "work",
+                base / "skills",
+            )
+            read_fd, write_fd = os.pipe()
+            try:
+                with os.fdopen(read_fd, "rb", buffering=0) as output:
+                    agent.process = SimpleNamespace(stdin=StringIO(), stdout=output)
+                    with patch(
+                        "modeling_team.runtimes.codex.time.monotonic",
+                        side_effect=(0.0, 0.05, 0.11, 0.12),
+                    ):
+                        self.assertIsNone(CodexRuntimeAdapter._read_output_line(agent, 0.1))
+            finally:
+                os.close(write_fd)
+
     def test_startup_rpc_timeout_is_sixty_seconds_once_and_is_observable(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
