@@ -1,6 +1,6 @@
 ---
 name: modeling-dev-loop
-description: "Start, resume and periodically check role cards for authorized OntoWeave modeling with independent Delivery or an existing manual Host workflow. Covers progress checks, blocker follow-through, repair handoff and evidence boundaries; not a production modeling or testing business-answerer skill."
+description: "Start, resume, wait for private Host requests and periodically check role cards for authorized OntoWeave modeling with independent Delivery or an existing manual Host workflow. Covers progress checks, blocker follow-through, repair handoff and evidence boundaries; not a production modeling or testing business-answerer skill."
 ---
 
 # 建模开发推进
@@ -178,16 +178,26 @@ Coordinator 负责生产侧语义定位：使用 scenario-map、共享决定、�
 
 ## 保持观察和推进
 
-**默认定时查看角色卡片，感知异常后再读细节。** 用户要求“开启建模”仍包含必要的
+**有宿主待办时及时处理，无待办时每3分钟查看角色卡片。** 用户要求“开启建模”仍包含必要的
 宿主审核、阻塞处理及独立验收，但不要求Host持续监控或每30～60秒读日志。
 Delivery继续负责流程推进；其程序内部事件观察不变，不复制为外层Host的读取循环。
 
-- **周期与入口**：用户指定周期优先；未指定时默认每5分钟一次。沿现有
+- **周期与入口**：用户指定周期优先；未指定时默认每3分钟一次。沿现有
   `python -m modeling_team work-board --run-id <run-id> --json`读取当前卡片，默认不加
   `--history`、`--with-statistics`，不同时读取原生日志、工具明细或完整session状态。
   只比较`record_seq`、`reported_at`、`current_work`、`near_term_goals`、`waiting_note`、
   `latest_result_refs`及卡片自带的runtime摘要；分页按实际coverage补齐，不推断缺失角色。
-- **正常时等待**：卡片显示合理的工作或有明确依赖的等待时，记录下一检查时间即可。
+- **待办优先、定时兜底**：独立 Delivery 已建立私有 session 时，Host 在当前监督会话内用
+  `python -m modeling_team.host_wait --session-root workspaces/delivery-sessions/<session-id>`
+  承载等待，默认180秒。程序只检查该 session 的私有 journal，已有或新到的
+  `cq_review`／`platform_repair`待办、blocked／failed结果会提前返回`host_action`，
+  Host立即按请求身份处理，不等卡片周期；普通日志、心跳及已完成请求不唤醒模型，
+  也不重置180秒到期。程序约每秒检查一次，不向模型输出日志或私有正文。
+  无待办到期返回`periodic_check`，此时读取一次当前角色卡片；`journal_incomplete`
+  或入口错误则定向核查观察缺口，不能当作没有待办。已核实、仍由原处理者承接的
+  同一请求可用`--seen-request-id <request-id>`避免重复提醒；这不确认、关闭或删除请求。
+  缺少私有 session 的旧手动 run 保持每3分钟卡片检查，已有真实通知仍立即处理。
+- **正常时等待**：卡片显示合理的工作或有明确依赖的等待时，记录下一检查时间并进入上述等待。
   卡片未变化本身不是异常；不为制造进展追加催促、重读稳定材料或分析完整事件流。
   日常仅保留卡片版本／简短变化及下一检查时间，不重复重写摘要。
 - **按需介入信号**：卡片报告错误、阻塞、角色退出／控制异常、相互等待；连续两次检查
@@ -202,13 +212,15 @@ Delivery继续负责流程推进；其程序内部事件观察不变，不复制
 - **卡片覆盖缺口**：启动时核对一次现有卡片覆盖范围；当前入口未覆盖的角色／阶段写明
   limitation。卡片不可用、缺失或在交付阶段仍停留旧阶段时，作为观察缺口信号，读取一次
   最小阶段／待办摘要或请原责任方更新；不退回持续全日志轮询，不为本轮另建监控框架。
-- **异常解除**：核对原失败步骤的真实新结果后，恢复每5分钟卡片检查，不持续盯修复过程。
+- **异常解除**：核对原失败步骤的真实新结果后，恢复每3分钟卡片检查，不持续盯修复过程。
   通知accepted、修复进程存活或已发指导都不是解除证据。必要业务歧义交真实用户或获准
   隔离代答者，不由Host改写模型、指定拓扑或补造业务事实。
 
-定时检查使用当前环境真实可用的等待／调度能力，记录下一检查时间和责任方；短等待返回
-不等于检查到期，不因此追加卡片查询或推理。后台调度必须核对真实触发及接手能力，Skill
-本身不创建timer，也不保证唤醒已结束的会话。无可靠后台唤醒时保留当前任务，以可返回控制权
+定时检查使用当前环境真实可用的等待／调度能力，记录下一检查时间和责任方；工具因输出
+分片或等待上限短暂返回不等于检查到期；继续承载同一个等待进程，不重开180秒计时、
+不追加卡片查询。后台调度必须核对真实触发及接手能力，该等待入口只在Host工具调用
+仍由当前会话承载时提前返回，
+不创建常驻服务，不保证唤醒已结束的会话。无可靠后台唤醒时保留当前任务，以可返回控制权
 的等待承载检查周期；只有目标完成、明确暂停／取消或已实际承接的交接才结束，不能将
 “定时检查”写成无人接手的后台监控承诺。此处不要求持续读取事件或增加监督Agent。
 
