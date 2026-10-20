@@ -113,8 +113,8 @@
       ],
       "rules": [
         "definition_id is a stable neutral semantic key, not an IRI; it is unique within the scenario/authorized Project. Same term with different meaning_scope may have distinct keys. Do not merge unconfirmed synonyms.",
-        "owner_slice resolves to slices[].owner; maintenance ownership grants no semantic access.",
-        "candidate_refs may be empty before publication; otherwise each points to an item in a complete immutable unified candidate at its current revision.",
+        "owner_slice is an existing slices[].slice_id, not slices[].owner; maintenance ownership grants no semantic access.",
+        "candidate_refs may be empty before publication or for a supported fields-only delivery without a published unified candidate. Record real request/application/read locators in notes; never invent candidate identities. Otherwise each reference points to an item in a complete immutable unified candidate at its current revision.",
         "Same definition across candidates reuses the approved read/receipt-bound platform identity; never create a synonymous duplicate. confirmed means business confirmation only."
       ]
     },
@@ -275,7 +275,7 @@
   },
   "topology_decision": {
     "schema_version": "r3-0-002-topology-decision/v1",
-    "timing": "Recorded before the first real apply; while it is missing or structurally incomplete, the independent platform MCP gate stays closed and rejects every platform call, including reads. That is expected behavior: repair the artifact from the typed reason code sent to Coordinator and wait for the next Runner re-check; do not retry platform calls.",
+    "timing": "Record the approved topology before the first real apply. Current R4.3-024/025 direct modeling uses Runner-confirmed scope/topology and repairable write feedback; authorized existing-model discovery is not conditional on a completed topology artifact. The historical Protocol MCP gate behavior applies only to legacy workflows.",
     "fields": [
       "schema_version",
       "scenario_id",
@@ -307,6 +307,7 @@
       "every option assesses all six dimensions with non-empty values; the dimensions are concept cohesion, relation density, reuse, permission boundary, change cadence, and cross-domain query, never table count or team count",
       "selecting single_ontology does not waive the comparison: the full three-option, six-dimension record is still required",
       "selected_option must be one of the listed options and rationale must be non-empty",
+      "Runner scope mode is authoritative. In create mode with selected_option=single_ontology omit ontology_plan; a bootstrap Ontology ID does not turn create into existing mode. Explicit ontology_id entries are for authorized existing mode only.",
       "R4.0-029 existing topology: entries are mutually exclusive {ontology_id, slice_ids} for explicit authorized existing IDs or {name, slice_ids} for new creation. New entries require allow_new_ontologies and current business topology approval; do not adopt same-name resources or precreate a first Ontology. A single_ontology selection may supply exactly one existing-ID entry. Original create topology keeps its name-based at-least-two plan contract. Each slice must be covered; slices may overlap."
     ],
     "optional_fields": {

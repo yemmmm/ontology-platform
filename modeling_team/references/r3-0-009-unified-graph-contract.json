@@ -1,6 +1,6 @@
 {
   "schema_version": "r3-0-009-unified-graph-contract/v2",
-  "purpose": "Current unified semantic representation. R4.3-024/025 direct Modeling execution overrides the older Protocol plan/dry-run flow; historical artifact schemas remain readable.",
+  "purpose": "Current unified semantic representation. R4.3-024/025 direct Modeling execution overrides the older Protocol plan/dry-run flow; mounting this syntax reference never reinstates stage3-slot, unlock/plan or translation prerequisites. Supported fields-only definitions use the direct request contract without a candidate slot. Historical artifact schemas remain readable.",
   "task_parameter": {
     "name": "unified_semantic_graph",
     "requires": [

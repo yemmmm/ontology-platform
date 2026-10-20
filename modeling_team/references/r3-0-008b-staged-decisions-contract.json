@@ -1,6 +1,6 @@
 {
   "schema_version": "r3-0-008b-staged-decisions-contract/v2",
-  "purpose": "Agent-readable artifact and capability contract for the R3.0-008B staged modeling decisions (segment 1, mechanical increment): the analyzed_not_materialized analysis conclusions, the stage 3 minimal slot prerequisite, the materialization unlock, coordinator approvals, the materialization ledger, the joint acceptance checklist, and the Runner-private staged Modeling Batch submission capability. Mechanical only; business semantics are owned by the modeling Agents and confirmed by the Coordinator.",
+  "purpose": "Agent-readable R3.0-008B artifact schemas: analyzed_not_materialized conclusions, legacy stage3 slot/unlock/plans, approvals, ledger and joint checklist. Current unified R4.3-024/025 direct Modeling uses applicable business-value confirmations and actual submission/receipt reconciliation; the legacy slot/unlock/plan and Protocol prerequisites below do not govern its execution. The full_joint checklist is not a cq_semantic handoff gate. Historical schemas remain readable. Business semantics are owned by Modeling and confirmed through the authorized Coordinator workflow.",
   "artifact_locations": {
     "base": "workspaces/modeling-runs/<run-id>/",
     "analysis_conclusions": "value-semantics/conclusions/analysis-conclusions.json",

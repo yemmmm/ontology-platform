@@ -164,6 +164,16 @@ scenarios are not a prerequisite.
 
 ## Coordinate viewpoints and shared changes
 
+Declare a confirmed business semantic role in semantic_definition.semantic_role on the
+corresponding supported definition, with its business_meaning, applicability and actual unknowns.
+The common roles are object, behavior, rule, business_role, process, data_mapping and
+interface_mapping; a confirmed additional meaning may use another role. Resource kinds
+such as concept, instance or class are a separate dimension. A missing role is an undelivered
+declaration, not evidence of an unknown business meaning. Do not infer a role from RDF type.
+For fields-only changes the path is fields.semantic_definition.semantic_role. Repair a
+misplaced declaration by moving it to the supported field, retaining its approved meaning.
+Check the actual returned declaration in the existing governed stage self-check.
+
 Use the Task-selected scenario-map contract. For R4.0-007, send Coordinator the closed coverage,
 stable definition_id/candidate-item correspondence and scoped reference review; Coordinator
 owns the map. Interleave object, behavior, rule, role, process, data and interface mapping views
@@ -211,6 +221,20 @@ Use the mounted candidate-authoring and task-specific semantic contracts for exa
 Give every claim a clear business or confirmed-answer basis; expose unsupported alternatives
 as proposals or unknowns. Preserve identities, scope and dependency links across candidate items.
 Do not invent a fallback schema when a field or contract is unclear.
+
+For the current direct workflow, use a complete immutable unified candidate for registered
+item kinds. Supported fields-only definitions, including Class/relation_type, use a complete
+immutable change request with item_id=null and candidate_ref=null when no candidate items
+are selected. A concept or relationship definition alone does not supply a named business
+instance or an observed instance relationship. Ordinary semantic definition/context/value
+nodes remain valid under their supported contracts; do not require every definition to be
+a Class. Choose the representation from the approved source's semantic level,
+and check actual types and endpoint identities in governed reads. For relation_type fields,
+select returned resource_bindings by change_id/item_id and copy existing_resource_ref;
+binding order never determines the raw receipt pointer or business direction. Record these
+requests and applied/read references as the semantic delivery without inventing a candidate.
+Current direct calls and self-checks belong to Modeling; Protocol-specific handoffs below
+and in references apply only when the selected legacy workflow actually uses Protocol.
 
 Send Protocol the complete candidate or immutable artifact reference required by the current Task.
 Protocol's translation or validation conflict is feedback: correct the named problem within your

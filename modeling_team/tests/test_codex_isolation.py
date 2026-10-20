@@ -937,7 +937,7 @@ class CodexIsolationTests(unittest.TestCase):
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
-            package = _load_package(root, "minimal-chain-modeling")
+            package = _load_package(root, "modeling")
             agent = _Agent(
                 "modeling",
                 package,

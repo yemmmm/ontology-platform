@@ -1,47 +1,53 @@
 # 最小安装位置链（R4.3-026）
 
 本场景仅覆盖“安装资产→现场”：两个概念、区别、一条有方向的安装位置关系及明确未知。
-它复用历史人工素材的定义，拥有独立任务、材料版本与题集身份。材料／Task 已交付；
-**真实流程、独立语义质量和耗时／用量尚未验证**，未恢复任何暂停运行或追加建模轮次。
+2026-10-20 起作为**通用建模的业务测试基线**，使用同一套通用角色指令、Skill 和共享
+技术合同。旧精简角色运行的模型、冻结输入及裁决保留原义，不作为新组合的通过证据。
+本次配置更新不启动真实建模，也不追加任何运行轮次。
 
 唯一业务输入为 [scenario.md](modeling-input/scenario.md)，版本
 `minimal-installation-chain-source-v1`；[输入清单](modeling-input/input-manifest.json)记录 SHA256。
 历史来源为 [checkpoint-minimal](../checkpoint-minimal/modeling-input/scenario.md)，仅复用定义，
 不继承其恢复实验目标或历史结果。新业务版本另行保留，不覆写已冻结运行的输入。
 
-选用以下配对文件，不用通用 Profile 替换精简角色包：
+选择同一通用 Profile，Task 只选择当前业务范围、资料及独立题集：
 
-- [Task](../../../modeling_team/tasks/r4-3-026-minimal-installation-chain.yaml)
-- [Profile](../../../modeling_team/profiles/r4-3-026-minimal-installation-chain.yaml)
+- [最小链 Task](../../../modeling_team/tasks/r4-3-026-minimal-installation-chain.yaml)
+- [通用 Codex Profile](../../../modeling_team/profiles/unified-modeling.yaml)
+- [通用 DSH Profile](../../../modeling_team/profiles/unified-modeling-dsh.yaml)
 
-只读配置校验（不启动模型、服务或平台写入；模型 Profile 仍按当时授权另选）：
+原 `r4-3-026-minimal-installation-chain` 两个 Profile 文件名仍可使用，均已改为相同的
+通用角色配置。旧 minimal-chain-* 角色包、专用 Skill 和 compact 合同仅保留为历史
+对照，当前基线不加载。共同方法或缺陷修复只更新通用提示面，不再维护最小链特例。
+
+只读配置校验（不启动模型、服务或平台写入；模型 Profile 按当时授权另选）：
 
 ```sh
 env -u DEEPSEEK_API_KEY uv run --project backend python -m modeling_team validate \
-  --profile modeling_team/profiles/r4-3-026-minimal-installation-chain.yaml \
+  --profile modeling_team/profiles/unified-modeling.yaml \
   --task modeling_team/tasks/r4-3-026-minimal-installation-chain.yaml
 ```
 
 ## 实际输入与职责
 
-| 角色 | 强制初读材料／方法 | 职责与边界 |
+| 角色 | 方法与业务输入 | 职责与边界 |
 | --- | --- | --- |
-| Coordinator | 唯一业务说明、精简表示合同、024／025直接提交合同、专用角色说明 | 既有场景图／拓扑选择、业务派单、公开反馈与交接；不等 Protocol |
-| Modeling | 同上，加专用 minimal-chain-modeling Skill | 当前统一图、显式变更提交、实际治理读取、自查与资源关闭 |
-| CQ | 唯一业务说明、既有 CQ 合同、独立私有草题、专用角色说明 | 正常审阅、版本、公开／隐藏冻结；没有生产 Team Transport 通信边 |
+| Coordinator | 通用 coordinator 指令、场景图／拓扑和当前共享合同、唯一业务说明 | 范围／拓扑决定、业务派单、公开反馈与交接；当前路径不等 Protocol |
+| Modeling | 通用 modeling 指令、ontology-modeling Skill、共享表示／直接提交合同、唯一业务说明 | 忠实表达语义层级及角色、完整候选或合法字段型定义提交、治理读取、自查及关闭资源 |
+| CQ | 通用 competency-question 指令和出题 Skill、既有 CQ 合同、唯一业务说明、独立私有草题 | 正常审阅、版本及公开／隐藏冻结；私有内容不进入生产角色 |
 
-精简表示合同只列当前路径所需的既有场景图、拓扑和候选字段，不挂载通用角色手册、全量
-Schema、样例行、映射手册、Batch 底层命令手册或旧翻译审批／dry-run协议。v2 Task 的
-`protocol_tools` 依现有 loader 保留一个只读工具名；Profile 无 Protocol，该列表不形成新角色
-或运行前置门。运行时仍冻结实际 role_sources、角色包、Skill 与 Task/Profile 摘要，
-`source-manifest.json` 和 baseline 是实际加载版本证据，不能仅凭本表声称已执行。
+与其他业务任务使用同一通用角色时，角色指令、Skill 及其参考文件来自同一路径和字节；
+Task 身份、业务目标、源路径和运行授权范围按实际任务变化。共享技术合同使用通用源，
+三类任务的流程参数也一致，包括可用的检查点能力；不自动开展检查点实验。
+不把完整工业服务业务资料引入最小链。运行时仍冻结实际 role_sources、角色包、Skill
+与 Task/Profile 摘要；source-manifest 和 baseline 是加载版本证据，配置表不代替实际执行。
+工程验证及全量回归限制见[对齐记录](../../delivery/records/2026-10-20-unified-minimal-baseline.md)。
 
-[四道私有草题](cq-private/question-seeds.json)仅挂载给 CQ，分别覆盖概念区别、关系方向／
-物理位置含义、所有权误读和未给定事实的处理。它们是未审阅种子，不是冻结答案或 PASS
-证据；CQ 使用实际批准切片身份，经原私有通道审阅并新建 freeze。公开题仅经 Runner
-public projection 进入生产；隐藏题不进入 Coordinator／Modeling，独立 Consumer 不接收
-草题／参考答案。题数为建议，不扩大业务范围、不增加跨切片题来凑覆盖。本场景的隐藏
-覆盖仅涉及这份极少材料，不代表复杂业务上的泛化能力。
+[四道私有草题](cq-private/question-seeds.json)只交给 CQ，分别覆盖概念区别、关系方向／
+物理位置含义、所有权误读和未给定事实处理。通用 CQ 方法将其作为待审阅输入，不当作
+业务真值、冻结答案或 PASS 证据。公开题仅经 Runner public projection 进入生产；隐藏题
+不进入 Coordinator／Modeling，独立 Consumer 不接收草题／参考答案。题数按业务范围和
+正式审阅决定，不凑通用建议数量，也不增加虚构跨切片义务。
 
 ## 获准运行时的最小闭环
 

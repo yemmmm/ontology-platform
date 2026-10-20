@@ -12,7 +12,6 @@ Team 与 Host 的引用式交接见 [材料工具合同](../references/handoff-m
 | --- | --- | --- |
 | 独立 Delivery（Host 私有会话） | [delivery](delivery/SKILL.md) | [delivery](../agent-packages/delivery/package.yaml) |
 | Modeling | [ontology-modeling](ontology-modeling/SKILL.md) | [modeling](../agent-packages/modeling/package.yaml) |
-| Modeling（R4.3-026 最小链） | [minimal-chain-modeling](minimal-chain-modeling/SKILL.md) | [minimal-chain-modeling](../agent-packages/minimal-chain-modeling/package.yaml) |
 | Coordinator | 仅角色提示与声明的参考合同 | [coordinator](../agent-packages/coordinator/package.yaml) |
 | Protocol | 仅角色提示与声明的参考合同 | [protocol](../agent-packages/protocol/package.yaml) |
 | Competency Question | [competency-question-authoring](competency-question-authoring/SKILL.md) | [competency-question](../agent-packages/competency-question/package.yaml) |
@@ -28,9 +27,12 @@ Team 与 Host 的引用式交接见 [材料工具合同](../references/handoff-m
 合法配置，不为满足数量要求创建空壳技能。当前 v3 建模 roster 是 Coordinator、Modeling、Protocol
 和 CQ；独立批量验收另行启动 Platform Examiner 与 Acceptance Judge。选择哪些成员、谁负责
 平台调用、采用旧单题还是 v3 批量验收，以本次 Task/Profile 为准。
-R4.3-026 的[专用 Profile](../profiles/r4-3-026-minimal-installation-chain.yaml)仅含
-Coordinator、Modeling、CQ，使用各自精简角色包；其 CQ 方法已收敛到专用角色说明，
-不加载通用出题 Skill。它不替换原场景的角色包与技能。
+当前直接建模可选通用 [Codex Profile](../profiles/unified-modeling.yaml) 或
+[DSH Profile](../profiles/unified-modeling-dsh.yaml)，仅含 Coordinator、Modeling、CQ，
+加载上表相同的通用角色指令和 Skill。R4.3-026 最小链是这套方法的业务测试输入；
+其既有 Profile 文件名也已切到相同角色。场景只选择业务范围、材料和独立题集，
+不再提供另一套建模或出题方法。旧 minimal-chain-* 角色包、Skill 和 compact 合同
+仅保留为历史对照，当前基线不加载；修复共同问题时只维护通用提示面。
 
 普通角色通过 `package.yaml` 的 `required_skills` 引用本目录；隔离验收子会话由
 `CodexRuntimeAdapter._child_package_assets` 选取对应技能。Runtime 仍以原技能名挂载到成员自己的

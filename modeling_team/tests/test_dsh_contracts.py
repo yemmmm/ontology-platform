@@ -38,13 +38,16 @@ def test_selected_package_requires_its_own_valid_runtime_block(tmp_path):
     import yaml
 
     base = tmp_path / "modeling_team"
-    for directory in ("agent-packages", "profiles", "skills/minimal-chain-modeling"):
+    for directory in ("agent-packages", "profiles", "skills", "references"):
         (base / directory).mkdir(parents=True, exist_ok=True)
-    for source in (ROOT / "modeling_team/agent-packages").glob("minimal-chain-*"):
+    for name in ("coordinator", "modeling", "competency-question"):
+        source = ROOT / "modeling_team/agent-packages" / name
         shutil.copytree(source, base / "agent-packages" / source.name)
+    for name in ("ontology-modeling", "competency-question-authoring"):
+        shutil.copytree(ROOT / "modeling_team/skills" / name, base / "skills" / name)
     shutil.copyfile(
-        ROOT / "modeling_team/skills/minimal-chain-modeling/SKILL.md",
-        base / "skills/minimal-chain-modeling/SKILL.md",
+        ROOT / "modeling_team/references/r3-0-011-competency-question-contract.json",
+        base / "references/r3-0-011-competency-question-contract.json",
     )
     profile = base / "profiles/test.yaml"
     shutil.copyfile(
@@ -54,7 +57,7 @@ def test_selected_package_requires_its_own_valid_runtime_block(tmp_path):
         load_profile(profile, root=tmp_path, multi_slice=True, direct_modeling=True).runtime
         == "dsh"
     )
-    package = base / "agent-packages/minimal-chain-modeling/package.yaml"
+    package = base / "agent-packages/modeling/package.yaml"
     value = yaml.safe_load(package.read_text())
     del value["runtime"]["dsh"]
     package.write_text(yaml.safe_dump(value))

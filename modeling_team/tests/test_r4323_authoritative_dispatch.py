@@ -59,7 +59,6 @@ def test_actual_start_delivers_identity_objective_skills_and_private_sources(obj
                     assert not staged.exists()
             assert "tester-only" not in text
             assert "task.snapshot.yaml" not in text
-            assert not any(name in text for name in MAPPINGS)
         modeling_text = calls["modeling"][0]
         assert "r4-0-012-modeling-contract.json" in modeling_text
         assert "platform-neutral-candidate-authoring.json" in modeling_text
@@ -86,10 +85,10 @@ def test_task_identity_is_in_variable_tail_and_continuation_is_preserved():
     assert '"next_step": "保留当前版本"' in continued
 
 
-def test_only_bounded_chain_drops_mapping_sources_and_retains_necessary_contracts():
+def test_bounded_chain_shares_technical_contracts_without_expanding_business_scope():
     config = load_multi_slice_team_configuration(PROFILE, TASK, root=ROOT)
     names = {s.path.name for s in config.task.role_sources}
-    assert not names & MAPPINGS
+    assert MAPPINGS <= names
     assert "This Task selects unified_semantic_graph=true" in config.task.objective
     assert "r3-0-009-unified-graph/v2" in config.task.objective
     assert config.task.parameters["unified_semantic_graph"] is True

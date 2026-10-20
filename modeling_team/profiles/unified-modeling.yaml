@@ -1,0 +1,16 @@
+schema_version: 1
+profile_id: unified-modeling
+runtime: codex
+agents:
+  - agent_id: coordinator
+    package: coordinator
+  - agent_id: modeling
+    package: modeling
+  - agent_id: competency-question
+    package: competency-question
+communication:
+  - from: coordinator
+    to: [modeling]
+  - from: modeling
+    to: [coordinator]
+parameters: {}
