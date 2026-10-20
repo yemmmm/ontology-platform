@@ -88,3 +88,37 @@ Host沿绑定PID和/proc启动身份，仅停止s2的14个所属进程（无live
 `minimal-chain-20261020-codex-plus6-152240-s3` / `...-s3-r1`，使用tty=true和同一
 Task/Profile、全角色Codex glm-5.3-flash low、同一总额9元预算。实际semantic-start后
 本授权已用3次、剩0次；不再启动。s3只验证本次修复后原流程，结果待补。
+
+
+## 最终结果与边界
+
+修复提交`7ae8dea`。最后一轮已取得panorama及slice两个正式Host审核回执，实际公开1题、
+隐藏3题均获批准；关系问题沿seed原ID`mic-direction`，没有跨阶段复制题目或缩小分母。
+这属于正常私有CQ审核，不能当独立Consumer/Judge语义验收。
+
+2026-10-20T16:41:12.245875Z预算在累计估算9.00685216元触发budget_exhausted。
+各执行方仅有instruction_delivered，未全部effective确认，不能把pause_pending写成
+“全部已暂停”。Host据原有限实验的必要安全收口，通过原stop_run/FIFO提交
+`host-s3-budget-safe-close-20261021`，取得accepted/stopped正式回执；run实际CLEANED，
+PID3348146已不存在。监督随后退出130，原生exit回执保留，没有伪造finish_delivery。
+
+本轮尚未freeze，无模型application、无独立验收报告；`runtime-failure.jsonl`没有新增
+inactivity失败。第一停止原因是预算，不能据此推导建模质量失败，也不能宣称Host技术
+补位已在完整交付链消除。最终 **Delivery自主交付／真实语义重测均PARTIAL**。
+窄修复的工程回归PASS与上轮既有模型语义回归PASS分别保留。
+
+最终共享预算`s3-final-budget.json`：授权9元；已定价数值小计3.21217784元；
+暂估6.459104元；累计估算9.67128184元，估算尾差0.67128184元。不是供应商账单，
+暂估不是确定上界；Host与未接线辅助成本仍范围外。没有追加授权或清除历史费用，
+暂停原因budget_exhausted保持。三次机会已用完，未再启动。
+
+预算所有owner经正式停止/精确退出证据标为exited，监视已停止。七个启动/恢复临时凭据
+数据库核对均revoked或随所属空project删除而absent；s2保留project的4个key全部revoked，
+Ontology实际revision0。s3空project由Runner正常cleanup删除，故其read-key cleanup
+返回false表示记录已随project级联消失，不能误报凭据仍有效。失败workspace、CQ回执、
+运行事件与原报告保留；未触碰旧s1的已验收模型。资源验证原件为
+`s2-s3-final-resource-verification.json`、`s3-budget-stop-result.json`及`s3-terminal-status.json`。
+
+本轮主要耗时仍在CQ准备、技术定位、监督恢复与等待，未取得新的实际语义写入；不能
+给出全任务token降耗或完整自动交付结论。后续如获新授权，应直接复用修复后的原入口，
+不扩展harness或另建兜底机制。本次停止时不申请或推定新增额度。
