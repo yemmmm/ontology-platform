@@ -59,6 +59,9 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
    或 `repair_owned_paths`。执行者、修复范围及部署权限按[修复参考](claude-repair.md#独立-delivery-模式r40-023)核对。
 3. 从实际 checkout 启动可交互、可返回控制权的进程，保持 stdin 开放。以下路径为已准备
    配置的示例；凭据沿现有 Host 环境通道，不写入配置、业务输入或角色提示。
+   经 Codex `exec_command` 启动交互式 Delivery 时设置 `tty=true`；默认管道可能立即
+   关闭 stdin，导致正常静止等待被记为 `business input closed` 并退出监督及计量监视。
+   重定向日志并不能保持输入开放；无 conversation server 时不要以 EOF 方式后台启动。
 
    ```bash
    env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m modeling_team delivery \

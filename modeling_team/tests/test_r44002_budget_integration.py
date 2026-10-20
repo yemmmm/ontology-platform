@@ -317,7 +317,9 @@ def test_shared_activity_and_provider_sources_keep_two_role_members_separate(
 
 def test_codex_budget_control_preserves_member_identity_and_restart_idempotency(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setattr("modeling_team.runtimes.codex.time.monotonic", lambda: 500.0)
     budget = _make_budget(tmp_path, amount="20")
     budget.request_pause("budget_exhausted")
     epoch = budget.show("host")["epoch"]
@@ -357,6 +359,7 @@ def test_codex_budget_control_preserves_member_identity_and_restart_idempotency(
             binding=binding,
             activity=None,
             activity_turn_id=None,
+            last_output_monotonic=1.0,
             budget=runtime_budget(
                 run_root,
                 owner_id,
@@ -392,6 +395,7 @@ def test_codex_budget_control_preserves_member_identity_and_restart_idempotency(
     adapter._rpc = rpc
 
     first = adapter.control_budget(message)
+    assert all(agent.last_output_monotonic == 500.0 for agent in adapter.agents.values())
     assert first["status"] == "instruction_delivered"
     assert {row["status"] for row in first["members"]} == {"instruction_delivered"}
     assert budget.show("host")["control_status"] == "pause_pending"

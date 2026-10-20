@@ -541,6 +541,11 @@ when status=running and lifecycle=standby. Use complete_cq_acceptance to return 
 actual hidden report, then proceed to any remaining authorized group with the same
 freeze/model_handoff. Do not wait for owner/PID exit or call stop_delivery_operation
 to advance. Only explicit user stop permits stopping retained owners.
+Keep the source production Runner alive through the accepted complete_cq_acceptance
+receipt. Production readiness and read-only sealing permit acceptance while the
+Runner remains available; stopping it early removes its control channel and
+prevents the final acceptance acknowledgement. Then use standby_run and
+finish_delivery for normal successful closure.
 
 Use the existing tools to carry out already-decided deterministic follow-through
 without another planning-only turn: copy returned bindings, submit the original

@@ -257,3 +257,46 @@ def test_native_cancellation_gets_explicit_provisional_cost_without_faking_usage
     assert not state["coverage"]["issues"]
     attempt = next(iter(budget._load_state()["_attempts"].values()))
     assert attempt["status"] == "client_disconnected" and not attempt["has_usage"]
+
+
+def native_activity(budget, tmp_path, *, ended=False, session="thread-a"):
+    path = tmp_path / "native-activity.jsonl"
+    binding = {"runtime": "codex", "runtime_session_id": session,
+               "provider": "route-a", "actual_model": "model-a", "key_ref": "key-a"}
+    budget.register_source("native-activity", path, "activity", binding, runtime="codex")
+    rows = [{"event": "llm_start", "call_id": "native-turn-a", "turn_id": "turn-a",
+             "recorded_at": START}]
+    if ended:
+        rows.append({"event": "llm_end", "call_id": "native-turn-a", "turn_id": "turn-a",
+                     "recorded_at": "2026-10-20T00:00:19+00:00", "status": "completed"})
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+
+def test_transport_waits_for_its_active_native_turn_without_missing_usage_pause(tmp_path):
+    budget, writer, proxy = setup_native(tmp_path)
+    proxy_rows(proxy)
+    native_activity(budget, tmp_path)
+    state = budget.tick(now=LATE)
+    assert not state["pause_reasons"]
+    assert state["pending_settlement"] >= 1
+    assert state["inflight_count"] >= 1
+    snapshot(writer, 100, LATE)
+    assert not budget.tick(now=LATE)["pause_reasons"]
+
+
+def test_transport_missing_usage_grace_starts_when_native_turn_ends(tmp_path):
+    budget, _, proxy = setup_native(tmp_path)
+    proxy_rows(proxy)
+    native_activity(budget, tmp_path, ended=True)
+    assert not budget.tick(now=LATE)["pause_reasons"]
+    state = budget.tick(now="2026-10-20T00:00:30+00:00")
+    assert any(row["reason"] == "metering_error" for row in state["pause_reasons"])
+
+
+@pytest.mark.parametrize("session,status", [("other-thread", "completed"),
+                                           ("thread-a", "transport_error")])
+def test_native_turn_cannot_hide_foreign_or_failed_transport(tmp_path, session, status):
+    budget, _, proxy = setup_native(tmp_path)
+    proxy_rows(proxy, status=status)
+    native_activity(budget, tmp_path, session=session)
+    assert any(row["reason"] == "metering_error" for row in budget.tick(now=LATE)["pause_reasons"])

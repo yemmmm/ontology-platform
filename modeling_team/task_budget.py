@@ -1050,8 +1050,36 @@ class TaskBudget:
                 if stamp >= native_coverage.get(selector, {}).get("through", float("-inf")):
                     native_coverage[selector] = {"source": ref, "through": stamp, "additive": False}
         transport_groups = {}
+        # A Codex turn can contain several proxy requests before its first
+        # native usage notification. Bind their settlement clock to the real
+        # native turn, not an intermediate HTTP response. Exact thread and
+        # credential identity plus the turn interval prevent borrowing a
+        # later/foreign turn to hide an ended request with missing usage.
+        native_turns = {}
+        for source in state.get("sources", {}).values():
+            metadata = source.get("metadata", {})
+            capture = metadata.get("native_capture_session_id")
+            if not capture or metadata.get("runtime") != "codex":
+                continue
+            binding = source.get("binding", {})
+            scope = tuple(binding.get(field) for field in (
+                "runtime_session_id", "provider", "key_ref", "actual_model"))
+            if any(value in (None, "") for value in scope):
+                continue
+            segment = binding.get("cumulative_segment", {})
+            for turn in state.get("_attempts", {}).values():
+                if not turn.get("activity_started") or tuple(turn.get(field) for field in (
+                        "runtime_session_id", "provider", "key_ref", "actual_model")) != scope:
+                    continue
+                start = _timestamp(turn.get("started_at"))
+                if start is None or start < (_timestamp(segment.get("start")) or 0):
+                    continue
+                if segment.get("end") and start >= _timestamp(segment["end"]):
+                    continue
+                native_turns.setdefault((capture, *scope[1:]), []).append(turn)
         for attempt_key, attempt in state.get("_attempts", {}).items():
             attempt.pop("native_coverage", None)
+            attempt.pop("native_settlement", None)
             source = state.get("sources", {}).get((attempt.get("source") or {}).get("source_id"), {})
             metadata = source.get("metadata", {})
             if (attempt.get("status") not in {"not_admitted", "unfinished", "inflight", "started", None}
@@ -1064,6 +1092,21 @@ class TaskBudget:
                 selector = (attempt.get("session_id"), attempt.get("provider"), attempt.get("key_ref"),
                             attempt.get("actual_model") or attempt.get("requested_model"))
                 transport_groups.setdefault(selector, []).append(attempt)
+                if attempt.get("status") == "completed":
+                    stamp = _timestamp(attempt.get("started_at"))
+                    end = _timestamp(attempt.get("settled_at"))
+                    for turn in native_turns.get(selector, []):
+                        turn_start = _timestamp(turn.get("started_at"))
+                        turn_end = _timestamp(turn.get("settled_at"))
+                        if stamp is None or end is None or stamp < turn_start:
+                            continue
+                        if turn.get("activity_ended") and (turn_end is None or end > turn_end):
+                            continue
+                        attempt["native_settlement"] = {
+                            "inflight": not turn.get("activity_ended", False),
+                            "settled_at": turn.get("settled_at"),
+                        }
+                        break
         for selector, attempts in transport_groups.items():
             covered = native_coverage.get(selector)
             if not covered:
@@ -1153,7 +1196,12 @@ class TaskBudget:
                         aggregate(by_model.setdefault(model, {}), entry)
                         aggregate(by_role_model.setdefault(f"{role}|{model}", {}), entry)
                         continue
-                started = _timestamp(attempt.get("settled_at") or attempt.get("received_at"))
+                settlement = attempt.get("native_settlement") or {}
+                if settlement.get("inflight"):
+                    pending += 1
+                    continue
+                started = _timestamp(settlement.get("settled_at")
+                                     or attempt.get("settled_at") or attempt.get("received_at"))
                 if started is None or now_stamp - started <= PENDING_SETTLEMENT_SECONDS:
                     pending += 1
                 else:

@@ -8227,6 +8227,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     agent.active_turn_id = self._turn_id(result) or agent.active_turn_id
                 else:
                     dispatch_mode = "start"
+                    self._reset_activity_clock(agent)
                     result = self._rpc(
                         agent,
                         "turn/start",
