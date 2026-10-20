@@ -383,3 +383,13 @@ DirectModelExecutor边界，新增D9，独立Round 2 PASS保留。后续进一�
 
 本次只同步需求、设计、tracker和验收记录。未改活跃合同、Skill或产品代码，无需产品
 测试／服务重启；文档及设计检查不证明执行工程、024实际采用或真实语义效果。
+
+## 2026-10-20 增量：拒绝请求的显式小范围纠错
+
+用户要求解决跨轮反复发参失败，新增request_ref上的可选request_edits输入。
+静态compiler错误提供被拒正文的不可变correction引用、仅涉及控制键无损搬运的可选
+suggested_edits和实际资源／操作字段合同。Agent显式提交add／replace／remove／move，
+程序在副本上确定性应用；冲突值、业务内容和不支持字段由Agent处理，不静默修复。
+派生完整请求仍经过原compiler／授权／application、成功去重和不确定写入对账；
+既有request／request_ref兼容、请求版本及六字段不变。原设计审阅不扩成此增量独立验收。
+实现和验证见[记录](../records/2026-10-20-modeling-input-correction-repair.md)。

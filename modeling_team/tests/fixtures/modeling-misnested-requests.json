@@ -1,0 +1,882 @@
+[
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-installed-asset",
+          "fields": {
+            "aliases": [
+              "安装资产"
+            ],
+            "name": "Installed Asset",
+            "semantic_definition": {
+              "applicability": "Applies to the installation-location scope of minimal-installation-chain-source-v1 (slice installation-location-chain).",
+              "business_meaning": "安装资产 (Installed Asset) is a single piece of equipment that has been installed and is used to provide service (definition 2 of minimal-installation-chain-source-v1). Distinct from Service Site: an asset is equipment, a site is a location.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named asset instances are supplied.",
+                "No cardinality constraints are supplied.",
+                "No ownership semantics are supplied.",
+                "No customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          }
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 151
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场"
+            ],
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to the installation-location scope of minimal-installation-chain-source-v1 (slice installation-location-chain).",
+              "business_meaning": "现场 (Service Site) is a physical location where equipment is installed to provide service (definition 1 of minimal-installation-chain-source-v1). Distinct from Installed Asset: a site is a place, an asset is equipment.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named site instances are supplied.",
+                "No cardinality constraints are supplied.",
+                "No ownership semantics are supplied.",
+                "No customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        },
+        {
+          "action": "create",
+          "change_id": "define-installed-asset",
+          "fields": {
+            "aliases": [
+              "安装资产"
+            ],
+            "name": "Installed Asset",
+            "semantic_definition": {
+              "applicability": "Applies to the installation-location scope of minimal-installation-chain-source-v1 (slice installation-location-chain).",
+              "business_meaning": "安装资产 (Installed Asset) is a single piece of equipment that has been installed and is used to provide service (definition 2 of minimal-installation-chain-source-v1). Distinct from Service Site: an asset is equipment, a site is a location.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named asset instances are supplied.",
+                "No cardinality constraints are supplied.",
+                "No ownership semantics are supplied.",
+                "No customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 156
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 166
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 171
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 176
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 239
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 244
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 268
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 288
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场"
+            ],
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to the installation-location scope of minimal-installation-chain-source-v1 (slice installation-location-chain).",
+              "business_meaning": "现场 (Service Site) is a physical location where equipment is installed to provide service (definition 1 of minimal-installation-chain-source-v1). Distinct from Installed Asset: a site is a place, an asset is equipment.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named site instances are supplied.",
+                "No cardinality constraints are supplied.",
+                "No ownership semantics are supplied.",
+                "No customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          }
+        },
+        {
+          "action": "create",
+          "change_id": "define-installed-asset",
+          "fields": {
+            "aliases": [
+              "安装资产"
+            ],
+            "name": "Installed Asset",
+            "semantic_definition": {
+              "applicability": "Applies to the installation-location scope of minimal-installation-chain-source-v1 (slice installation-location-chain).",
+              "business_meaning": "安装资产 (Installed Asset) is a single piece of equipment that has been installed and is used to provide service (definition 2 of minimal-installation-chain-source-v1). Distinct from Service Site: an asset is equipment, a site is a location.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named asset instances are supplied.",
+                "No cardinality constraints are supplied.",
+                "No ownership semantics are supplied.",
+                "No customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          }
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 161
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场"
+            ],
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to the installation-location scope of minimal-installation-chain-source-v1 (slice installation-location-chain).",
+              "business_meaning": "现场 (Service Site) is a physical location where equipment is installed to provide service (definition 1 of minimal-installation-chain-source-v1). Distinct from Installed Asset: a site is a place, an asset is equipment.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named site instances are supplied.",
+                "No cardinality constraints are supplied.",
+                "No ownership semantics are supplied.",
+                "No customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 181
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 186
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 192
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场"
+            ],
+            "description": "Physical place where equipment is installed to provide service.",
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to the installation-location scope of minimal-installation-chain-source-v1 (slice installation-location-chain).",
+              "business_meaning": "现场 (Service Site) is a physical location where equipment is installed to provide service (definition 1 of minimal-installation-chain-source-v1). Distinct from Installed Asset: a site is a place, an asset is equipment.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named site instances are supplied.",
+                "No cardinality constraints are supplied.",
+                "No ownership semantics are supplied.",
+                "No customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        },
+        {
+          "action": "create",
+          "change_id": "define-installed-asset",
+          "fields": {
+            "aliases": [
+              "安装资产"
+            ],
+            "description": "Single piece of equipment installed and used to provide service.",
+            "name": "Installed Asset",
+            "semantic_definition": {
+              "applicability": "Applies to the installation-location scope of minimal-installation-chain-source-v1 (slice installation-location-chain).",
+              "business_meaning": "安装资产 (Installed Asset) is a single piece of equipment that has been installed and is used to provide service (definition 2 of minimal-installation-chain-source-v1). Distinct from Service Site: an asset is equipment, a site is a location.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named asset instances are supplied.",
+                "No cardinality constraints are supplied.",
+                "No ownership semantics are supplied.",
+                "No customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 197
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 220
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场"
+            ],
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Scope minimal-installation-chain-source-v1, slice installation-location-chain.",
+              "business_meaning": "A Service Site (现场) is the physical place where equipment is installed to provide service (definition 1). Distinct from Installed Asset: a site is a location, an asset is equipment.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named instances supplied.",
+                "No cardinality, ownership, customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 293
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "description": "A Service Site (现场) is the physical place where equipment is installed to provide service (definition 1 of minimal-installation-chain-source-v1). Distinct from Installed Asset: a site is a location, an asset is equipment. Unknown: no named instances, cardinality, ownership, customers, models, faults, work orders, lifecycle, metrics, controlled values or SQL/API mappings are supplied.",
+            "name": "Service Site",
+            "semantic_definition": {
+              "business_meaning": "A Service Site (现场) is the physical place where equipment is installed to provide service (definition 1 of minimal-installation-chain-source-v1). Distinct from Installed Asset: a site is a location, an asset is equipment.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named instances are supplied.",
+                "No cardinality, ownership or other excluded business aspects are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+        "seq": 298
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场",
+              "Installation Site"
+            ],
+            "description": "A physical location where equipment is installed to provide a service.",
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to the physical location only. Not applicable to the equipment itself, nor to ownership, customer, model, faults, work orders, lifecycle, metrics or access policies, none of which are in scope.",
+              "business_meaning": "A Service Site (现场) is a physical location where equipment is installed to provide a service. Source: minimal-installation-chain-source-v1, definition 1.",
+              "semantic_role": "class",
+              "unknowns": [
+                "No named site instances are supplied.",
+                "No cardinality or count constraints for sites are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          }
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 63
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 106
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 124
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场",
+              "Installation Site"
+            ],
+            "description": "A physical location where equipment is installed to provide a service.",
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to the physical location only. Not applicable to the equipment itself, nor to ownership, customer, model, faults, work orders, lifecycle, metrics or access policies, none of which are in scope.",
+              "business_meaning": "A Service Site (现场) is a physical location where equipment is installed to provide a service. Source: minimal-installation-chain-source-v1, definition 1.",
+              "semantic_role": "class",
+              "unknowns": [
+                "No named site instances are supplied.",
+                "No cardinality or count constraints for sites are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "target_ref": null
+        },
+        {
+          "action": "create",
+          "change_id": "define-installed-asset",
+          "fields": {
+            "aliases": [
+              "安装资产",
+              "Installed Equipment"
+            ],
+            "description": "A single piece of equipment that is installed and used to provide a service.",
+            "name": "Installed Asset",
+            "semantic_definition": {
+              "applicability": "Applies to single pieces of installed equipment only. Not applicable to ownership, customers, equipment models, faults, work orders, lifecycle, metrics or access policies, none of which are in scope.",
+              "business_meaning": "An Installed Asset (安装资产) is a single piece of equipment that is already installed and used to provide a service. Source: minimal-installation-chain-source-v1, definition 2.",
+              "semantic_role": "class",
+              "unknowns": [
+                "No named asset instances are supplied.",
+                "No cardinality or count constraints for assets are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 130
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场",
+              "Installation Site"
+            ],
+            "description": "A physical location where equipment is installed to provide a service.",
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to the physical location only. Not applicable to the equipment itself, nor to ownership, customer, model, faults, work orders, lifecycle, metrics or access policies, none of which are in scope.",
+              "business_meaning": "A Service Site (现场) is a physical location where equipment is installed to provide a service. Source: minimal-installation-chain-source-v1, definition 1.",
+              "semantic_role": "class",
+              "unknowns": [
+                "No named site instances are supplied.",
+                "No cardinality or count constraints for sites are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 135
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 141
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 151
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 156
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 196
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 213
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 231
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 253
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 270
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 277
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场",
+              "Installation Site"
+            ],
+            "description": "A physical location where equipment is installed to provide a service.",
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to the physical location only. Not applicable to the equipment itself, nor to ownership, customer, model, faults, work orders, lifecycle, metrics or access policies, none of which are in scope.",
+              "business_meaning": "A Service Site (现场) is a physical location where equipment is installed to provide a service. Source: minimal-installation-chain-source-v1, definition 1.",
+              "semantic_role": "class",
+              "unknowns": [
+                "No named site instances are supplied.",
+                "No cardinality or count constraints for sites are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        },
+        {
+          "action": "create",
+          "change_id": "define-installed-asset",
+          "fields": {
+            "aliases": [
+              "安装资产",
+              "Installed Equipment"
+            ],
+            "description": "A single piece of equipment that is installed and used to provide a service.",
+            "name": "Installed Asset",
+            "semantic_definition": {
+              "applicability": "Applies to single pieces of installed equipment only. Not applicable to ownership, customers, equipment models, faults, work orders, lifecycle, metrics or access policies, none of which are in scope.",
+              "business_meaning": "An Installed Asset (安装资产) is a single piece of equipment that is already installed and used to provide a service. Source: minimal-installation-chain-source-v1, definition 2.",
+              "semantic_role": "class",
+              "unknowns": [
+                "No named asset instances are supplied.",
+                "No cardinality or count constraints for assets are supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "item_id": null,
+          "resource_kind": "class",
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 146
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 306
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 326
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 363
+      },
+      {
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+        "seq": 397
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场"
+            ],
+            "description": "Source: minimal-installation-chain-source-v1, definition 1.",
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to physical locations where equipment is installed to provide service. Distinct from Installed Asset: a site is a location, an asset is a piece of equipment; the installation relationship does not express ownership.",
+              "business_meaning": "A Service Site is the physical location where equipment is installed to provide service.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named sites or site instances are supplied.",
+                "No cardinality constraint between sites and assets is supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "resource_kind": "class",
+          "target_ref": null
+        },
+        {
+          "action": "create",
+          "change_id": "define-installed-asset",
+          "fields": {
+            "aliases": [
+              "安装资产"
+            ],
+            "description": "Source: minimal-installation-chain-source-v1, definition 2.",
+            "name": "Installed Asset",
+            "semantic_definition": {
+              "applicability": "Applies to individual pieces of equipment already installed to provide service. Distinct from Service Site: an asset is equipment, a site is a location; the installation relationship does not express ownership.",
+              "business_meaning": "An Installed Asset is an individual piece of equipment that has been installed and is used to provide service.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named assets or asset instances are supplied.",
+                "No cardinality constraint between assets and sites is supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          }
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 108
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场"
+            ],
+            "description": "Source: minimal-installation-chain-source-v1, definition 1.",
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to physical locations where equipment is installed to provide service. Distinct from Installed Asset: a site is a location, an asset is a piece of equipment; the installation relationship does not express ownership.",
+              "business_meaning": "A Service Site is the physical location where equipment is installed to provide service.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named sites or site instances are supplied.",
+                "No cardinality constraint between sites and assets is supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "resource_kind": "class",
+          "target_ref": null
+        },
+        {
+          "action": "create",
+          "change_id": "define-installed-asset",
+          "fields": {
+            "aliases": [
+              "安装资产"
+            ],
+            "description": "Source: minimal-installation-chain-source-v1, definition 2.",
+            "name": "Installed Asset",
+            "semantic_definition": {
+              "applicability": "Applies to individual pieces of equipment already installed to provide service. Distinct from Service Site: an asset is equipment, a site is a location; the installation relationship does not express ownership.",
+              "business_meaning": "An Installed Asset is an individual piece of equipment that has been installed and is used to provide service.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named assets or asset instances are supplied.",
+                "No cardinality constraint between assets and sites is supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "resource_kind": "class",
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 113
+      },
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 118
+      },
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 123
+      },
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 128
+      },
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 139
+      },
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 154
+      },
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 179
+      }
+    ],
+    "remaining_errors": []
+  },
+  {
+    "request": {
+      "candidate_ref": null,
+      "changes": [
+        {
+          "action": "create",
+          "change_id": "define-service-site",
+          "fields": {
+            "aliases": [
+              "现场"
+            ],
+            "description": "Source: minimal-installation-chain-source-v1, definition 1.",
+            "name": "Service Site",
+            "semantic_definition": {
+              "applicability": "Applies to physical locations where equipment is installed to provide service. Distinct from Installed Asset: a site is a location, an asset is a piece of equipment; the installation relationship does not express ownership.",
+              "business_meaning": "A Service Site is the physical location where equipment is installed to provide service.",
+              "semantic_role": "concept",
+              "unknowns": [
+                "No named sites or site instances are supplied.",
+                "No cardinality constraint between sites and assets is supplied."
+              ]
+            },
+            "item_id": null,
+            "resource_kind": "class",
+            "target_ref": null
+          },
+          "resource_kind": "class",
+          "target_ref": null
+        }
+      ],
+      "schema_version": "r4-3-025-model-changes/v1"
+    },
+    "sources": [
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 134
+      },
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 217
+      },
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 222
+      },
+      {
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+        "seq": 227
+      }
+    ],
+    "remaining_errors": []
+  }
+]

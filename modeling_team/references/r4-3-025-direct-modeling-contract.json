@@ -17,7 +17,9 @@
     "prepared_request": "Write the complete request JSON once with write_handoff_output, publish that source to recipient_id=runner, then submit its returned material reference. Do not retype a correct prepared request into a second tool argument. Inline request remains valid for short new changes.",
     "submit_example": {
       "modeling_id": "modeling",
-      "request_ref": {"material_id": "<copy the returned material_id>"}
+      "request_ref": {
+        "material_id": "<copy the returned material_id>"
+      }
     },
     "content": "The file is the complete request object with schema_version, candidate_ref and changes; it is not a wrapper containing modeling_id/request, a candidate-only artifact, a command plan or an arbitrary local path. A directory reference must select its request file with path.",
     "binding": "The current Modeling actor must have published this immutable material to runner. The existing material channel checks current run, source/recipient authorization, manifest and member digest. The program loads the full selected JSON once; editing or deleting the author's source does not change published bytes.",
@@ -174,5 +176,25 @@
       ]
     }
   },
-  "existing_model_awareness": "Follow the required Modeling Skill for bounded current-model discovery, semantic comparison and reuse/create/connect/update decisions. Initial discovery explicitly selects the complete authorized ontology_ids set; then read actual candidate IRIs in their own Ontology with context_detail=full. No match, lexical fallback, forbidden or truncated reads are not proof of global absence. Preserve important read revisions, selected/excluded candidates and reasons, real identities and gaps in existing map/handoff. Recheck affected judgments on revision/permission changes; no full-graph preload, search-count gate or semantic approval is added.\nOld resources without this run's creation receipts use actual observed entries at /structuredContent/data/items/N or /structuredContent/data/primary_matches/N with artifact_ref=platform_ref.artifact_path. The program checks current scope/revision/full RDF type and canonical native namespace before recovering ID; external IRIs retain IRI-slot support. The Agent never decodes IRIs or reads old runs. Refresh affected old reads after a new write advances revision.\nOptional placement_ref selects a Host-confirmed frozen ontology-plan entry, outside the six-field change/fields. It must agree with candidate/target ownership; endpoints do not choose relation ownership. Cross-graph Mapping also needs current owner.reference_ontology_ids. For missing references, report the concrete dependency to Coordinator under Host mapping_reference_direction; the Host prepares only affected owners, preserving existing references. mapping_reference_scope_required is repairable in the same goal; ordinary relation_type has no Mapping gate. Verify new connections and affected old meanings after valuable stages; applied receipts prove application, not independent semantics or net efficiency."
+  "existing_model_awareness": "Follow the required Modeling Skill for bounded current-model discovery, semantic comparison and reuse/create/connect/update decisions. Initial discovery explicitly selects the complete authorized ontology_ids set; then read actual candidate IRIs in their own Ontology with context_detail=full. No match, lexical fallback, forbidden or truncated reads are not proof of global absence. Preserve important read revisions, selected/excluded candidates and reasons, real identities and gaps in existing map/handoff. Recheck affected judgments on revision/permission changes; no full-graph preload, search-count gate or semantic approval is added.\nOld resources without this run's creation receipts use actual observed entries at /structuredContent/data/items/N or /structuredContent/data/primary_matches/N with artifact_ref=platform_ref.artifact_path. The program checks current scope/revision/full RDF type and canonical native namespace before recovering ID; external IRIs retain IRI-slot support. The Agent never decodes IRIs or reads old runs. Refresh affected old reads after a new write advances revision.\nOptional placement_ref selects a Host-confirmed frozen ontology-plan entry, outside the six-field change/fields. It must agree with candidate/target ownership; endpoints do not choose relation ownership. Cross-graph Mapping also needs current owner.reference_ontology_ids. For missing references, report the concrete dependency to Coordinator under Host mapping_reference_direction; the Host prepares only affected owners, preserving existing references. mapping_reference_scope_required is repairable in the same goal; ordinary relation_type has no Mapping gate. Verify new connections and affected old meanings after valuable stages; applied receipts prove application, not independent semantics or net efficiency.",
+  "input_correction": {
+    "request_edits": "Optional with request_ref only. Nonempty explicit JSON Patch operations: add/replace require value; remove uses op/path; move requires from/path. JSON Pointers address the complete request body, without a /request prefix. No root replacement. Original immutable material is never changed.",
+    "on_rejection": "A static compiler rejection returns correction.request_ref for the exact rejected body, whether originally inline or referenced, plus optional suggested_edits and per-resource/action field_contracts. Repeated identical inline rejections retain the same reference. An edited body rejected again gets its own reference.",
+    "selection": "Suggestions only move an existing misplaced control value to a missing outer key or remove an exactly equal nested duplicate. They never choose conflicting values, remove unsupported business fields, fill missing semantics or apply themselves. Agent selects all edits explicitly; preserve unsupported meaning using supported fields.",
+    "execution": "Edits apply deterministically to a private copy before the unchanged compiler. Any invalid edit rejects the entire edit list before platform execution. Corrected content determines the original execution identity; changing transport or edits cannot replay successful or bypass uncertain writes. Scope/freeze/application/independent acceptance remain unchanged.",
+    "example": {
+      "modeling_id": "modeling",
+      "request_ref": {
+        "material_id": "<copy actual correction.request_ref material_id>"
+      },
+      "request_edits": [
+        {
+          "op": "move",
+          "from": "/changes/0/fields/item_id",
+          "path": "/changes/0/item_id"
+        }
+      ]
+    },
+    "limits": "JSON syntax errors still require a valid complete JSON source. This is a request-input correction, not a new modeling round, automatic semantic repair or authorization to resume retained runs."
+  }
 }

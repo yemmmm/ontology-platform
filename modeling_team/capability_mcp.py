@@ -115,6 +115,17 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "modeling_submit_model_changes": {
         "type": "object", "properties": {
             "modeling_id": {"type": "string"},
+            "request_edits": {
+                "type": "array", "minItems": 1,
+                "description": "Explicit JSON Patch operations on request_ref only. Correct the "
+                    "retained request without regenerating unchanged contents. No implicit repair.",
+                "items": {"type": "object", "properties": {
+                    "op": {"type": "string", "enum": ["add", "replace", "remove", "move"]},
+                    "path": {"type": "string", "description": "JSON Pointer in the request body."},
+                    "from": {"type": "string"},
+                    "value": {"type": ["string", "number", "boolean", "object", "array", "null"]},
+                }, "required": ["op", "path"], "additionalProperties": False},
+            },
             "placement_ref": {
                 "type": ["object", "null"], "required": ["artifact_ref", "path"],
                 "properties": {key: {"type": "string", "minLength": 1} for key in ("artifact_ref", "path")},
@@ -865,6 +876,8 @@ class RunnerCapabilityEndpoint:
                     "Submit exactly one of inline request or request_ref for the complete request JSON "
                     "published to runner. Prefer request_ref for an already prepared request; do not "
                     "retype its contents. candidate_ref selects a candidate, not a request document. "
+                    "After a static rejection, use correction.request_ref and explicitly selected "
+                    "request_edits (add/replace/remove/move) instead of rebuilding the whole request. "
                     "The program compiles, binds real execution context and calls apply_atomic once "
                     "per batch. No command plan, technical identity, dry-run or Protocol approval. "
                     "Optional placement_ref selects one Host-confirmed frozen plan entry for fields-only creation. "
@@ -915,6 +928,9 @@ class RunnerCapabilityEndpoint:
         if operation == "modeling_submit_model_changes" and schema is not None:
             schema = json.loads(json.dumps(schema))
             schema["properties"]["request"]["properties"]["changes"]["items"] = {"type": "object"}
+            # Deep input errors need actionable not_written feedback from the owner,
+            # rather than the opaque cross-role capability rejection.
+            schema["properties"]["request_edits"]["items"] = {"type": "object"}
         if (
             operation not in self.operations
             or schema is None

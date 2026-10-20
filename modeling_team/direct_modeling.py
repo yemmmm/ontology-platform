@@ -2492,6 +2492,39 @@ def _compile_plan(
     return result
 
 
+def model_change_correction(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Suggest only lossless envelope moves; the Agent must explicitly select each edit."""
+    edits, contracts = [], []
+    changes = request.get("changes")
+    for index, change in enumerate(changes if isinstance(changes, list) else []):
+        if not isinstance(change, Mapping):
+            continue
+        fields = change.get("fields")
+        if not isinstance(fields, Mapping):
+            continue
+        base = f"/changes/{index}"
+        for key in sorted(_CHANGE_FIELDS - {"fields"}):
+            if key not in fields:
+                continue
+            if key not in change:
+                edits.append({"op": "move", "from": f"{base}/fields/{key}",
+                              "path": f"{base}/{key}"})
+            elif type(change[key]) is type(fields[key]) and change[key] == fields[key]:
+                edits.append({"op": "remove", "path": f"{base}/fields/{key}"})
+        command = _COMMANDS.get(str(change.get("resource_kind")), {}).get(
+            str(change.get("action"))
+        )
+        if command:
+            contracts.append({"path": f"{base}/fields", "action": change["action"],
+                              "resource_kind": change["resource_kind"],
+                              "allowed_fields": sorted(_COMMAND_FIELDS[command])})
+    return {"suggested_edits": edits, "field_contracts": contracts,
+            "instruction": "Use request_ref plus explicit request_edits; do not retype the request. "
+            "Suggested edits only move missing envelope keys or remove equal duplicates. "
+            "Conflicting values and business field changes require your explicit choice. "
+            "No edit is applied until you submit it; original validation and write gates still apply."}
+
+
 def model_change_item_schema() -> dict[str, Any]:
     """Advertise the existing compiler input; the compiler remains its validator."""
     any_value = {"type": ["string", "integer", "number", "boolean", "array", "object", "null"]}

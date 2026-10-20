@@ -3711,7 +3711,9 @@ class TeamRunner:
                         "For a prepared complete request, publish_handoff_material to recipient_id=runner "
                         "and pass its material_id plus optional directory-member path as request_ref; "
                         "do not regenerate its JSON. Add placement_ref only when choosing an existing "
-                        "confirmed placement. The request "
+                        "confirmed placement. For a static rejection use correction.request_ref "
+                        "and explicitly selected request_edits; inspect suggested_edits and "
+                        "field_contracts rather than regenerating the full request. The request "
                         "has schema_version=r4-3-025-model-changes/v1, candidate_ref, changes; each "
                         "change has change_id,action,resource_kind,item_id,target_ref,fields. "
                         "Use actual retained resource-entry references; never author command plans or "
@@ -5747,9 +5749,12 @@ class TeamRunner:
 
     def _handle_direct_modeling(self, operation: str, args: Mapping[str, Any]) -> dict[str, Any]:
         from .direct_execution import DirectModelExecutor
-        from .direct_modeling import ModelChangeCompilationError, compile_model_changes
+        from .direct_modeling import (
+            ModelChangeCompilationError, compile_model_changes, model_change_correction,
+        )
         from .direct_submission import (
-            ObservedModelBindings, SubmissionInputError, candidate_snapshot, retained_submission_plan,
+            ObservedModelBindings, SubmissionInputError, apply_request_edits,
+            candidate_snapshot, retained_submission_plan,
         )
 
         if not self._unified_graph or self.run is None:
@@ -5772,6 +5777,11 @@ class TeamRunner:
                     "/request_ref",
                 )
             value = args.get("request")
+            if "request_edits" in args and "request_ref" not in args:
+                raise SubmissionInputError(
+                    "request_edits_invalid", "Edits require an immutable request_ref",
+                    "/request_edits",
+                )
             if "request_ref" in args:
                 store = self.run.handoff_materials
                 try:
@@ -5789,7 +5799,8 @@ class TeamRunner:
                     "model_change_request_invalid", "Use the complete model-change request object",
                     "/request_ref" if "request_ref" in args else "/request",
                 )
-            request = value
+            request = (apply_request_edits(value, args["request_edits"])
+                       if "request_edits" in args else value)
             if not candidate_gate_open(self.run.root):
                 raise SubmissionInputError("scope_binding_required", "Wait for the existing confirmed scope/topology before model writes")
             if self._competency_questions and self._cq_freeze is None:
@@ -5907,11 +5918,32 @@ class TeamRunner:
             errors = exc.errors if isinstance(exc, ModelChangeCompilationError) else [{
                 "code": exc.code, "message": str(exc), "path": exc.path,
             }]
-            return {"schema_version": "r4-3-025-model-change-result/v1", "submission_ref": reference,
+            result = {"schema_version": "r4-3-025-model-change-result/v1", "submission_ref": reference,
                     "submission_digest": digest, "status": "not_written", "batches": [],
                     "errors": [{field: error.get(field, True if field == "retryable" else "" if field == "path" else None)
                                 for field in ("code", "change_id", "item_id", "path", "message", "expected", "actual", "platform_ref", "retryable")}
                                for error in errors], "pending_changes": list(request.get("changes") or [])}
+            if isinstance(exc, ModelChangeCompilationError):
+                correction = model_change_correction(request)
+                ref = args.get("request_ref") if "request_edits" not in args else None
+                if ref is None:
+                    # Preserve the exact rejected object, never an inferred repair. A
+                    # stable reference keeps repeated failures from spawning new copies.
+                    body = json.dumps(request, ensure_ascii=False, sort_keys=True)
+                    identity = hashlib.sha256(body.encode()).hexdigest()
+                    saved = self.run.root / "value-semantics/correction-requests" / f"{identity}.json"
+                    if saved.exists():
+                        ref = json.loads(saved.read_bytes())
+                    else:
+                        store = self.run.handoff_materials
+                        source = store.write_output(args["modeling_id"],
+                            f"input-corrections/{identity}.json", body)
+                        published = store.publish(args["modeling_id"], "runner", source["source_path"])
+                        ref = {"material_id": published["material_id"]}
+                        saved.parent.mkdir(parents=True, exist_ok=True)
+                        self._atomic_json(saved, ref)
+                result["correction"] = {"request_ref": ref, **correction}
+            return result
         finally:
             # Durable intent/Attempt records carry uncertainty and its eventual
             # reconciliation; do not introduce a second permanent run latch.

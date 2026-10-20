@@ -554,7 +554,7 @@ Delivery 不再暴露 `verify_repair`，保留 `get_repair_verification_status` 
 
 | 工具 | 调用者与输入 | 输出及边界 |
 | --- | --- | --- |
-| `modeling_submit_model_changes` | unified Modeling；modeling_id；request（schema_version、candidate_ref、显式 changes）或 request_ref 二选一；可选 placement_ref | 完整请求可按获准不可变材料引用无损载入，再进入同一编译／原子 apply；保留原 item／JSON Pointer 错误定位、真实资源／修订／索引、成功去重及不确定身份对账；不裁决业务语义 |
+| `modeling_submit_model_changes` | unified Modeling；modeling_id；request（schema_version、candidate_ref、显式 changes）或 request_ref 二选一；request_ref可附request_edits；可选 placement_ref | 完整请求可按获准不可变材料引用无损载入；静态拒绝提供correction引用、可选无损建议及实际字段合同，Agent显式小范围纠错后仍走同一编译／原子apply、成功去重及不确定对账；不裁决业务语义 |
 | `modeling_inspect_associations` | unified Modeling；modeling_id、可选 focus_iris | 在本 run 实际获准 Ontology 集合完整治理分页读取，调用既有关联辅助；部分、权限或修订漂移保持局部结论，不开放任意 SPARQL |
 | `modeling_finish_changes` | unified Modeling；modeling_id | 完成程序持有的 Build Session 并释放租约；不等同最终语义验收 |
 | `protocol_execute_approved_plans` | 保留计划能力；有序 plan_refs、ontology lease_tokens、mode=apply_atomic | apply 请求内校验；新模型 dry-run 和翻译／dry proof 前置门已退役。当前统一图正常写入使用 Modeling 直接能力；历史计划仍可解释 |
@@ -576,9 +576,19 @@ item_id=null，创建时target_ref=null。工具宣告已有合法枚举及语�
 文件正文为完整 `r4-3-025-model-changes/v1` 对象，不含外层 `modeling_id/request` 包装。
 `request` 和 `request_ref` 只提供一个，另一键省略；小修改仍可内联。`candidate_ref` 是正文
 内部的候选引用，不能代替完整请求引用。Runner 沿原材料授权／摘要检查一次读取完整正文，
-不重新生成或修正字段；引用与内联的相同内容共用原提交身份、成功去重和不确定写入对账。
+不重新生成或静默修正字段；引用与内联的相同内容共用原提交身份、成功去重和不确定写入对账。
 材料缺失、变化、越权、成员未选及 JSON 非法返回 `/request_ref` 可重试未写入反馈；原业务
 内容错误仍由同一 compiler 定位。发布材料不等于获得模型写入授权。
+
+静态编译拒绝另返回 `correction`：`request_ref` 指向本次实际被拒的完整对象；
+`suggested_edits` 只建议将内层已有控制键移到缺失外层，或删掉完全相同的内层重复键；
+`field_contracts` 给出所选资源／操作的实际允许字段。冲突值、未知语义和不支持的业务字段
+不由程序决定。Agent确认后可用该引用和非空 `request_edits` 提交显式 JSON Patch：
+`add`／`replace` 带 `value`，`remove` 只需 `op/path`，`move` 带 `from/path`；路径从请求
+正文根开始（如 `/changes/0/fields/item_id`），不是 `/request` 包装。原件不变，程序在
+副本上原子执行补丁；任一补丁错误返回 `/request_edits/N`，不发平台写入。修正后的完整
+内容继续原编译、授权／冻结、application和去重／未知写入对账。若再次被拒，新引用
+对应本次已编辑的正文；不要沿旧引用丢失前次修改。建议不会自动执行，也不是修模授权。
 
 028增量路径在写入前按显式获准Ontology集合进行业务表达检索，再按候选所属图及实际IRI
 补读完整定义、RDF类型、有向关系和必要路径；无匹配、词面降级或截断不证明不存在。

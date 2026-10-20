@@ -23,6 +23,12 @@ and optional directory-member path as request_ref; do not retype that request in
 tool arguments. Supply exactly one of request or request_ref, omitting the other key.
 Both enter the same compiler/application path; a candidate_ref selects a candidate,
 not a complete change request. Inline request remains valid for new short changes.
+After a static not_written result, use correction.request_ref plus explicitly selected
+request_edits (JSON Patch add/replace/remove/move) rather than regenerating the request.
+Inspect optional suggested_edits and per-resource field_contracts; suggestions never choose
+conflicting values or remove business fields. Only your submitted edits are applied to a
+copy, followed by the original validation. A later correction reference selects the edited
+body that actually failed. Preserve unsupported meaning in allowed fields; do not drop it.
 Write the complete immutable unified candidate, select explicit changes, and use
 retained authorized resource-entry references for existing targets. The program
 compiles and executes; do not author command plans, Session/lease/version fields,

@@ -1,0 +1,322 @@
+{
+  "method": "replay actual Modeling arguments; explicit program suggestion selected by offline test, not by live Agent. Original compiler is unchanged. No Provider or platform writes.",
+  "runs": [
+    {
+      "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+      "source_bytes": 2940732,
+      "source_sha256": "6891abe416a234ee4edf74b3071ae17aeb65d82d31f7ef9aeace2fcd0b6afd5d",
+      "calls_with_misnested_envelope": 17,
+      "compiled_after_selected_edits": 17,
+      "calls": [
+        {
+          "seq": 151,
+          "digest": "3c6ad85343a20faf608e11f7bdb39f6547ea00b09459aeb9ce1df002d761d49c",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 156,
+          "digest": "5523a2eb96a06ab91730360dd92a308211f319b13f21ca52d6df8373ae252009",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 161,
+          "digest": "4a50ca83d0935461d4394e33635efc4f371b89dad33dfe5d9aba2d9a118ad4e4",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 166,
+          "digest": "5523a2eb96a06ab91730360dd92a308211f319b13f21ca52d6df8373ae252009",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 171,
+          "digest": "5523a2eb96a06ab91730360dd92a308211f319b13f21ca52d6df8373ae252009",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 176,
+          "digest": "5523a2eb96a06ab91730360dd92a308211f319b13f21ca52d6df8373ae252009",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 181,
+          "digest": "e90f419fd4b485124390288cd321309f24680e269f5e50147664d3213ef50851",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 186,
+          "digest": "e90f419fd4b485124390288cd321309f24680e269f5e50147664d3213ef50851",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 192,
+          "digest": "e90f419fd4b485124390288cd321309f24680e269f5e50147664d3213ef50851",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 197,
+          "digest": "1e1829ffb55e976776fca48b69f43b4d748b4796b90fca4d8a831744402ad8d2",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 220,
+          "digest": "1e1829ffb55e976776fca48b69f43b4d748b4796b90fca4d8a831744402ad8d2",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 239,
+          "digest": "5523a2eb96a06ab91730360dd92a308211f319b13f21ca52d6df8373ae252009",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 244,
+          "digest": "5523a2eb96a06ab91730360dd92a308211f319b13f21ca52d6df8373ae252009",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 268,
+          "digest": "5523a2eb96a06ab91730360dd92a308211f319b13f21ca52d6df8373ae252009",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 288,
+          "digest": "5523a2eb96a06ab91730360dd92a308211f319b13f21ca52d6df8373ae252009",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 293,
+          "digest": "b66ee68fc9c4f499d651aee293c2e81f6887bc2d2b1bbbfaf6f9a301a8313a40",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 298,
+          "digest": "1cd53ec04453e2e0e5dd100f2b9322cf99111989ad51c3160de2d6de6261db1c",
+          "edits": 3,
+          "remaining_errors": []
+        }
+      ]
+    },
+    {
+      "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+      "source_bytes": 2442037,
+      "source_sha256": "e33648c62283d05516e0d3a71d5e9aecb8e468fe6bbb0f44665d356b2d1ca111",
+      "calls_with_misnested_envelope": 19,
+      "compiled_after_selected_edits": 19,
+      "calls": [
+        {
+          "seq": 63,
+          "digest": "88fb1d5859122184a55740745cb7a1b2064e57e7e93dd5639b18ecd71caf10e7",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 106,
+          "digest": "88fb1d5859122184a55740745cb7a1b2064e57e7e93dd5639b18ecd71caf10e7",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 124,
+          "digest": "88fb1d5859122184a55740745cb7a1b2064e57e7e93dd5639b18ecd71caf10e7",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 130,
+          "digest": "9e1c8a6c72afa321138402e143e24547f3c7efe73c26f0896b693bddf0d467f7",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 135,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 141,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 146,
+          "digest": "b40e9b066913311fe8175e3e7511378efc72f33c42e4e6fa684efb14c43ffeb7",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 151,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 156,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 196,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 213,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 231,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 253,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 270,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 277,
+          "digest": "811288edbfbc2a99e87e45569a2180bd7f92b8cb5a749c54db2f987262a9c8db",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 306,
+          "digest": "b40e9b066913311fe8175e3e7511378efc72f33c42e4e6fa684efb14c43ffeb7",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 326,
+          "digest": "b40e9b066913311fe8175e3e7511378efc72f33c42e4e6fa684efb14c43ffeb7",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 363,
+          "digest": "b40e9b066913311fe8175e3e7511378efc72f33c42e4e6fa684efb14c43ffeb7",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 397,
+          "digest": "b40e9b066913311fe8175e3e7511378efc72f33c42e4e6fa684efb14c43ffeb7",
+          "edits": 6,
+          "remaining_errors": []
+        }
+      ]
+    },
+    {
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+      "source_bytes": 1549613,
+      "source_sha256": "6c54d3dd833820484f0678efc4ebf24cf9db66f8790c6af3aca461d09c17e13e",
+      "calls_with_misnested_envelope": 12,
+      "compiled_after_selected_edits": 12,
+      "calls": [
+        {
+          "seq": 108,
+          "digest": "a680ab9e6034bd88d5c1c9aff5b67fddc7664e01d9922eee2180cd2a2b2849f0",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 113,
+          "digest": "26d7c334d342c5be2b3f658bb0e4549531f8fdfc3ce417ae725bf894fe36f329",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 118,
+          "digest": "26d7c334d342c5be2b3f658bb0e4549531f8fdfc3ce417ae725bf894fe36f329",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 123,
+          "digest": "26d7c334d342c5be2b3f658bb0e4549531f8fdfc3ce417ae725bf894fe36f329",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 128,
+          "digest": "26d7c334d342c5be2b3f658bb0e4549531f8fdfc3ce417ae725bf894fe36f329",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 134,
+          "digest": "c24c7a2120fccf04c5ac66eda902ea216fb6cab56acbcfe69d2a2c1e3dedd4a9",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 139,
+          "digest": "26d7c334d342c5be2b3f658bb0e4549531f8fdfc3ce417ae725bf894fe36f329",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 154,
+          "digest": "26d7c334d342c5be2b3f658bb0e4549531f8fdfc3ce417ae725bf894fe36f329",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 179,
+          "digest": "26d7c334d342c5be2b3f658bb0e4549531f8fdfc3ce417ae725bf894fe36f329",
+          "edits": 6,
+          "remaining_errors": []
+        },
+        {
+          "seq": 217,
+          "digest": "c24c7a2120fccf04c5ac66eda902ea216fb6cab56acbcfe69d2a2c1e3dedd4a9",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 222,
+          "digest": "c24c7a2120fccf04c5ac66eda902ea216fb6cab56acbcfe69d2a2c1e3dedd4a9",
+          "edits": 3,
+          "remaining_errors": []
+        },
+        {
+          "seq": 227,
+          "digest": "c24c7a2120fccf04c5ac66eda902ea216fb6cab56acbcfe69d2a2c1e3dedd4a9",
+          "edits": 3,
+          "remaining_errors": []
+        }
+      ]
+    }
+  ],
+  "unique_requests": 14,
+  "remaining_errors": {}
+}

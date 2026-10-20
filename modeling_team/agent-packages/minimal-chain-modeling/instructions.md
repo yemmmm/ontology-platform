@@ -42,6 +42,15 @@ JSON again. Supply exactly one of request or request_ref; omit the other key.
 The file contains the complete r4-3-025-model-changes/v1 request, not a tool-argument
 wrapper. Inline request remains valid. candidate_ref is a different, candidate-only reference.
 
+On a static not_written result with correction, keep its exact correction.request_ref.
+Choose explicit request_edits (JSON Patch add/replace/remove/move) for that referenced
+request instead of regenerating the whole JSON. suggested_edits are optional lossless
+envelope moves/equal-duplicate removals; inspect them before selecting them. The program
+never chooses conflicting values, drops unsupported business meaning or applies suggestions
+without your call. Use correction.field_contracts for the actual resource/action's allowed
+fields. Preserve source meaning in supported fields. If edited contents are rejected again,
+use the new correction.request_ref, which captures that edited body, not the old base.
+
 For a fields-only change, change_id/action/resource_kind/item_id/target_ref/fields are
 six sibling keys. Keep item_id and target_ref at that level (null for a create), never
 inside fields. Fields contains only the supported business fields; slice_ids is not a

@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -37,6 +38,78 @@ def json_pointer(value: Any, pointer: str) -> Any:
         except (ValueError, IndexError, KeyError, TypeError) as exc:
             raise SubmissionInputError("invalid_resource_reference", "Resource pointer was not found") from exc
     return value
+
+
+def apply_request_edits(request: Mapping[str, Any], edits: Any) -> dict[str, Any]:
+    """Apply Agent-selected JSON Patch operations to a copy of one immutable request."""
+    if not isinstance(edits, list) or not edits:
+        raise SubmissionInputError(
+            "request_edits_invalid", "Supply a nonempty array of explicit edits", "/request_edits"
+        )
+    result = deepcopy(dict(request))
+
+    def location(pointer, *, add=False):
+        if not isinstance(pointer, str) or not pointer.startswith("/"):
+            raise ValueError("Use a non-root JSON Pointer")
+        parts = pointer.split("/")[1:]
+        if any(re.search(r"~(?![01])", part) for part in parts):
+            raise ValueError("Invalid JSON Pointer escape")
+        parts = [part.replace("~1", "/").replace("~0", "~") for part in parts]
+        parent = result
+        for index, part in enumerate(parts):
+            last = index == len(parts) - 1
+            key = part
+            if isinstance(parent, list):
+                if last and add and part == "-":
+                    key = len(parent)
+                elif not re.fullmatch(r"0|[1-9][0-9]*", part):
+                    raise ValueError("Use a nonnegative canonical array index")
+                else:
+                    key = int(part)
+                if key >= len(parent) + int(last and add):
+                    raise ValueError("Array index is out of range")
+            elif not isinstance(parent, dict):
+                raise ValueError("Pointer parent must be an object or array")
+            if last:
+                if not add and (key not in parent if isinstance(parent, dict)
+                                else key >= len(parent)):
+                    raise ValueError("Pointer does not select an existing value")
+                return parent, key
+            parent = parent[key]
+        raise ValueError("Use a non-root JSON Pointer")
+
+    for index, edit in enumerate(edits):
+        try:
+            if not isinstance(edit, Mapping):
+                raise ValueError("Each edit must be an object")
+            op = edit.get("op")
+            required = {"op", "path"} | ({"from"} if op == "move" else
+                                         {"value"} if op in {"add", "replace"} else set())
+            if op not in {"add", "replace", "remove", "move"} or set(edit) != required:
+                raise ValueError("Use exactly the fields for add, replace, remove or move")
+            if op == "move":
+                source = edit["from"]
+                destination = edit["path"]
+                source_parent, source_key = location(source)
+                if destination == source:
+                    continue
+                if isinstance(destination, str) and destination.startswith(source + "/"):
+                    raise ValueError("Cannot move a value into its own descendant")
+                value = source_parent.pop(source_key)
+            elif op != "remove":
+                value = deepcopy(edit["value"])
+            parent, key = location(edit["path"], add=op in {"add", "move"})
+            if op == "remove":
+                parent.pop(key)
+            elif isinstance(parent, list) and op in {"add", "move"}:
+                parent.insert(key, value)
+            else:
+                parent[key] = value
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise SubmissionInputError(
+                "request_edits_invalid", str(exc), f"/request_edits/{index}"
+            ) from exc
+    return result
 
 
 class ObservedModelBindings:

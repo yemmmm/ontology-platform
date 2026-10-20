@@ -1,0 +1,264 @@
+{
+  "scope": "Technical native Agent correction only; no real platform write, semantic start, new business modeling or independent semantic acceptance. Fresh short native contexts are not continuations of old failed sessions.",
+  "provider_requests_authorization": "Current user request to fix recurrent Agent failure; bounded diagnostic integration test. No old modeling quota is consumed.",
+  "cases": [
+    {
+      "historical_run": "minimal-chain-20261019-dsh-input-fixes-r1",
+      "runtime_class": "DSHDeliveryRuntime, isolated technical tool session",
+      "model": "glm-5.3-flash",
+      "effort": "low",
+      "call_count": 2,
+      "completed": true,
+      "used_explicit_edits": true,
+      "business_content_preserved": true,
+      "isolated_batches": 1,
+      "errors": [],
+      "elapsed_seconds": 22.378303081000922,
+      "calls_path": "workspaces/modeling-input-correction-20261020/native-probe-1/calls.json",
+      "identity": {
+        "runtime": "dsh",
+        "process_instance": "bff7cd279fe7419b84a0471c65bf1d60",
+        "runtime_session_id": "delivery-53309cbb165e40e8864cc41f215e637b",
+        "activity_id": null
+      },
+      "native_evidence": "workspaces/modeling-input-correction-20261020/native-probe-1/native"
+    },
+    {
+      "historical_run": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+      "runtime_class": "DSHDeliveryRuntime, isolated technical tool session",
+      "model": "glm-5.3-flash",
+      "effort": "low",
+      "call_count": 2,
+      "completed": true,
+      "used_explicit_edits": true,
+      "business_content_preserved": true,
+      "isolated_batches": 1,
+      "errors": [],
+      "elapsed_seconds": 25.114587441988988,
+      "calls_path": "workspaces/modeling-input-correction-20261020/native-probe-2/calls.json",
+      "identity": {
+        "runtime": "dsh",
+        "process_instance": "aaa3d246f6d3477da5d5d80c18af3841",
+        "runtime_session_id": "delivery-436d2cdda4214fd9951a846833c01946",
+        "activity_id": null
+      },
+      "native_evidence": "workspaces/modeling-input-correction-20261020/native-probe-2/native"
+    },
+    {
+      "historical_run": "minimal-chain-20261020-dsh-glm-low-r1",
+      "runtime_class": "DSHDeliveryRuntime, isolated technical tool session",
+      "model": "glm-5.3-flash",
+      "effort": "low",
+      "call_count": 2,
+      "completed": true,
+      "used_explicit_edits": true,
+      "business_content_preserved": true,
+      "isolated_batches": 1,
+      "errors": [],
+      "elapsed_seconds": 28.308729128009873,
+      "calls_path": "workspaces/modeling-input-correction-20261020/native-probe-3/calls.json",
+      "identity": {
+        "runtime": "dsh",
+        "process_instance": "a738dff405e847e6a7932305143f1a96",
+        "runtime_session_id": "delivery-690bbd4496d14043aec26303c700a39d",
+        "activity_id": null
+      },
+      "native_evidence": "workspaces/modeling-input-correction-20261020/native-probe-3/native"
+    }
+  ],
+  "native_numeric_usage": {
+    "responses": 9,
+    "input": 45099,
+    "output": 1969,
+    "total": 47068
+  },
+  "usage_events": [
+    {
+      "probe": 1,
+      "session_id": "delivery-53309cbb165e40e8864cc41f215e637b",
+      "seq": 9,
+      "usage": {
+        "inputTokens": 4055,
+        "outputTokens": 253,
+        "cacheReadTokens": 0,
+        "totalTokens": 4308
+      }
+    },
+    {
+      "probe": 1,
+      "session_id": "delivery-53309cbb165e40e8864cc41f215e637b",
+      "seq": 14,
+      "usage": {
+        "inputTokens": 851,
+        "outputTokens": 144,
+        "cacheReadTokens": 4032,
+        "totalTokens": 5027
+      }
+    },
+    {
+      "probe": 1,
+      "session_id": "delivery-53309cbb165e40e8864cc41f215e637b",
+      "seq": 19,
+      "usage": {
+        "inputTokens": 635,
+        "outputTokens": 147,
+        "cacheReadTokens": 4864,
+        "totalTokens": 5646
+      }
+    },
+    {
+      "probe": 2,
+      "session_id": "delivery-436d2cdda4214fd9951a846833c01946",
+      "seq": 9,
+      "usage": {
+        "inputTokens": 4047,
+        "outputTokens": 244,
+        "cacheReadTokens": 0,
+        "totalTokens": 4291
+      }
+    },
+    {
+      "probe": 2,
+      "session_id": "delivery-436d2cdda4214fd9951a846833c01946",
+      "seq": 14,
+      "usage": {
+        "inputTokens": 828,
+        "outputTokens": 147,
+        "cacheReadTokens": 4032,
+        "totalTokens": 5007
+      }
+    },
+    {
+      "probe": 2,
+      "session_id": "delivery-436d2cdda4214fd9951a846833c01946",
+      "seq": 19,
+      "usage": {
+        "inputTokens": 676,
+        "outputTokens": 127,
+        "cacheReadTokens": 4800,
+        "totalTokens": 5603
+      }
+    },
+    {
+      "probe": 3,
+      "session_id": "delivery-690bbd4496d14043aec26303c700a39d",
+      "seq": 9,
+      "usage": {
+        "inputTokens": 4219,
+        "outputTokens": 502,
+        "cacheReadTokens": 0,
+        "totalTokens": 4721
+      }
+    },
+    {
+      "probe": 3,
+      "session_id": "delivery-690bbd4496d14043aec26303c700a39d",
+      "seq": 14,
+      "usage": {
+        "inputTokens": 1896,
+        "outputTokens": 233,
+        "cacheReadTokens": 3712,
+        "totalTokens": 5841
+      }
+    },
+    {
+      "probe": 3,
+      "session_id": "delivery-690bbd4496d14043aec26303c700a39d",
+      "seq": 19,
+      "usage": {
+        "inputTokens": 884,
+        "outputTokens": 172,
+        "cacheReadTokens": 5568,
+        "totalTokens": 6624
+      }
+    }
+  ],
+  "source_prefixes": [
+    {
+      "path": "workspaces/modeling-input-correction-20261020/native-probe-1/native/dsh-wire.jsonl",
+      "bytes": 62555,
+      "sha256": "ebdb3742a6eb3af1c11b6440b9e3b837f207eb77880bd86b5a0619cc39b62084"
+    },
+    {
+      "path": "workspaces/modeling-input-correction-20261020/native-probe-2/native/dsh-wire.jsonl",
+      "bytes": 61766,
+      "sha256": "5d29cd2b0a99e566eb9bd375b6605a0456fe707d6a35c37e45d38c72d4845c85"
+    },
+    {
+      "path": "workspaces/modeling-input-correction-20261020/native-probe-3/native/dsh-wire.jsonl",
+      "bytes": 77891,
+      "sha256": "e9ff07083709ef15d3eba7681d02bdc43a5bc65d4be424cd15e5e70d989e4e30"
+    },
+    {
+      "path": "workspaces/modeling-input-correction-20261020/native-probe-1/calls.json",
+      "bytes": 7057,
+      "sha256": "f42ccbb75dd650922fba3840503274696233a5af7e355e806cb055b4a2cfd1cc"
+    },
+    {
+      "path": "workspaces/modeling-input-correction-20261020/native-probe-1/final-request.json",
+      "bytes": 1216,
+      "sha256": "645269864af7b3e2ff6e51689ffd11adacba2e89ea26fb933bdd9c69e027b638"
+    },
+    {
+      "path": "workspaces/modeling-input-correction-20261020/native-probe-2/calls.json",
+      "bytes": 6937,
+      "sha256": "9e9d9a21892c3cab33b814b4e90c27bb8c99e98590b9b7c9fc04e399eab4c9f2"
+    },
+    {
+      "path": "workspaces/modeling-input-correction-20261020/native-probe-2/final-request.json",
+      "bytes": 1160,
+      "sha256": "564c0d760c357741f7a2ce463d88dfdb532985aade69a0a34ea458997fbe3e03"
+    },
+    {
+      "path": "workspaces/modeling-input-correction-20261020/native-probe-3/calls.json",
+      "bytes": 11589,
+      "sha256": "833ead497ad1225e3d54abd5f0d6ce32ba1968bd2fc20cff185d0e5030e57bf9"
+    },
+    {
+      "path": "workspaces/modeling-input-correction-20261020/native-probe-3/final-request.json",
+      "bytes": 2099,
+      "sha256": "df76d0db05c350417b0e2676719e17e38ccfa1adeccb62819c6574c2d44a902d"
+    }
+  ],
+  "assertions": {
+    "unique_historical_requests": 3,
+    "real_tool_calls": 6,
+    "each_one_rejection_then_one_correction": true,
+    "no_host_argument_repair": true,
+    "unchanged_business_content": true,
+    "all_technical_sessions_closed": true,
+    "exact_initial_replays": 2,
+    "all_final_business_content_matches_historical_input": true
+  },
+  "limitations": [
+    "Provider-backed GLM input-correction adoption in three fresh short technical contexts; DSHDeliveryRuntime tool wrapper, not a full Modeling roster or continuation of original sticky histories.",
+    "Actual platform boundary is an isolated substitute; this does not prove independent business semantics, full-task first-round repeatability or net cost benefit.",
+    "Usage is native input/output including cache, not complete Provider billing; current Codex Host/engineering cost is separate and not claimed zero."
+  ],
+  "historical_input_comparison": [
+    {
+      "probe": 1,
+      "first_request_exact_historical_object": true,
+      "historical_request_sha256": "a6482f143fb9dc4b02f19c61d1cbb42a14b63ca72c76475d9ac7ca5865da099d",
+      "first_emitted_request_sha256": "a6482f143fb9dc4b02f19c61d1cbb42a14b63ca72c76475d9ac7ca5865da099d",
+      "final_business_content_matches_historical_input": true,
+      "first_call_delta": null
+    },
+    {
+      "probe": 2,
+      "first_request_exact_historical_object": true,
+      "historical_request_sha256": "95522e9f838ba6f48aef6a50d8352806a595a661f267a91b32e68f2d8d69d67c",
+      "first_emitted_request_sha256": "95522e9f838ba6f48aef6a50d8352806a595a661f267a91b32e68f2d8d69d67c",
+      "final_business_content_matches_historical_input": true,
+      "first_call_delta": null
+    },
+    {
+      "probe": 3,
+      "first_request_exact_historical_object": false,
+      "historical_request_sha256": "6eb8b913481e83ee5e7f71bdda33de2c6aeac3178bd63ec3d160d1a47da1b8c1",
+      "first_emitted_request_sha256": "863b377de82ecc6d61939b3033c600cf6f505c88dde36f851094722ce328a1c7",
+      "final_business_content_matches_historical_input": true,
+      "first_call_delta": "Agent copied second change resource_kind and target_ref to outer level but retained inner duplicates; still correctly rejected. No business-field difference."
+    }
+  ]
+}
