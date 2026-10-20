@@ -3425,5 +3425,96 @@
     "Normalized argument digest ignores JSON whitespace/key order; duplicate content is not necessarily byte-identical text.",
     "No inference about low effort or provider-wide capabilities from selected samples.",
     "Unknown supplier-internal causes remain unknown."
-  ]
+  ],
+  "root_cause_follow_up": {
+    "observations": [
+      {
+        "system_prompt": {
+          "seq": 4,
+          "sha256": "9b4f90301cd118967534c28edd6046ec122b54a590761478a94e535afb110406",
+          "has_six_sibling_keys": true,
+          "has_repeated_request_guidance": true
+        },
+        "request_header": {
+          "seq": 7,
+          "tool_count": 17,
+          "submit_schema_bytes_json_default": 10682,
+          "fields_property_count": 81,
+          "resource_kind_count": 12,
+          "argument_names": [
+            "modeling_id",
+            "placement_ref",
+            "request"
+          ],
+          "required_arguments": [
+            "modeling_id",
+            "request"
+          ]
+        },
+        "correct_prepared_request": {
+          "source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r1/handoff-output/modeling/prepared-delivery/batch1-classes-r4-3-026.json",
+          "sha256": "8ef0392dff4c5bb1e9beecc432366957dae527a9f1489d5cfec1d526e5ecc7fd",
+          "change_count": 2,
+          "all_six_outer_keys": true,
+          "fields_exclude_control_keys": true
+        },
+        "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1"
+      },
+      {
+        "system_prompt": {
+          "seq": 4,
+          "sha256": "9b4f90301cd118967534c28edd6046ec122b54a590761478a94e535afb110406",
+          "has_six_sibling_keys": true,
+          "has_repeated_request_guidance": true
+        },
+        "request_header": {
+          "seq": 7,
+          "tool_count": 17,
+          "submit_schema_bytes_json_default": 10682,
+          "fields_property_count": 81,
+          "resource_kind_count": 12,
+          "argument_names": [
+            "modeling_id",
+            "placement_ref",
+            "request"
+          ],
+          "required_arguments": [
+            "modeling_id",
+            "request"
+          ]
+        },
+        "correct_prepared_request": {
+          "source": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r1/handoff-output/modeling/prepared/class-creates-request.json",
+          "sha256": "4a932e5f3a5040a413751d9bac6b40c281a650211057e9f6ad494e83e18bb17d",
+          "change_count": 2,
+          "all_six_outer_keys": true,
+          "fields_exclude_control_keys": true
+        },
+        "run_id": "minimal-chain-20261020-dsh-glm-low-r1"
+      }
+    ],
+    "compiled_build_checks": [
+      {
+        "source": "/home/yangxiang/deepseek-harness/packages/core/agent-loop/lib/index.js",
+        "sha256": "cf57e3ecd487ac5c2553455aaa5cef2c6fb41e6bd61be5aa455675d1d7193033",
+        "matches_retained_build": true
+      },
+      {
+        "source": "/home/yangxiang/deepseek-harness/packages/llm/llm-deepseek/lib/index.js",
+        "sha256": "eba35025ed1eedda89c51f2da46a3a968f7be1d59719f2ceeadfc4518dff37d6",
+        "matches_retained_build": true
+      }
+    ],
+    "code_references": [
+      "modeling_team/capability_mcp.py:115",
+      "modeling_team/runner.py:5757",
+      "modeling_team/messages_provider_proxy.py:146",
+      "/home/yangxiang/deepseek-harness/packages/llm/llm-deepseek/src/serialize.ts:159",
+      "/home/yangxiang/deepseek-harness/packages/llm/llm-deepseek/src/translate.ts:82"
+    ],
+    "established_engineering_gap": "Prepared complete request and actual execution request are separate generated values; current submit tool accepts inline request only, not a reference to the complete prepared request.",
+    "causal_status": "Failure boundary and engineering gap established; unique trigger for repeated bad generation not proven. Schema width, error history, context and effort are hypotheses, not established causes.",
+    "new_model_requests": 0,
+    "production_writes": 0
+  }
 }
