@@ -1,0 +1,3429 @@
+{
+  "schema_version": "modeling-first-round-failure-comparison/v1",
+  "recorded_at": "2026-10-20T00:08:26.762627+00:00",
+  "scope": "Retained minimal-installation-chain runs 2026-10-18..20; targeted failure-mechanism comparison, not a success-rate benchmark.",
+  "runs": [
+    {
+      "run_id": "minimal-chain-20261019-dsh-input-fixes-r1",
+      "wire_source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-input-fixes-r1/evidence/dsh-wire.jsonl",
+      "wire_snapshot_bytes": 2940732,
+      "wire_snapshot_sha256": "6891abe416a234ee4edf74b3071ae17aeb65d82d31f7ef9aeace2fcd0b6afd5d",
+      "calls": [
+        {
+          "seq": 146,
+          "call_id": "call_7fb87a01536c4e68a714c071",
+          "raw_sha256": "ce34a280dcbd0cd671249e5c0ccaf52a74d32299000811f8259a941ef2d4efba",
+          "argument_sha256": "f425ea40c849a53c58c3781c9955ae17ad0a97d90051c6bfea1deb0863acb1f5",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "name",
+                "semantic_definition",
+                "slice_ids"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "name",
+                "semantic_definition",
+                "slice_ids"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 151,
+          "call_id": "call_ebb84e48e337471b96dc3dca",
+          "raw_sha256": "1289ca32080e346036ff483a578538f8296f548c50b05d91774fd9f2e3ce8c5f",
+          "argument_sha256": "2a88868689f25e0bedc11b539aed256a907a919ffe9db768dc81d1e407173313",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 156,
+          "call_id": "call_01ba31ba34fb4948b8757399",
+          "raw_sha256": "5eea456bac4b014c37dc40a5324b0eb10b9a2a05bb0f4724058665e767d1a5f0",
+          "argument_sha256": "09a14130551a816f1b88d404c975c4e52e11de76e13d1c97fc71610f7f0893a2",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 161,
+          "call_id": "call_d01dd7b1d8954bab88c85932",
+          "raw_sha256": "adff2619d7d20678e3125c0ecc41ce53de8a930d48d037c9c6d7c48b4c5aa431",
+          "argument_sha256": "4231cff6391b36e030570232bb5978bba82e55bf009557e8979d9e2a9801fd1a",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 166,
+          "call_id": "call_8be114172bea42eeb693cca8",
+          "raw_sha256": "74ce3bde1301d8201748715863695a95034a21898e328cca49f7c20d0e45c74b",
+          "argument_sha256": "09a14130551a816f1b88d404c975c4e52e11de76e13d1c97fc71610f7f0893a2",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 171,
+          "call_id": "call_3e1844a6c644466b8f2ade4e",
+          "raw_sha256": "74ce3bde1301d8201748715863695a95034a21898e328cca49f7c20d0e45c74b",
+          "argument_sha256": "09a14130551a816f1b88d404c975c4e52e11de76e13d1c97fc71610f7f0893a2",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 176,
+          "call_id": "call_c7b0b07e1bea49be863879bd",
+          "raw_sha256": "74ce3bde1301d8201748715863695a95034a21898e328cca49f7c20d0e45c74b",
+          "argument_sha256": "09a14130551a816f1b88d404c975c4e52e11de76e13d1c97fc71610f7f0893a2",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 181,
+          "call_id": "call_3fa27de9f8ef45b8bb70ed11",
+          "raw_sha256": "33b0cf36e6906da53640891489df16cc191f6b359ea39868b1f55d877cafeaec",
+          "argument_sha256": "ca89be7fc9a8a1cbd961e17e4ef153df876df2d26915d1f522e6bc438987e1e5",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 186,
+          "call_id": "call_c7c46f66177c47c1946c75ea",
+          "raw_sha256": "33b0cf36e6906da53640891489df16cc191f6b359ea39868b1f55d877cafeaec",
+          "argument_sha256": "ca89be7fc9a8a1cbd961e17e4ef153df876df2d26915d1f522e6bc438987e1e5",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 192,
+          "call_id": "call_99687cf0a093407b864cce7b",
+          "raw_sha256": "33b0cf36e6906da53640891489df16cc191f6b359ea39868b1f55d877cafeaec",
+          "argument_sha256": "ca89be7fc9a8a1cbd961e17e4ef153df876df2d26915d1f522e6bc438987e1e5",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 197,
+          "call_id": "call_c1cb2a7b7e1f4cd3a5de2c1a",
+          "raw_sha256": "09557bdd00db2a328cf2994e7f7f882628337fe5f34bdee903f89e3babd76903",
+          "argument_sha256": "d71a7ddb651095759b523179a3d383fd85731f5db055703ac6018b4b4a9b351a",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 220,
+          "call_id": "call_6349dc42f28e4b1c9872df06",
+          "raw_sha256": "09557bdd00db2a328cf2994e7f7f882628337fe5f34bdee903f89e3babd76903",
+          "argument_sha256": "d71a7ddb651095759b523179a3d383fd85731f5db055703ac6018b4b4a9b351a",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 239,
+          "call_id": "call_6b439f7641984426b23a93af",
+          "raw_sha256": "74ce3bde1301d8201748715863695a95034a21898e328cca49f7c20d0e45c74b",
+          "argument_sha256": "09a14130551a816f1b88d404c975c4e52e11de76e13d1c97fc71610f7f0893a2",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 244,
+          "call_id": "call_8d6c787d4062430f88a7d034",
+          "raw_sha256": "74ce3bde1301d8201748715863695a95034a21898e328cca49f7c20d0e45c74b",
+          "argument_sha256": "09a14130551a816f1b88d404c975c4e52e11de76e13d1c97fc71610f7f0893a2",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 268,
+          "call_id": "call_c12976795d34457a8e3f5ab2",
+          "raw_sha256": "74ce3bde1301d8201748715863695a95034a21898e328cca49f7c20d0e45c74b",
+          "argument_sha256": "09a14130551a816f1b88d404c975c4e52e11de76e13d1c97fc71610f7f0893a2",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 273,
+          "call_id": "call_ddbdb150baff45a89433d52f",
+          "raw_sha256": "dc3e67a13d525746a4afdde396f11ba3e6d520f123ffb69e0857106cc0281406",
+          "argument_sha256": "668642d5778a09ad3768d9e587a7ed40162c628c33762922533a6962696ccb07",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "name"
+              ]
+            },
+            {
+              "invalid_change_type": "str"
+            }
+          ]
+        },
+        {
+          "seq": 278,
+          "call_id": "call_fd6bde3cbde942d88b97b4dc",
+          "raw_sha256": "e0d62483804c86d7eb1f997a5b5eac411b03635ca2108304398e4221a775fbff",
+          "argument_sha256": "ac017ed0f57d12d0a3e580aeb65de8d718ab285fec4dbbc68e74b54be75ff8c1",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "name"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 283,
+          "call_id": "call_d2c35a9cd9c74ae9bcee73c0",
+          "raw_sha256": "97aff70abcddec6ec6de8ae60337a4ba46d62e889f0b6a428bff2c19cfee8200",
+          "argument_sha256": "7c35b75a30f8094a04fcb4c6f8949347be2f1c5fc41d277c1fd8e831465e891f",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": null
+            }
+          ]
+        },
+        {
+          "seq": 288,
+          "call_id": "call_5a7678362ebc4de89b963af6",
+          "raw_sha256": "74ce3bde1301d8201748715863695a95034a21898e328cca49f7c20d0e45c74b",
+          "argument_sha256": "09a14130551a816f1b88d404c975c4e52e11de76e13d1c97fc71610f7f0893a2",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 293,
+          "call_id": "call_1f89633d12284becae5e3993",
+          "raw_sha256": "03981cb688147144d225541595e574df5e22fac922a47f859a5fd74dfe334c24",
+          "argument_sha256": "a3de854892ad414cfe50cccd3ecc8fd6102ce11b52acf9f6cd01942fe4b5dbc4",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 298,
+          "call_id": "call_0796e5f88ff746828661e8b7",
+          "raw_sha256": "23433dcc4ca3113ad82aa19a9b0b7b973f96b12ce23c7b58e39ad01b8dc7e283",
+          "argument_sha256": "f8b6ea6c58fcddfe9907df132407abc76ccd4ffd997cc931e602de38180fffbf",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 303,
+          "call_id": "call_4b367261d364462eb2d454f0",
+          "raw_sha256": "33c584f07a872a99ae32d08ee2ecef70d4fd8e35854a3ab6bd6b667109b33a6e",
+          "argument_sha256": "88ecb63c118b3de7ff8acc9ed7ea75c5633368a09aad2805c450d4c4184789d0",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "name",
+                "semantic_definition"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 308,
+          "call_id": "call_8ff5b4f31b75448c8c422ccf",
+          "raw_sha256": "f76044f894720ca789fa1728b6217b7aeebf39d8c6499fe4f316f51432940ef7",
+          "argument_sha256": "2e9c72aab5f914edc3dd452723a48b77b3b7a41da5b8c3dad51b8a15e0306634",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "name",
+                "semantic_definition"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 313,
+          "call_id": "call_bfbdcab381c24ac28d7e5613",
+          "raw_sha256": "d0fe9e5cd0c9259eba20bcc58d533c8de9c9dd87b349a2743ce08956362033da",
+          "argument_sha256": "4308cd23c80d62a0eee85a54e6e3d65d50bdbb8b8f0861c75946ced086f98db9",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "name",
+                "semantic_definition"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 318,
+          "call_id": "call_4a23bb682ccb4f698b71c1d9",
+          "raw_sha256": "4cf76bc524b6a311162744b2cf2b1e7fd6cd4ef77ce42f67d19186f52d868b9a",
+          "argument_sha256": "32fd8637e76bed42ee1775b8f421810dbd456eed61e975d07bdef2501b6ebd2f",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "name",
+                "semantic_definition",
+                "source_class_id",
+                "target_class_id"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 328,
+          "call_id": "call_f36835f4b52640cd8513bef6",
+          "raw_sha256": "9c7cf77f9a1f54ed6695413798ebe4745dd87423ddcc0c0b042d3245d3ba0829",
+          "argument_sha256": "f0743e718e4c69336f1918aac897127ca0f6fb21443d6d9ba610b318a0fba73a",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": null
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "seq": 147,
+          "call_id": "call_7fb87a01536c4e68a714c071",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 152,
+          "call_id": "call_ebb84e48e337471b96dc3dca",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 157,
+          "call_id": "call_01ba31ba34fb4948b8757399",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 162,
+          "call_id": "call_d01dd7b1d8954bab88c85932",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 167,
+          "call_id": "call_8be114172bea42eeb693cca8",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 172,
+          "call_id": "call_3e1844a6c644466b8f2ade4e",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 177,
+          "call_id": "call_c7b0b07e1bea49be863879bd",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 182,
+          "call_id": "call_3fa27de9f8ef45b8bb70ed11",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 187,
+          "call_id": "call_c7c46f66177c47c1946c75ea",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 193,
+          "call_id": "call_99687cf0a093407b864cce7b",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 198,
+          "call_id": "call_c1cb2a7b7e1f4cd3a5de2c1a",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 221,
+          "call_id": "call_6349dc42f28e4b1c9872df06",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 240,
+          "call_id": "call_6b439f7641984426b23a93af",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 245,
+          "call_id": "call_8d6c787d4062430f88a7d034",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 269,
+          "call_id": "call_c12976795d34457a8e3f5ab2",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 274,
+          "call_id": "call_ddbdb150baff45a89433d52f",
+          "is_error": true,
+          "status": "native_error",
+          "error_codes": [],
+          "message": "Error: Runner capability request rejected"
+        },
+        {
+          "seq": 279,
+          "call_id": "call_fd6bde3cbde942d88b97b4dc",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        },
+        {
+          "seq": 284,
+          "call_id": "call_d2c35a9cd9c74ae9bcee73c0",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        },
+        {
+          "seq": 289,
+          "call_id": "call_5a7678362ebc4de89b963af6",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 294,
+          "call_id": "call_1f89633d12284becae5e3993",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 299,
+          "call_id": "call_0796e5f88ff746828661e8b7",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 304,
+          "call_id": "call_4b367261d364462eb2d454f0",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        },
+        {
+          "seq": 309,
+          "call_id": "call_8ff5b4f31b75448c8c422ccf",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        },
+        {
+          "seq": 314,
+          "call_id": "call_bfbdcab381c24ac28d7e5613",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        },
+        {
+          "seq": 319,
+          "call_id": "call_4a23bb682ccb4f698b71c1d9",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        },
+        {
+          "seq": 329,
+          "call_id": "call_f36835f4b52640cd8513bef6",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        }
+      ],
+      "counts": {
+        "native_calls": 26,
+        "native_results": 26,
+        "statuses": {
+          "not_written": 18,
+          "native_error": 1,
+          "completed": 7
+        },
+        "error_code_responses": {
+          "unsupported_change_field": 16,
+          "change_schema_mismatch": 2
+        },
+        "max_identical_normalized_arguments": 8
+      },
+      "frozen_prompt": {
+        "source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-input-fixes-r1/runtime/modeling/home/materials/material-1.txt",
+        "sha256": "135daf38de35da7cef73a6aaef9551d26c90854a69704ce37f5cee9ff5e13f8d",
+        "contains_sibling_instruction": false
+      },
+      "frozen_schema": {
+        "sha256": "35d082d366560edb005d6d796bdc9d73aaf668b31b5637fec457fe62dc52414e",
+        "change_required": [
+          "action",
+          "change_id",
+          "fields",
+          "item_id",
+          "resource_kind",
+          "target_ref"
+        ],
+        "change_additional_properties": false,
+        "fields_additional_properties": false,
+        "misnested_keys_advertised_under_fields": []
+      }
+    },
+    {
+      "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r1",
+      "wire_source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r1/evidence/dsh-wire.jsonl",
+      "wire_snapshot_bytes": 2442037,
+      "wire_snapshot_sha256": "e33648c62283d05516e0d3a71d5e9aecb8e468fe6bbb0f44665d356b2d1ca111",
+      "calls": [
+        {
+          "seq": 26,
+          "call_id": "call_8a978c7aa0a741e082204820",
+          "raw_sha256": "11df4a6f4f91b8305abbaf6dadc97ec570b8a516bbf50f46c7f8209dd0138fc4",
+          "argument_sha256": "7152f84e261f30ddc11b0e648d14bdeee391f90615aef8ff0b7a28e577382620",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 63,
+          "call_id": "call_f23c896b44f0482fa12d9de7",
+          "raw_sha256": "87dd8d46b9e4b7db55d97894bccc6c1c054d2302e2d47c9cf72c1ff67919c0e9",
+          "argument_sha256": "36db7806d679a8da367dda0751946006328a9374de62c394f9343a56850a435d",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 106,
+          "call_id": "call_90069cfae07c471cbe8c11b0",
+          "raw_sha256": "ba231bfbc8e8f9ed85985bb442336bb2ac496eab968a21b2a14ef0ae58dcc329",
+          "argument_sha256": "36db7806d679a8da367dda0751946006328a9374de62c394f9343a56850a435d",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 124,
+          "call_id": "call_5d8c1ccb45974c6182ef7eb2",
+          "raw_sha256": "0f68e0a94c1e9f55794151772ff020638035cb27eda1209a380c91ba4837f1a2",
+          "argument_sha256": "36db7806d679a8da367dda0751946006328a9374de62c394f9343a56850a435d",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 130,
+          "call_id": "call_1f85fd404a974c018e40786c",
+          "raw_sha256": "3163c73432931bade7bafe5d16009ae4563ba0cdd582c7215648f3fbea90474c",
+          "argument_sha256": "34af0dde1ff85fe38c745166da11fd3c279258fd2d176b2917c3c00a15c970e8",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 135,
+          "call_id": "call_4ab531b5cc5e4a079f721100",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 141,
+          "call_id": "call_fe15ab236c74455995ce2a33",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 146,
+          "call_id": "call_f276174bdbe54f33b85e67b0",
+          "raw_sha256": "6cc44521605dc389053f9d3641e06d75ab5624bc9ac1499130937f83f9475c41",
+          "argument_sha256": "bbf37634ff7de2cea646778525ab69cdba649befb60791ea6903a29905d63d6f",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 151,
+          "call_id": "call_860d0a9c55a54611b86f30fe",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 156,
+          "call_id": "call_e8f58218091643fa90dfbbe2",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 196,
+          "call_id": "call_1bd9fa405511468f9087ca24",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 213,
+          "call_id": "call_72f7393879014630989b5bcb",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 231,
+          "call_id": "call_b751093fc889473f809429a3",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 253,
+          "call_id": "call_ab1af3bb2ade43bbb7d54e64",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 270,
+          "call_id": "call_f606286e55414f84867ffe2d",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 277,
+          "call_id": "call_8d5fb9d0aced44e58aaecdec",
+          "raw_sha256": "be13b09dc709887b3db11c2f5040f68494694614fa96103c85ae2d87d5830f40",
+          "argument_sha256": "a3599d3597232abb45690d56e16748bf3eddb1d062942e8f6eac5d23d9dc06e7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 306,
+          "call_id": "call_2312b41c0fbd4d8d91389676",
+          "raw_sha256": "6cc44521605dc389053f9d3641e06d75ab5624bc9ac1499130937f83f9475c41",
+          "argument_sha256": "bbf37634ff7de2cea646778525ab69cdba649befb60791ea6903a29905d63d6f",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 326,
+          "call_id": "call_a8478d59225b41468622f33a",
+          "raw_sha256": "6cc44521605dc389053f9d3641e06d75ab5624bc9ac1499130937f83f9475c41",
+          "argument_sha256": "bbf37634ff7de2cea646778525ab69cdba649befb60791ea6903a29905d63d6f",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 363,
+          "call_id": "call_91887a5aac144cd4bd50a7bd",
+          "raw_sha256": "6cc44521605dc389053f9d3641e06d75ab5624bc9ac1499130937f83f9475c41",
+          "argument_sha256": "bbf37634ff7de2cea646778525ab69cdba649befb60791ea6903a29905d63d6f",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 397,
+          "call_id": "call_cc5a70f6ca4e4fb98e69f094",
+          "raw_sha256": "6cc44521605dc389053f9d3641e06d75ab5624bc9ac1499130937f83f9475c41",
+          "argument_sha256": "bbf37634ff7de2cea646778525ab69cdba649befb60791ea6903a29905d63d6f",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "seq": 27,
+          "call_id": "call_8a978c7aa0a741e082204820",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "cq_freeze_pending"
+          ]
+        },
+        {
+          "seq": 64,
+          "call_id": "call_f23c896b44f0482fa12d9de7",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "cq_freeze_pending"
+          ]
+        },
+        {
+          "seq": 107,
+          "call_id": "call_90069cfae07c471cbe8c11b0",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "cq_freeze_pending"
+          ]
+        },
+        {
+          "seq": 125,
+          "call_id": "call_5d8c1ccb45974c6182ef7eb2",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 131,
+          "call_id": "call_1f85fd404a974c018e40786c",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 136,
+          "call_id": "call_4ab531b5cc5e4a079f721100",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 142,
+          "call_id": "call_fe15ab236c74455995ce2a33",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 147,
+          "call_id": "call_f276174bdbe54f33b85e67b0",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 152,
+          "call_id": "call_860d0a9c55a54611b86f30fe",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 157,
+          "call_id": "call_e8f58218091643fa90dfbbe2",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 197,
+          "call_id": "call_1bd9fa405511468f9087ca24",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 214,
+          "call_id": "call_72f7393879014630989b5bcb",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 232,
+          "call_id": "call_b751093fc889473f809429a3",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 254,
+          "call_id": "call_ab1af3bb2ade43bbb7d54e64",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 271,
+          "call_id": "call_f606286e55414f84867ffe2d",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 278,
+          "call_id": "call_8d5fb9d0aced44e58aaecdec",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 307,
+          "call_id": "call_2312b41c0fbd4d8d91389676",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 327,
+          "call_id": "call_a8478d59225b41468622f33a",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 364,
+          "call_id": "call_91887a5aac144cd4bd50a7bd",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 398,
+          "call_id": "call_cc5a70f6ca4e4fb98e69f094",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        }
+      ],
+      "counts": {
+        "native_calls": 20,
+        "native_results": 20,
+        "statuses": {
+          "not_written": 20
+        },
+        "error_code_responses": {
+          "cq_freeze_pending": 3,
+          "change_schema_mismatch": 2,
+          "unsupported_change_field": 15
+        },
+        "max_identical_normalized_arguments": 10
+      },
+      "frozen_prompt": {
+        "source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r1/runtime/modeling/home/materials/material-1.txt",
+        "sha256": "8d33798262696b6483d606ff444fced4f61acfcd5016acc7a5632c45f791b371",
+        "contains_sibling_instruction": true
+      },
+      "frozen_schema": {
+        "sha256": "35d082d366560edb005d6d796bdc9d73aaf668b31b5637fec457fe62dc52414e",
+        "change_required": [
+          "action",
+          "change_id",
+          "fields",
+          "item_id",
+          "resource_kind",
+          "target_ref"
+        ],
+        "change_additional_properties": false,
+        "fields_additional_properties": false,
+        "misnested_keys_advertised_under_fields": []
+      }
+    },
+    {
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r1",
+      "wire_source": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r1/evidence/dsh-wire.jsonl",
+      "wire_snapshot_bytes": 1549613,
+      "wire_snapshot_sha256": "6c54d3dd833820484f0678efc4ebf24cf9db66f8790c6af3aca461d09c17e13e",
+      "calls": [
+        {
+          "seq": 103,
+          "call_id": "call_80f790320f9a4e3790b8888d",
+          "raw_sha256": "856452d1874e5549bbcdb49c7f8e4fd6b0f3fb9202332c7377fe8b63c72cf0c0",
+          "argument_sha256": "e271d8cc10d272bcd9947922662f9c6c37980c4a44edf35d1c67b352841290fd",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "name",
+                "semantic_definition",
+                "source"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "name",
+                "semantic_definition",
+                "source"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 108,
+          "call_id": "call_06bd4fab43354febb6756b50",
+          "raw_sha256": "cccc48e76c6008de2ce537424d8cb57ce73d6c2430409afb2a12fdda9df52da5",
+          "argument_sha256": "8fcb0ccc424083a22c74399761552e03f3ef46801e05708fbc97c6384cad72c0",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 113,
+          "call_id": "call_e24305e7948a4786bf951468",
+          "raw_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "argument_sha256": "0a841a1e96587d13f99ff1b934ee50e38ef24b4c16ce74de6068271e590db870",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 118,
+          "call_id": "call_09a1140d14dd4bb29871f8b0",
+          "raw_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "argument_sha256": "0a841a1e96587d13f99ff1b934ee50e38ef24b4c16ce74de6068271e590db870",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 123,
+          "call_id": "call_57321627f543491fab49c735",
+          "raw_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "argument_sha256": "0a841a1e96587d13f99ff1b934ee50e38ef24b4c16ce74de6068271e590db870",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 128,
+          "call_id": "call_95812ee07b01480aaf2c9d24",
+          "raw_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "argument_sha256": "0a841a1e96587d13f99ff1b934ee50e38ef24b4c16ce74de6068271e590db870",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 134,
+          "call_id": "call_49dd9e307adf49b18850214d",
+          "raw_sha256": "e81c0134640b272d763e5d982f9694195050bc6d98ec2e91752d4eacb552e96b",
+          "argument_sha256": "dd3dacf42ef5457aa0be1162c23fd8a4b86ed40f6cca43f383e522c407b5841a",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 139,
+          "call_id": "call_c6ad5fedf72c409a8f829e1a",
+          "raw_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "argument_sha256": "0a841a1e96587d13f99ff1b934ee50e38ef24b4c16ce74de6068271e590db870",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 154,
+          "call_id": "call_b9f932303f20498bb67020bb",
+          "raw_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "argument_sha256": "0a841a1e96587d13f99ff1b934ee50e38ef24b4c16ce74de6068271e590db870",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 179,
+          "call_id": "call_7d2621ba16b34d0c8f9b5e75",
+          "raw_sha256": "14d8b2dd2678ffef182162353b6a000f86448f275a6a2330594b7fd0c637cf27",
+          "argument_sha256": "0a841a1e96587d13f99ff1b934ee50e38ef24b4c16ce74de6068271e590db870",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 217,
+          "call_id": "call_eec02db31001497381103846",
+          "raw_sha256": "e81c0134640b272d763e5d982f9694195050bc6d98ec2e91752d4eacb552e96b",
+          "argument_sha256": "dd3dacf42ef5457aa0be1162c23fd8a4b86ed40f6cca43f383e522c407b5841a",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 222,
+          "call_id": "call_05d60f6a5e9843b38048644f",
+          "raw_sha256": "e81c0134640b272d763e5d982f9694195050bc6d98ec2e91752d4eacb552e96b",
+          "argument_sha256": "dd3dacf42ef5457aa0be1162c23fd8a4b86ed40f6cca43f383e522c407b5841a",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 227,
+          "call_id": "call_f7a1c81f25b8491bb837d95f",
+          "raw_sha256": "e81c0134640b272d763e5d982f9694195050bc6d98ec2e91752d4eacb552e96b",
+          "argument_sha256": "dd3dacf42ef5457aa0be1162c23fd8a4b86ed40f6cca43f383e522c407b5841a",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "item_id",
+                "name",
+                "resource_kind",
+                "semantic_definition",
+                "target_ref"
+              ]
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "seq": 104,
+          "call_id": "call_80f790320f9a4e3790b8888d",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 109,
+          "call_id": "call_06bd4fab43354febb6756b50",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 114,
+          "call_id": "call_e24305e7948a4786bf951468",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 119,
+          "call_id": "call_09a1140d14dd4bb29871f8b0",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 124,
+          "call_id": "call_57321627f543491fab49c735",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 129,
+          "call_id": "call_95812ee07b01480aaf2c9d24",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 135,
+          "call_id": "call_49dd9e307adf49b18850214d",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 140,
+          "call_id": "call_c6ad5fedf72c409a8f829e1a",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 155,
+          "call_id": "call_b9f932303f20498bb67020bb",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 180,
+          "call_id": "call_7d2621ba16b34d0c8f9b5e75",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 218,
+          "call_id": "call_eec02db31001497381103846",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 223,
+          "call_id": "call_05d60f6a5e9843b38048644f",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        },
+        {
+          "seq": 228,
+          "call_id": "call_f7a1c81f25b8491bb837d95f",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "change_schema_mismatch"
+          ]
+        }
+      ],
+      "counts": {
+        "native_calls": 13,
+        "native_results": 13,
+        "statuses": {
+          "not_written": 13
+        },
+        "error_code_responses": {
+          "unsupported_change_field": 1,
+          "change_schema_mismatch": 12
+        },
+        "max_identical_normalized_arguments": 7
+      },
+      "frozen_prompt": {
+        "source": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r1/runtime/modeling/home/materials/material-1.txt",
+        "sha256": "8d33798262696b6483d606ff444fced4f61acfcd5016acc7a5632c45f791b371",
+        "contains_sibling_instruction": true
+      },
+      "frozen_schema": {
+        "sha256": "35d082d366560edb005d6d796bdc9d73aaf668b31b5637fec457fe62dc52414e",
+        "change_required": [
+          "action",
+          "change_id",
+          "fields",
+          "item_id",
+          "resource_kind",
+          "target_ref"
+        ],
+        "change_additional_properties": false,
+        "fields_additional_properties": false,
+        "misnested_keys_advertised_under_fields": []
+      }
+    },
+    {
+      "run_id": "minimal-chain-20261019-dsh-glm-low-103635-r1",
+      "wire_source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-103635-r1/evidence/dsh-wire.jsonl",
+      "wire_snapshot_bytes": 1835794,
+      "wire_snapshot_sha256": "7197ac945b5fed39a1e393f8fb8f27573911e9c5041fc0577686bdee39fab02f",
+      "calls": [
+        {
+          "seq": 21,
+          "call_id": "call_e84da9fca5dc4c63807142b5",
+          "raw_sha256": "6c7e23904a35a2292540f2b2aae5619d04f893d81cba3eb212098cda3209a26d",
+          "argument_sha256": "93c1c879dcf35e7d1ef400013f2fd955fadf931f23def7f0356fd9e19ac24532",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition",
+                "semantic_role"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition",
+                "semantic_role"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 129,
+          "call_id": "call_3cd5452f447b499ea161286d",
+          "raw_sha256": "6c7e23904a35a2292540f2b2aae5619d04f893d81cba3eb212098cda3209a26d",
+          "argument_sha256": "93c1c879dcf35e7d1ef400013f2fd955fadf931f23def7f0356fd9e19ac24532",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition",
+                "semantic_role"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition",
+                "semantic_role"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 135,
+          "call_id": "call_08ba4f6f31aa4eefbc26796f",
+          "raw_sha256": "3eb7266df5b89bd152275c2f51eae4a4940b1ce1bbe2513c79317189067b0d44",
+          "argument_sha256": "fc13731c3927cc87512e162e4b42a35f84989305d54d9c05d6cd900e5b77b024",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 140,
+          "call_id": "call_a17c4f02bf834d5082c95e52",
+          "raw_sha256": "ce99f2c32224a50404f443fa4b59f1cf0020c3a9d87c1a0820a14390a49aa3c8",
+          "argument_sha256": "2a2c55a628ce02b37ef2ecad16b97433673b5b6f24b8a82195e3691d4b152bf3",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "name",
+                "semantic_definition",
+                "source_class_id",
+                "target_class_id"
+              ]
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "seq": 22,
+          "call_id": "call_e84da9fca5dc4c63807142b5",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "scope_binding_required"
+          ]
+        },
+        {
+          "seq": 130,
+          "call_id": "call_3cd5452f447b499ea161286d",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 136,
+          "call_id": "call_08ba4f6f31aa4eefbc26796f",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        },
+        {
+          "seq": 141,
+          "call_id": "call_a17c4f02bf834d5082c95e52",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        }
+      ],
+      "counts": {
+        "native_calls": 4,
+        "native_results": 4,
+        "statuses": {
+          "not_written": 2,
+          "completed": 2
+        },
+        "error_code_responses": {
+          "scope_binding_required": 1,
+          "unsupported_change_field": 1
+        },
+        "max_identical_normalized_arguments": 2
+      },
+      "frozen_prompt": {
+        "source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-103635-r1/runtime/modeling/home/materials/material-1.txt",
+        "sha256": "8d33798262696b6483d606ff444fced4f61acfcd5016acc7a5632c45f791b371",
+        "contains_sibling_instruction": true
+      },
+      "frozen_schema": {
+        "sha256": "35d082d366560edb005d6d796bdc9d73aaf668b31b5637fec457fe62dc52414e",
+        "change_required": [
+          "action",
+          "change_id",
+          "fields",
+          "item_id",
+          "resource_kind",
+          "target_ref"
+        ],
+        "change_additional_properties": false,
+        "fields_additional_properties": false,
+        "misnested_keys_advertised_under_fields": []
+      }
+    },
+    {
+      "run_id": "minimal-chain-20261019-dsh-glm-low-140728-r2",
+      "wire_source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r2/evidence/dsh-wire.jsonl",
+      "wire_snapshot_bytes": 1696019,
+      "wire_snapshot_sha256": "049f455e2ed72f32692fc2181a3a50b1e8235c16d1719eeb1ac0578fc7a0a544",
+      "calls": [
+        {
+          "seq": 28,
+          "call_id": "call_f2463bbe0e0a4193b54f2e87",
+          "raw_sha256": "1ee5cd8bf24c10e38eebd9460ab3b86ccb3cb17bc4b152562b59ad99168fb9a4",
+          "argument_sha256": "277997c789fe23e77fc00a90fbfd90b1f0730b0b40ff9170b7496df49c4ea4c0",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "name",
+                "semantic_definition",
+                "source"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "name",
+                "semantic_definition",
+                "source"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 137,
+          "call_id": "call_9144fb53cb8d4681898ec3fa",
+          "raw_sha256": "1ee5cd8bf24c10e38eebd9460ab3b86ccb3cb17bc4b152562b59ad99168fb9a4",
+          "argument_sha256": "277997c789fe23e77fc00a90fbfd90b1f0730b0b40ff9170b7496df49c4ea4c0",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "name",
+                "semantic_definition",
+                "source"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "name",
+                "semantic_definition",
+                "source"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 142,
+          "call_id": "call_c797d0005ccf472a855d2a12",
+          "raw_sha256": "6083df66547002e6b07d5c25e7143fbfd2fd6550e9059d3e3c12f80b03265fe9",
+          "argument_sha256": "cfc75147f7f512703ecaf21078a1339c0410e2223fe9effdb3b87d45babc459b",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 148,
+          "call_id": "call_bbedfa1788b24740afce4219",
+          "raw_sha256": "9cca688ce4a550b0514d24343a8eaf1ec2bed691ee59f9519f3221d77aeb9a2d",
+          "argument_sha256": "4a10e62678f33a5d5547f1f4caef523963b796c6697de19d7a2587886c4dc8c7",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "name",
+                "semantic_definition",
+                "source_class_id",
+                "target_class_id"
+              ]
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "seq": 29,
+          "call_id": "call_f2463bbe0e0a4193b54f2e87",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "scope_binding_required"
+          ]
+        },
+        {
+          "seq": 138,
+          "call_id": "call_9144fb53cb8d4681898ec3fa",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "unsupported_change_field"
+          ]
+        },
+        {
+          "seq": 144,
+          "call_id": "call_c797d0005ccf472a855d2a12",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        },
+        {
+          "seq": 149,
+          "call_id": "call_bbedfa1788b24740afce4219",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        }
+      ],
+      "counts": {
+        "native_calls": 4,
+        "native_results": 4,
+        "statuses": {
+          "not_written": 2,
+          "completed": 2
+        },
+        "error_code_responses": {
+          "scope_binding_required": 1,
+          "unsupported_change_field": 1
+        },
+        "max_identical_normalized_arguments": 2
+      },
+      "frozen_prompt": {
+        "source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-glm-low-140728-r2/runtime/modeling/home/materials/material-1.txt",
+        "sha256": "8d33798262696b6483d606ff444fced4f61acfcd5016acc7a5632c45f791b371",
+        "contains_sibling_instruction": true
+      },
+      "frozen_schema": {
+        "sha256": "35d082d366560edb005d6d796bdc9d73aaf668b31b5637fec457fe62dc52414e",
+        "change_required": [
+          "action",
+          "change_id",
+          "fields",
+          "item_id",
+          "resource_kind",
+          "target_ref"
+        ],
+        "change_additional_properties": false,
+        "fields_additional_properties": false,
+        "misnested_keys_advertised_under_fields": []
+      }
+    },
+    {
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r2",
+      "wire_source": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r2/evidence/dsh-wire.jsonl",
+      "wire_snapshot_bytes": 1984597,
+      "wire_snapshot_sha256": "ad9b7ab886d6efa6861640274e1b59c18186e3e550e7b96332748cebcadc3509",
+      "calls": [
+        {
+          "seq": 28,
+          "call_id": "call_ac96cfed532b498596001912",
+          "raw_sha256": "48d45daa141dedcf3751fec565fdec21f53060bbae7221d448ceb049dcadbf56",
+          "argument_sha256": "f3816efdf3aa6ca1bc18cc1004ef8daa937cd6ff01b12996e50bd0677b940b3e",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition",
+                "source_class_id"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition",
+                "source_class_id"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 76,
+          "call_id": "call_bd3a85be4e7d4e8eb4c99a88",
+          "raw_sha256": "6be0c28312cfdb5f259b00a46ddc74f74845c481619b8288fceb4f50f7f57091",
+          "argument_sha256": "93428ab36f5722bf4f0e0d0c8b5d02b20b7617cc0e813585a054dd1129159fc0",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 108,
+          "call_id": "call_ec714102f4cb426d8d019a45",
+          "raw_sha256": "6be0c28312cfdb5f259b00a46ddc74f74845c481619b8288fceb4f50f7f57091",
+          "argument_sha256": "93428ab36f5722bf4f0e0d0c8b5d02b20b7617cc0e813585a054dd1129159fc0",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            },
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "aliases",
+                "description",
+                "name",
+                "semantic_definition"
+              ]
+            }
+          ]
+        },
+        {
+          "seq": 113,
+          "call_id": "call_a6e83e7b95174921ba935ef5",
+          "raw_sha256": "fcc64c0e3272afc841ddc7927bfe128b8440f192aad1fb9d1794198de356b5bb",
+          "argument_sha256": "97c7b0d3e51635c2de0904f805ebb5c61f275358227d36d3f54a3d5f63c58f06",
+          "changes_shape": [
+            {
+              "outer_keys": [
+                "action",
+                "change_id",
+                "fields",
+                "item_id",
+                "resource_kind",
+                "target_ref"
+              ],
+              "fields_keys": [
+                "name",
+                "semantic_definition",
+                "source_class_id",
+                "target_class_id"
+              ]
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "seq": 29,
+          "call_id": "call_ac96cfed532b498596001912",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "scope_binding_required"
+          ]
+        },
+        {
+          "seq": 77,
+          "call_id": "call_bd3a85be4e7d4e8eb4c99a88",
+          "is_error": false,
+          "status": "not_written",
+          "batches": 0,
+          "error_codes": [
+            "cq_freeze_pending"
+          ]
+        },
+        {
+          "seq": 109,
+          "call_id": "call_ec714102f4cb426d8d019a45",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        },
+        {
+          "seq": 114,
+          "call_id": "call_a6e83e7b95174921ba935ef5",
+          "is_error": false,
+          "status": "completed",
+          "batches": 1,
+          "error_codes": []
+        }
+      ],
+      "counts": {
+        "native_calls": 4,
+        "native_results": 4,
+        "statuses": {
+          "not_written": 2,
+          "completed": 2
+        },
+        "error_code_responses": {
+          "scope_binding_required": 1,
+          "cq_freeze_pending": 1
+        },
+        "max_identical_normalized_arguments": 2
+      },
+      "frozen_prompt": {
+        "source": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r2/runtime/modeling/home/materials/material-1.txt",
+        "sha256": "a53ff6819102f104adb747bada411d0bece94a2c7681158e504d9dd6f43e10e3",
+        "contains_sibling_instruction": true
+      },
+      "frozen_schema": {
+        "sha256": "35d082d366560edb005d6d796bdc9d73aaf668b31b5637fec457fe62dc52414e",
+        "change_required": [
+          "action",
+          "change_id",
+          "fields",
+          "item_id",
+          "resource_kind",
+          "target_ref"
+        ],
+        "change_additional_properties": false,
+        "fields_additional_properties": false,
+        "misnested_keys_advertised_under_fields": []
+      }
+    }
+  ],
+  "acceptance_metadata": [
+    {
+      "source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-phase-handoff-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "cf041aaeb78ded35a3813ad88c0446f1f97d50c9100adeec077d9b6ca68b5979",
+      "full_pass": true,
+      "executed_count": 1,
+      "unexecuted_count": 0,
+      "verdict_counts": {
+        "pass": 1
+      },
+      "note": "Metadata recheck only; historical reports and verdicts not changed or re-adjudicated."
+    },
+    {
+      "source": "workspaces/modeling-runs/minimal-chain-20261019-dsh-phase-handoff-r1/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "c5d013e3cd865b258eea366a7f4318e3774e180de3419b59e5319ca867848f9a",
+      "full_pass": false,
+      "executed_count": 2,
+      "unexecuted_count": 1,
+      "verdict_counts": {
+        "pass": 2
+      },
+      "note": "Metadata recheck only; historical reports and verdicts not changed or re-adjudicated."
+    },
+    {
+      "source": "workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "df5d21e644fb35bcebfa342b0687a981f5eff41b7cc52211b6363b0fd69668f9",
+      "full_pass": true,
+      "executed_count": 1,
+      "unexecuted_count": 0,
+      "verdict_counts": {
+        "pass": 1
+      },
+      "note": "Metadata recheck only; historical reports and verdicts not changed or re-adjudicated."
+    },
+    {
+      "source": "workspaces/modeling-runs/minimal-chain-20261019-token-opt-b-r1/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "sha256": "ee052565f80b46d5167020c654af2db4819dd426e2e46c94c01d638b3711d495",
+      "full_pass": false,
+      "executed_count": 3,
+      "unexecuted_count": 0,
+      "verdict_counts": {
+        "model-recall-insufficient": 1,
+        "pass": 2
+      },
+      "note": "Metadata recheck only; historical reports and verdicts not changed or re-adjudicated."
+    }
+  ],
+  "limitations": [
+    "No new semantic start, model write, runtime resume or independent semantic re-adjudication.",
+    "Normalized argument digest ignores JSON whitespace/key order; duplicate content is not necessarily byte-identical text.",
+    "No inference about low effort or provider-wide capabilities from selected samples.",
+    "Unknown supplier-internal causes remain unknown."
+  ]
+}
