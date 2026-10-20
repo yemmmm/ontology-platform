@@ -1,0 +1,614 @@
+{
+  "collected_at": "2026-10-20T03:17:17.615914+00:00",
+  "session_id": "minimal-chain-20261020-dsh-glm-low-new",
+  "run_id": "minimal-chain-20261020-dsh-glm-low-new-r1",
+  "runtime": "dsh",
+  "model": "glm-5.3-flash",
+  "effort": "low",
+  "initial_code": "c8a4c8f",
+  "task": "r4-3-026-minimal-installation-chain",
+  "authorization": {
+    "reference": "user-20261020-dsh-glm-low-new-three-rounds",
+    "total": 3,
+    "consumed": 1,
+    "remaining": 2,
+    "fresh_semantic_starts": 1,
+    "substantive_remodeling_rounds": 0
+  },
+  "semantic_start": {
+    "baseline_hash": "c8e527f800e7021ddd883059b0213ccd3620db5d70c11ece1b918b48339669dd",
+    "recorded_at": "2026-10-20T02:49:51.470057+00:00"
+  },
+  "reports": [
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "full_pass": false,
+      "freeze_digest": "sha256:6a1e54d6f4ffdc34870e9922c2c61f17ac0e54f12a79b3b2c2e6a5bde4d20837",
+      "model_binding_digest": "sha256:6e756017e71aebf4f5d0d8cc84df417de48a17dd0dee2f36e4448f55699b9660",
+      "executed_question_ids": [
+        "mic-concepts"
+      ],
+      "unexecuted_question_ids": [],
+      "blind_status": {
+        "blind_status": "non-blind-regression",
+        "exposed_question_ids": [
+          "mic-concepts"
+        ],
+        "exposure_evidence_digest": "sha256:e2476a1aa51a071fbde9b536ebcdd70f75aeb41fac83c8a4072a61b809991500",
+        "exposure_record_count": 1
+      },
+      "coverage_gaps": {
+        "cross_slice_projection_gap": false,
+        "empty_public_set": false,
+        "model_state_drift": [],
+        "notes": [
+          "public non-blind regression coverage; hidden acceptance is separate"
+        ],
+        "slices_without_public_question": []
+      },
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-concepts": "stable"
+        },
+        "replayed_responses": 1,
+        "unavailable": []
+      },
+      "verdicts": [],
+      "lifecycle_errors": [
+        {
+          "failure": {
+            "reason": "collaboration_binding_changed: invalid scenario map",
+            "status": "FAILED"
+          },
+          "reason": "FAILED/collaboration_binding_changed: invalid scenario map",
+          "stage": "acceptance-judge-setup"
+        }
+      ],
+      "lifecycle_warnings": []
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0002/batch-report.json",
+      "full_pass": true,
+      "freeze_digest": "sha256:6a1e54d6f4ffdc34870e9922c2c61f17ac0e54f12a79b3b2c2e6a5bde4d20837",
+      "model_binding_digest": "sha256:47da84a260b68635834ccdb0b36d9a6267617f5bba704f3d60955f132ab63004",
+      "executed_question_ids": [
+        "mic-concepts"
+      ],
+      "unexecuted_question_ids": [],
+      "blind_status": {
+        "blind_status": "non-blind-regression",
+        "exposed_question_ids": [
+          "mic-concepts"
+        ],
+        "exposure_evidence_digest": "sha256:e2476a1aa51a071fbde9b536ebcdd70f75aeb41fac83c8a4072a61b809991500",
+        "exposure_record_count": 1
+      },
+      "coverage_gaps": {
+        "cross_slice_projection_gap": false,
+        "empty_public_set": false,
+        "model_state_drift": [],
+        "notes": [
+          "public non-blind regression coverage; hidden acceptance is separate"
+        ],
+        "slices_without_public_question": []
+      },
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-concepts": "stable"
+        },
+        "replayed_responses": 1,
+        "unavailable": []
+      },
+      "verdicts": [
+        {
+          "question_id": "mic-concepts",
+          "verdict": "pass",
+          "failure_layer": null
+        }
+      ],
+      "lifecycle_errors": [],
+      "lifecycle_warnings": [
+        {
+          "detail": "shared_terms[0].candidate_refs[0]: candidate unavailable",
+          "reason_code": "map_dangling_reference",
+          "stage": "acceptance-judge-setup",
+          "warning": "collaboration_metadata_stale"
+        }
+      ]
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "full_pass": false,
+      "freeze_digest": "sha256:6a1e54d6f4ffdc34870e9922c2c61f17ac0e54f12a79b3b2c2e6a5bde4d20837",
+      "model_binding_digest": "sha256:6e756017e71aebf4f5d0d8cc84df417de48a17dd0dee2f36e4448f55699b9660",
+      "executed_question_ids": [
+        "mic-direction",
+        "mic-ownership",
+        "mic-unknowns"
+      ],
+      "unexecuted_question_ids": [],
+      "blind_status": {
+        "blind_status": "non-blind-regression",
+        "exposed_question_ids": [
+          "mic-concepts"
+        ],
+        "exposure_evidence_digest": "sha256:e2476a1aa51a071fbde9b536ebcdd70f75aeb41fac83c8a4072a61b809991500",
+        "exposure_record_count": 1
+      },
+      "coverage_gaps": {
+        "cross_slice_projection_gap": false,
+        "empty_hidden_set": false,
+        "model_state_drift": [],
+        "notes": [
+          "coverage gaps are recorded per scope"
+        ],
+        "slices_without_hidden_question": []
+      },
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-direction": "stable",
+          "mic-ownership": "stable",
+          "mic-unknowns": "stable"
+        },
+        "replayed_responses": 5,
+        "unavailable": []
+      },
+      "verdicts": [],
+      "lifecycle_errors": [
+        {
+          "failure": {
+            "reason": "collaboration_binding_changed: invalid scenario map",
+            "status": "FAILED"
+          },
+          "reason": "FAILED/collaboration_binding_changed: invalid scenario map",
+          "stage": "acceptance-judge-setup"
+        }
+      ],
+      "lifecycle_warnings": []
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/acceptance-v3/reports/cq-batch-0001/attempt-0002/batch-report.json",
+      "full_pass": true,
+      "freeze_digest": "sha256:6a1e54d6f4ffdc34870e9922c2c61f17ac0e54f12a79b3b2c2e6a5bde4d20837",
+      "model_binding_digest": "sha256:47da84a260b68635834ccdb0b36d9a6267617f5bba704f3d60955f132ab63004",
+      "executed_question_ids": [
+        "mic-direction",
+        "mic-ownership",
+        "mic-unknowns"
+      ],
+      "unexecuted_question_ids": [],
+      "blind_status": {
+        "blind_status": "non-blind-regression",
+        "exposed_question_ids": [
+          "mic-concepts"
+        ],
+        "exposure_evidence_digest": "sha256:e2476a1aa51a071fbde9b536ebcdd70f75aeb41fac83c8a4072a61b809991500",
+        "exposure_record_count": 1
+      },
+      "coverage_gaps": {
+        "cross_slice_projection_gap": false,
+        "empty_hidden_set": false,
+        "model_state_drift": [],
+        "notes": [
+          "coverage gaps are recorded per scope"
+        ],
+        "slices_without_hidden_question": []
+      },
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-direction": "stable",
+          "mic-ownership": "stable",
+          "mic-unknowns": "stable"
+        },
+        "replayed_responses": 5,
+        "unavailable": []
+      },
+      "verdicts": [
+        {
+          "question_id": "mic-direction",
+          "verdict": "pass",
+          "failure_layer": null
+        },
+        {
+          "question_id": "mic-ownership",
+          "verdict": "pass",
+          "failure_layer": null
+        },
+        {
+          "question_id": "mic-unknowns",
+          "verdict": "pass",
+          "failure_layer": null
+        }
+      ],
+      "lifecycle_errors": [],
+      "lifecycle_warnings": [
+        {
+          "detail": "shared_terms[0].candidate_refs[0]: candidate unavailable",
+          "reason_code": "map_dangling_reference",
+          "stage": "acceptance-judge-setup",
+          "warning": "collaboration_metadata_stale"
+        }
+      ]
+    }
+  ],
+  "acceptance_closures": [
+    {
+      "acceptance_attempt_id": "attempt-0001",
+      "acceptance_phase": "acceptance_complete",
+      "batch_id": "cq-batch-0001",
+      "cq_verdict": "fail",
+      "freeze_digest": "sha256:6a1e54d6f4ffdc34870e9922c2c61f17ac0e54f12a79b3b2c2e6a5bde4d20837",
+      "freeze_id": "cq-batch-0001",
+      "recorded_at": "2026-10-20T03:04:31.665873+00:00",
+      "report_digest": "sha256:c73bc94f99afdd6bc6d3bdb101dbde6756e9fe963d4421e06c8a17022f0e50bc",
+      "report_directory": "acceptance-v3/reports/cq-batch-0001/attempt-0001"
+    },
+    {
+      "acceptance_attempt_id": "attempt-0002",
+      "acceptance_phase": "acceptance_complete",
+      "batch_id": "cq-batch-0001",
+      "cq_verdict": "pass",
+      "freeze_digest": "sha256:6a1e54d6f4ffdc34870e9922c2c61f17ac0e54f12a79b3b2c2e6a5bde4d20837",
+      "freeze_id": "cq-batch-0001",
+      "recorded_at": "2026-10-20T03:14:38.587197+00:00",
+      "report_digest": "sha256:99e18c5f3e5d5694ab92d4073eccad19cae6485cfa14caf7c52dcff25f26ac73",
+      "report_directory": "acceptance-v3/reports/cq-batch-0001/attempt-0002"
+    }
+  ],
+  "standby_receipts": [
+    {
+      "ack_type": "standby",
+      "action": "standby",
+      "content_digest": "sha256:d84795c4582387f8c5ad1a3bb2475ee7ef715a993eb3be54d76e033837450286",
+      "outcome": "accepted",
+      "recorded_at": "2026-10-20T03:15:09.743574+00:00",
+      "request_id": "delivery-868216a854c754de62f842f1c66fe8ac"
+    },
+    {
+      "ack_type": "standby",
+      "action": "standby",
+      "content_digest": "sha256:d84795c4582387f8c5ad1a3bb2475ee7ef715a993eb3be54d76e033837450286",
+      "outcome": "accepted",
+      "recorded_at": "2026-10-20T03:15:55.128992+00:00",
+      "request_id": "delivery-0c5e3489af891d84e727901011a808a8"
+    }
+  ],
+  "session_activity": "read_only_wait",
+  "session_work_result": "第一轮初建建模（run minimal-chain-20261020-dsh-glm-low-new-r1，dsh-glm-flash-low）完成并通过完整独立验收：attempt-0002 cq_verdict=pass，公开组 mic-concepts verdict 1/1、隐藏组三题 verdict 3/3，原完整分母4题全部执行，full_pass=true。过程限制：attempt-0001 首判 fail 系平台契约层（Judge setup collaboration_binding_changed/invalid scenario map）与验收交接路由错误所致，经窄平台修复（286回归通过）及 attempt-0002 只读重试闭环，未消耗建模轮，旧报告不可变。轮次账本：total=3，consumed=1，remaining=2。写入封印完成（2批次原子应用、无未知写入、密钥吊销），团队/模型/报告只读保留于 standby，未收到 stop。",
+  "phase_threads": [
+    {
+      "event": "delivery_phase_thread",
+      "attempt_id": "2264626507124d7688469dde1eeef8a8",
+      "phase": "production",
+      "run_id": "minimal-chain-20261020-dsh-glm-low-new-r1",
+      "input_id": "27ec11c65447467386c09b69d702cf1a",
+      "requested_input_id": "aed42feec8b14167b5541dd95771f834",
+      "from_identity": {
+        "runtime": "dsh",
+        "process_instance": "8c1bca4b521543729ee3d4cb0e58fc07",
+        "runtime_session_id": "delivery-adecd65228c64360bde30ca7f6edeb13",
+        "activity_id": null
+      },
+      "status": "switched",
+      "reason": "仅生产内部常规交付变化；线程交接记录已保留，无新授权动作。",
+      "request_ids": [
+        "new-20261020-freeze-0001",
+        "new-20261020-freeze-notify"
+      ],
+      "started_at": "2026-10-20T02:54:59.493588+00:00",
+      "to_identity": {
+        "runtime": "dsh",
+        "process_instance": "8c1bca4b521543729ee3d4cb0e58fc07",
+        "runtime_session_id": "delivery-1cb6def42054470fb22dee5ab5fc6a01",
+        "activity_id": null
+      },
+      "ended_at": "2026-10-20T02:54:59.497845+00:00"
+    },
+    {
+      "event": "delivery_phase_thread",
+      "attempt_id": "6336e54e3f7947a2af5a24709b7408ee",
+      "phase": "acceptance",
+      "run_id": "minimal-chain-20261020-dsh-glm-low-new-r1",
+      "input_id": "31d86831e488439398f26988cf85fc33",
+      "requested_input_id": "d58ef343370a4fae8b1cd1e4b09d51e8",
+      "from_identity": {
+        "runtime": "dsh",
+        "process_instance": "8c1bca4b521543729ee3d4cb0e58fc07",
+        "runtime_session_id": "delivery-1cb6def42054470fb22dee5ab5fc6a01",
+        "activity_id": null
+      },
+      "status": "switched",
+      "reason": "隐藏组评估仍在正常运行，无新变化。",
+      "request_ids": [
+        "new-20261020-handoff-try3"
+      ],
+      "started_at": "2026-10-20T03:02:07.785324+00:00",
+      "to_identity": {
+        "runtime": "dsh",
+        "process_instance": "8c1bca4b521543729ee3d4cb0e58fc07",
+        "runtime_session_id": "delivery-66f16b2041c847f58cdb963c103df449",
+        "activity_id": null
+      },
+      "ended_at": "2026-10-20T03:02:07.809187+00:00"
+    }
+  ],
+  "usage": {
+    "native_cutoff": "2026-10-20T03:16:29.382981+00:00",
+    "roles": {
+      "delivery": {
+        "responses": 99,
+        "uncached_input_tokens": 1240035,
+        "cached_input_tokens": 9186624,
+        "output_tokens": 46411,
+        "native_total_tokens": 10473070,
+        "cache_write_missing_responses": 99,
+        "native_reported_input_tokens": 10426659
+      },
+      "coordinator": {
+        "responses": 39,
+        "uncached_input_tokens": 82012,
+        "cached_input_tokens": 946368,
+        "output_tokens": 15186,
+        "native_total_tokens": 1043566,
+        "cache_write_missing_responses": 39,
+        "native_reported_input_tokens": 1028380
+      },
+      "competency-question": {
+        "responses": 11,
+        "uncached_input_tokens": 25215,
+        "cached_input_tokens": 97280,
+        "output_tokens": 2720,
+        "native_total_tokens": 125215,
+        "cache_write_missing_responses": 11,
+        "native_reported_input_tokens": 122495
+      },
+      "modeling": {
+        "responses": 45,
+        "uncached_input_tokens": 223289,
+        "cached_input_tokens": 1913920,
+        "output_tokens": 12730,
+        "native_total_tokens": 2149939,
+        "cache_write_missing_responses": 45,
+        "native_reported_input_tokens": 2137209
+      },
+      "platform-examiner": {
+        "responses": 39,
+        "uncached_input_tokens": 328495,
+        "cached_input_tokens": 312960,
+        "output_tokens": 10121,
+        "native_total_tokens": 651576,
+        "cache_write_missing_responses": 39,
+        "native_reported_input_tokens": 641455
+      },
+      "acceptance": {
+        "responses": 12,
+        "uncached_input_tokens": 83425,
+        "cached_input_tokens": 327488,
+        "output_tokens": 3811,
+        "native_total_tokens": 414724,
+        "cache_write_missing_responses": 12,
+        "native_reported_input_tokens": 410913
+      }
+    },
+    "total": {
+      "responses": 245,
+      "uncached_input_tokens": 1982471,
+      "cached_input_tokens": 12784640,
+      "output_tokens": 90979,
+      "native_total_tokens": 14858090,
+      "cache_write_missing_responses": 245,
+      "native_reported_input_tokens": 14767111
+    },
+    "threads": {
+      "delivery-adecd65228c64360bde30ca7f6edeb13": {
+        "role": "delivery",
+        "input": 2048192,
+        "output": 7995,
+        "total": 2056187
+      },
+      "delivery-1cb6def42054470fb22dee5ab5fc6a01": {
+        "role": "delivery",
+        "input": 2788185,
+        "output": 13768,
+        "total": 2801953
+      },
+      "delivery-66f16b2041c847f58cdb963c103df449": {
+        "role": "delivery",
+        "input": 5590282,
+        "output": 24648,
+        "total": 5614930
+      },
+      "minimal-chain-20261020-dsh-glm-low-new-r1-coordinator-a6862989967b": {
+        "role": "coordinator",
+        "input": 1028380,
+        "output": 15186,
+        "total": 1043566
+      },
+      "minimal-chain-20261020-dsh-glm-low-new-r1-competency-question-e518015c87a7": {
+        "role": "competency-question",
+        "input": 122495,
+        "output": 2720,
+        "total": 125215
+      },
+      "minimal-chain-20261020-dsh-glm-low-new-r1-modeling-76afe3b9c70c": {
+        "role": "modeling",
+        "input": 2137209,
+        "output": 12730,
+        "total": 2149939
+      },
+      "acceptance-d0aa2ae2bb884f9c91884756638774c4": {
+        "role": "platform-examiner",
+        "input": 73667,
+        "output": 1077,
+        "total": 74744
+      },
+      "acceptance-e3012635e3674b4ca10fc9bec1e7908b": {
+        "role": "platform-examiner",
+        "input": 42150,
+        "output": 639,
+        "total": 42789
+      },
+      "acceptance-1d1e12791bdc4400951ab573fb585797": {
+        "role": "platform-examiner",
+        "input": 166203,
+        "output": 3216,
+        "total": 169419
+      },
+      "acceptance-3a85062d7a91479d92bfbdda25341383": {
+        "role": "platform-examiner",
+        "input": 40354,
+        "output": 554,
+        "total": 40908
+      },
+      "acceptance-be9777f6ecaa4852a6e16bbfb714a20d": {
+        "role": "platform-examiner",
+        "input": 176138,
+        "output": 2200,
+        "total": 178338
+      },
+      "acceptance-d8bf445cf1324258ad13608f096acb0e": {
+        "role": "acceptance",
+        "input": 324762,
+        "output": 2698,
+        "total": 327460
+      },
+      "acceptance-e8e750553cf54658b241216fecdc6961": {
+        "role": "platform-examiner",
+        "input": 59807,
+        "output": 889,
+        "total": 60696
+      },
+      "acceptance-8e4966652d6d499293d5ba26af95d010": {
+        "role": "platform-examiner",
+        "input": 42535,
+        "output": 753,
+        "total": 43288
+      },
+      "acceptance-6b4352692f3840118ee3d6b84a974fec": {
+        "role": "platform-examiner",
+        "input": 40601,
+        "output": 793,
+        "total": 41394
+      },
+      "acceptance-f3ce49df88c644d093120bfa2e7ad4fa": {
+        "role": "acceptance",
+        "input": 86151,
+        "output": 1113,
+        "total": 87264
+      }
+    },
+    "conflicts": [],
+    "host": {
+      "path": "/home/yangxiang/.codex/sessions/2026/10/20/rollout-2026-10-20T10-47-30-01a15734-f3b5-7621-a7ab-c527e9280956.jsonl",
+      "cutoff": "2026-10-20T03:16:29.450Z",
+      "usage": {
+        "input_tokens": 13303434,
+        "cached_input_tokens": 12953600,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 24720,
+        "reasoning_output_tokens": 6375,
+        "total_tokens": 13328154
+      }
+    },
+    "known_input": 28070545,
+    "known_output": 115699,
+    "known_total_lower_bound": 28186244,
+    "limitations": [
+      "Current GLM Messages SSE auxiliary usage observer is disabled by existing user decision; only retained native numeric events are summarized. All thread prefixes are included; absent values remain unknown.",
+      "Native token counts are not complete provider billing; missing cache-write/reasoning/provider internal work remain unknown.",
+      "Current Codex Host and compatibility engineering are separate from the GLM runtime chain.",
+      "Host includes preparation, supervision, repair/tests and evidence through cutoff; subsequent document/commit/final tail is excluded."
+    ]
+  },
+  "cleanup": {
+    "admin_key_id": "df76e2c8-a33e-4b40-b070-2ce25876266f",
+    "admin_revoked": true,
+    "read_keys": [
+      {
+        "key_id": "ab2a462e-4fbf-4fda-ab65-769ae9af9b36",
+        "revoked": true
+      }
+    ],
+    "recorded_at": "2026-10-20T03:16:29.072310+00:00",
+    "source": "Host final temporary credential cleanup; retained run/team not stopped"
+  },
+  "verification": {
+    "tests_passed": 286,
+    "ruff": "passed",
+    "config": "passed",
+    "production_map_unchanged": true
+  },
+  "source_prefixes": [
+    {
+      "path": "workspaces/minimal-chain-20261020-dsh-glm-low-new/authorization.json",
+      "bytes": 1552,
+      "sha256": "f0c9c454e237c505c2c016f0948c1ecf37b7babf01ca2a314c8cf37129fea515"
+    },
+    {
+      "path": "workspaces/minimal-chain-20261020-dsh-glm-low-new/native-usage-snapshot.json",
+      "bytes": 93833,
+      "sha256": "ecb572a06afdbb66076f394a438aba84af2d83dff3bf8a59889b44c3186495ea"
+    },
+    {
+      "path": "workspaces/minimal-chain-20261020-dsh-glm-low-new/host-usage-snapshot.json",
+      "bytes": 384,
+      "sha256": "4c1e25b38b3c05ab029fd68b5c75b03039f5cf4f993c4dbaa1eaf0678302801c"
+    },
+    {
+      "path": "workspaces/delivery-sessions/minimal-chain-20261020-dsh-glm-low-new/session.json",
+      "bytes": 7094,
+      "sha256": "d7f23d967811dd5773bd6c161f5386cc548860bc56d6942627f80b7441f9b600"
+    },
+    {
+      "path": "workspaces/minimal-chain-20261020-dsh-glm-low-new/bootstrap-cleanup.json",
+      "bytes": 337,
+      "sha256": "cb747cf67aa3d57d8f303cbeffb44dba085ddff415fa50099c97e6c8da95b4d3"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "bytes": 34631,
+      "sha256": "22125f17fea66cecca938d7a5850bab44c49752496e542832396f17ccef14650"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/acceptance-v3/public-regression/cq-batch-0001/attempt-0002/batch-report.json",
+      "bytes": 39348,
+      "sha256": "863f479e38bd7e0747f0e7b8d7a72520c17e9c8b5a11bd6534ab09a515c14db5"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "bytes": 133176,
+      "sha256": "c73bc94f99afdd6bc6d3bdb101dbde6756e9fe963d4421e06c8a17022f0e50bc"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/acceptance-v3/reports/cq-batch-0001/attempt-0002/batch-report.json",
+      "bytes": 136079,
+      "sha256": "99e18c5f3e5d5694ab92d4073eccad19cae6485cfa14caf7c52dcff25f26ac73"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/evidence/outer-input-receipts.jsonl",
+      "bytes": 4528,
+      "sha256": "e066f695af3a1fe9e21c42d4eb7a11c908f6f56449b7e66d0ad25181a59832ca"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/evidence/cq-acceptance-complete.jsonl",
+      "bytes": 946,
+      "sha256": "8dfa7c41f433ab145eddc31b3453f9c18bf81b7dbed71d8535de84531ccea158"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/evidence/semantic-start.jsonl",
+      "bytes": 137,
+      "sha256": "6d5b1764d151576c8a954273005758a328ae76c9a33ddbc3312cec800fc5e1e8"
+    }
+  ],
+  "limitations": [
+    "Bounded L1 non-blind regression only; not complex business, repeatability, autonomous Delivery or net token savings PASS.",
+    "Delivery read_delivery_artifact returned private report content during diagnosis; no further production modeling occurred, and no hidden content was sent to production; Delivery private-read isolation remains a disclosed gap.",
+    "Technical Host supplements used legacy stdin wrapper with user role metadata but explicit Host source in text; they are not business approval or extra modeling authorization.",
+    "Semantic effective work and overlapping technical/wait work cannot be measured precisely from retained events; no process-alive duration is claimed as effective semantic time.",
+    "GitNexus missed modified symbol and mapped unchanged post_drift to many flows; actual call-site inspection and relevant regressions are the supported impact coverage."
+  ]
+}

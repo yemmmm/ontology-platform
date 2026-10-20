@@ -661,6 +661,30 @@ def test_stale_shared_terms_refs_accepted_as_warnings_when_binding_stable(tmp_pa
     assert (tmp_path / "acceptance-v3/production-handoff.json").read_bytes() == handoff
 
 
+def test_unavailable_shared_candidate_is_untrusted_with_stable_model_binding(tmp_path):
+    from modeling_team.__main__ import _cq_collaboration_context
+    from modeling_team.contracts import TeamConfigurationError
+
+    path, original, handoff = _stale_shared_terms_run_root(tmp_path)
+    (tmp_path / "stage3-neutral-graph/candidates/cand-1-r2.json").unlink()
+    responses = {"cq-1": [{"result": {"iri": "iri:1"}}]}
+    with pytest.raises(TeamConfigurationError, match="invalid scenario map"):
+        _cq_collaboration_context(tmp_path, responses)
+
+    context, warnings = _cq_collaboration_context(
+        tmp_path, responses, model_binding_stable=True
+    )
+    assert context["definitions"] == []
+    assert "untrusted" in context["scope_note"]
+    assert [entry["detail"] for entry in warnings] == [
+        "shared_terms[0].candidate_refs[0]: candidate unavailable",
+        "shared_terms[0].candidate_refs[1]: candidate unavailable",
+    ]
+    assert all(entry["warning"] == "collaboration_metadata_stale" for entry in warnings)
+    assert path.read_bytes() == original
+    assert (tmp_path / "acceptance-v3/production-handoff.json").read_bytes() == handoff
+
+
 def test_stale_shared_terms_digest_mismatch_still_hard_fails(tmp_path):
     from modeling_team.__main__ import _cq_collaboration_context
     from modeling_team.contracts import TeamConfigurationError
@@ -678,23 +702,18 @@ def test_stale_shared_terms_digest_mismatch_still_hard_fails(tmp_path):
         )
 
 
-@pytest.mark.parametrize("defect", ["candidate_unavailable", "schema_drift"])
-def test_other_map_binding_errors_still_hard_fail_with_stable_binding(tmp_path, defect):
+def test_map_schema_drift_still_hard_fails_with_stable_binding(tmp_path):
     from modeling_team.__main__ import _cq_collaboration_context
     from modeling_team.contracts import TeamConfigurationError
 
     path, _original, _handoff = _stale_shared_terms_run_root(tmp_path)
-    if defect == "candidate_unavailable":
-        (tmp_path / "stage3-neutral-graph/candidates/cand-1-r2.json").unlink()
-    else:
-        # Rebind the handoff digest so the digest gate stays satisfied and the
-        # failure isolates the map's own structural contract.
-        path.write_text("{}")
-        write_json(tmp_path / "acceptance-v3/production-handoff.json", dict(
-            collaboration_artifact=dict(
-                path="scenario-map/scenario-map.json", digest=digest_file(path),
-            ),
-        ))
+    # Rebind the handoff digest to isolate the map structural contract.
+    path.write_text("{}")
+    write_json(tmp_path / "acceptance-v3/production-handoff.json", dict(
+        collaboration_artifact=dict(
+            path="scenario-map/scenario-map.json", digest=digest_file(path),
+        ),
+    ))
     with pytest.raises(
         TeamConfigurationError, match="collaboration_binding_changed: invalid scenario map"
     ):
@@ -703,8 +722,9 @@ def test_other_map_binding_errors_still_hard_fail_with_stable_binding(tmp_path, 
         )
 
 
+@pytest.mark.parametrize("candidate_available", [True, False])
 def test_judge_starts_on_stale_shared_terms_and_records_report_warning(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, candidate_available
 ):
     from modeling_team.tests.test_r3012_partial_judging import (
         _write_run_root,
@@ -751,6 +771,8 @@ def test_judge_starts_on_stale_shared_terms_and_records_report_warning(
     )
     _publish_handoff(root, handoff)
     original_map = path.read_bytes()
+    if not candidate_available:
+        (root / "stage3-neutral-graph/candidates/cand-1-r2.json").unlink()
     result = {"ok": True, "matches": [{"id": "resource-1", "iri": "iri:1"}]}
     adapter, state = _batch_adapter(result=result)
     code = _run_cli(
@@ -771,10 +793,14 @@ def test_judge_starts_on_stale_shared_terms_and_records_report_warning(
     # The Judge started and judged; the stale metadata is a recorded warning,
     # never a lifecycle error or a full-pass gate.
     assert report["sessions"]["acceptance_judge"]["verdicts"] == 1
-    assert [item["detail"] for item in report["sessions"]["lifecycle_warnings"]] == [
+    expected_details = [
         "shared_terms[0].candidate_refs[0].revision: stale",
         "shared_terms[0].candidate_refs[1]: candidate/item binding",
+    ] if candidate_available else [
+        "shared_terms[0].candidate_refs[0]: candidate unavailable",
+        "shared_terms[0].candidate_refs[1]: candidate unavailable",
     ]
+    assert [item["detail"] for item in report["sessions"]["lifecycle_warnings"]] == expected_details
     assert all(
         item["stage"] == "acceptance-judge-setup"
         and item["warning"] == "collaboration_metadata_stale"

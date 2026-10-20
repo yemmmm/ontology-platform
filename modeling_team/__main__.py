@@ -1574,7 +1574,8 @@ def _cq_collaboration_context(
     ``model_binding_stable`` is True only when this batch's observed pre/post
     model binding drift is empty.  Only then are ``shared_terms[].candidate_refs``
     collaboration-metadata defects -- a superseded candidate revision, or a
-    candidate/item reference no published candidate carries -- downgraded from
+    candidate/item reference no published candidate carries (including an unavailable
+    candidate) -- downgraded from
     a Judge-setup hard failure to recorded warnings (T0: in acceptance mode the
     binding authority is the handoff/freeze digest, still hard-checked here,
     and the model state summary, still hard-checked in the report; stale
@@ -1612,7 +1613,7 @@ def _cq_collaboration_context(
         )
         shared_candidate = re.fullmatch(
             r"shared_terms\[(\d+)\]\.candidate_refs\[(\d+)\]"
-            r"(?:\.revision: stale|: candidate/item binding)",
+            r"(?:\.revision: stale|: candidate/item binding|: candidate unavailable)",
             issue.detail,
         )
         invalid_adjustment = re.fullmatch(r"adjustments\[(\d+)\]: fields", issue.detail)
@@ -1641,8 +1642,8 @@ def _cq_collaboration_context(
         ):
             # Collaboration metadata only: with the handoff digest already
             # matched above and an empty pre/post model binding drift, a stale
-            # candidate revision or an unresolvable candidate/item reference
-            # shows no semantic drift, so it is recorded as a non-fatal
+            # candidate revision, unavailable candidate or unresolvable item
+            # reference shows no semantic drift, so it is recorded as a non-fatal
             # warning instead of blocking the independent Judge.
             untrusted_candidate_refs[
                 (int(shared_candidate[1]), int(shared_candidate[2]))

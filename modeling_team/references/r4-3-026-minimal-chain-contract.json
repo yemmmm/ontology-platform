@@ -84,7 +84,7 @@
       "rules": [
         "definition_id is a stable neutral semantic key, not an IRI; it is unique within the scenario/authorized Project. Same term with different meaning_scope may have distinct keys. Do not merge unconfirmed synonyms.",
         "owner_slice is an existing slices[].slice_id, and used_by_slices contains existing slice IDs; maintenance ownership grants no semantic access.",
-        "candidate_refs may be empty before publication; otherwise each points to an item in a complete immutable unified candidate at its current revision.",
+        "candidate_refs may be empty before publication; otherwise each points to an item in a complete immutable unified candidate at its current revision. For fields-only delivery without a published unified candidate, keep candidate_refs empty and record actual request/application/readback locators in notes; never invent candidate IDs.",
         "Same definition across candidates reuses the approved read/receipt-bound platform identity; never create a synonymous duplicate. confirmed means business confirmation only."
       ]
     },

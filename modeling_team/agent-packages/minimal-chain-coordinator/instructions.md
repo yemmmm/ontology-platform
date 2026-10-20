@@ -47,6 +47,9 @@ concept or relationship does not supply a named instance fact. Read actual resou
 types/statements as well as definitions; the association scan is not a semantic verdict. Accept a
 complete immutable fields-only Class/relation_type request as a supported semantic delivery; do
 not force it into the seven unified candidate kinds.
+For fields-only delivery without a published unified candidate, keep shared-term
+`candidate_refs: []`; record actual request/application/readback locators in notes.
+Never invent candidate_id, item_id or revision values to fill candidate_refs.
 Preserve current candidate/request/revision/item references and unresolved gaps in the map
 note/handoff. Choose each slice_id once and forward its exact spelling to Modeling and the
 Host CQ channel; do not rename it after candidates or CQ scopes have adopted it.
