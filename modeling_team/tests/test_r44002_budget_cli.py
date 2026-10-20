@@ -122,3 +122,20 @@ def test_amount_budget_ref_passthrough_is_available_on_run_and_resume() -> None:
     assert resume_status == 0
     assert "--budget-ref BUDGET_REF" in run_help
     assert "--budget-ref BUDGET_REF" in resume_help
+
+
+def test_task_budget_cli_snapshots_configured_model_prices(tmp_path: Path) -> None:
+    config = _config()
+    config.pop("prices")
+    config["allowed_bindings"] = [
+        {"provider": "glm-messages", "actual_model": "glm-5.3-flash"},
+        {"provider": "deepseek-official", "actual_model": "deepseek-flash"},
+    ]
+    path = tmp_path / "create.json"
+    path.write_text(json.dumps(config))
+    status, result = _invoke("task-budget", "create", "--ref", str(tmp_path / "budget"),
+                             "--config", str(path))
+    assert status == 0
+    assert len(result["price_versions"]) == 2
+    assert all(row["rates"] == {"cached_input_tokens": "0.02", "uncached_input_tokens": "1",
+                               "output_tokens": "4"} for row in result["price_versions"])

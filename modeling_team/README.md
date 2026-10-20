@@ -35,6 +35,18 @@ python -m modeling_team task-budget show \
 不会刷新计量、发送暂停消息或启动模型。`--budget-ref` 可由受信 Host 传给 `run` 或
 `checkpoint resume`，由运行时复用同一预算；该参数不是模型可选择的权限来源。
 
+默认价表保存在 [task-budget-prices.json](task-budget-prices.json)，按用户配置使用人民币／
+百万 token，覆盖两模型的 Codex Responses 与 DSH Messages 路由：
+
+| 模型 | 缓存输入 | 未缓存输入 | 输出 |
+| --- | --- | --- | --- |
+| `glm-5.3-flash` | 0.02 | 1 | 4 |
+| `deepseek-flash` | 0.02 | 1 | 4 |
+
+新任务在 `allowed_bindings` 明确获准 provider／模型并省略 `prices`／`price_snapshot` 时，
+自动选取对应默认价格保存快照；显式任务价表优先。价表不授予模型或任务预算，不自动
+换汇；默认价变化不追改已有任务，重复创建仍保留原快照。
+
 创建配置示例（金额和单价仅为虚构示例，不是调用授权或供应商报价）：
 
 ```json

@@ -34,6 +34,7 @@ EVENTS_FILENAME = "events.jsonl"
 STATE_FILENAME = "state.json"
 LOCK_FILENAME = "budget.lock"
 BINDING_FILENAME = "task-budget-binding.json"
+DEFAULT_PRICES_PATH = Path(__file__).with_name("task-budget-prices.json")
 HEARTBEAT_TIMEOUT_SECONDS = 10.0
 PENDING_SETTLEMENT_SECONDS = 10.0
 MAX_TICK_BYTES = 4 * 1024 * 1024
@@ -450,6 +451,25 @@ def _normalise_config(ref: Path, config: dict, *, for_add: bool = False) -> dict
     }
 
 
+def _configured_prices(authorization: dict) -> list[dict]:
+    """Snapshot CNY defaults only for explicitly authorized model bindings."""
+    if authorization["currency"] != "CNY" or not authorization["allowed_bindings"]:
+        return []
+    try:
+        prices = _read_json(DEFAULT_PRICES_PATH)
+        if not isinstance(prices, list):
+            raise ValueError("expected a price list")
+        normalized = [_normalise_price(row, "CNY", index) for index, row in enumerate(prices)]
+    except (OSError, ValueError, TypeError) as exc:
+        raise BudgetError("budget_config_invalid", {
+            "field": "default_prices", "path": str(DEFAULT_PRICES_PATH),
+        }) from exc
+    return [price for price in normalized if any(
+        all(price.get(key) == binding.get(key) for key in ("provider", "actual_model", "route"))
+        for binding in authorization["allowed_bindings"]
+    )]
+
+
 class BudgetError(ValueError):
     """Typed, recoverable admission or metering feedback."""
 
@@ -546,6 +566,7 @@ class TaskBudget:
     def create(cls, ref: str | Path, config: dict) -> "TaskBudget":
         path = Path(ref).expanduser().resolve()
         normalised = _normalise_config(path, config)
+        use_defaults = "prices" not in config and "price_snapshot" not in config
         budget = cls(path)
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         # Creation is immutable and must be serialized with add/tick.  The
@@ -561,10 +582,16 @@ class TaskBudget:
                         {"ref": str(path), "error": type(exc).__name__},
                     ) from exc
                 immutable_existing = {key: value for key, value in existing.items() if key != "created_at"}
+                if use_defaults:
+                    # Retrying creation preserves the original snapshot even
+                    # after shared defaults change.
+                    normalised["prices"] = _copy(existing.get("prices", []))
                 immutable_requested = {key: value for key, value in normalised.items() if key != "created_at"}
                 if immutable_existing == immutable_requested:
                     return budget
                 raise BudgetError("budget_exists", {"ref": str(path)})
+            if use_defaults:
+                normalised["prices"] = _configured_prices(normalised)
             _atomic_json(budget.authorization_path, normalised)
             os.chmod(budget.authorization_path, 0o600)
             budget.events_path.touch(mode=0o600, exist_ok=True)

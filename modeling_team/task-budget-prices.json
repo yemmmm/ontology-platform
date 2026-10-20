@@ -1,0 +1,46 @@
+[
+  {
+    "provider": "glm-direct",
+    "actual_model": "glm-5.3-flash",
+    "currency": "CNY",
+    "unit_tokens": 1000000,
+    "cached_input_per_million": "0.02",
+    "uncached_input_per_million": "1",
+    "output_per_million": "4",
+    "version": "user-20261020",
+    "source_ref": "modeling_team/task-budget-prices.json"
+  },
+  {
+    "provider": "glm-messages",
+    "actual_model": "glm-5.3-flash",
+    "currency": "CNY",
+    "unit_tokens": 1000000,
+    "cached_input_per_million": "0.02",
+    "uncached_input_per_million": "1",
+    "output_per_million": "4",
+    "version": "user-20261020",
+    "source_ref": "modeling_team/task-budget-prices.json"
+  },
+  {
+    "provider": "deepseek-direct",
+    "actual_model": "deepseek-flash",
+    "currency": "CNY",
+    "unit_tokens": 1000000,
+    "cached_input_per_million": "0.02",
+    "uncached_input_per_million": "1",
+    "output_per_million": "4",
+    "version": "user-20261020",
+    "source_ref": "modeling_team/task-budget-prices.json"
+  },
+  {
+    "provider": "deepseek-official",
+    "actual_model": "deepseek-flash",
+    "currency": "CNY",
+    "unit_tokens": 1000000,
+    "cached_input_per_million": "0.02",
+    "uncached_input_per_million": "1",
+    "output_per_million": "4",
+    "version": "user-20261020",
+    "source_ref": "modeling_team/task-budget-prices.json"
+  }
+]

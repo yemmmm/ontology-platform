@@ -3,7 +3,7 @@
 - 日期：2026-10-20。
 - 授权：用户要求“请实现v4.4-002需求，并通过测试”。本轮包含工程实现、本地工程测试及提交；不增加实际任务金额，不调用收费 Provider，不恢复旧建模任务。
 - [权威需求](../../requirements/requirements-v4.4.md#r4-4-002)、[已审阅设计](../designs/2026-10-20-r4-4-002-task-cost-budget-design.md)。
-- 状态：工程实现／本地测试PASS，最终 Team 全量回归通过；未取得真实托管链预算控制或独立业务语义验收证据。
+- 状态：初版工程实现／本地测试PASS，Team 全量回归通过；后续价格配置增量按下文单列。未取得真实托管链预算控制或独立业务语义验收证据。
 
 ## 实现范围
 
@@ -33,13 +33,25 @@
 | 原生接口回归 | 新预算代理、旧 Codex／Lean／Delivery／DSH 运行时 | 129 passed，2 skipped，23 subtests passed，124.17s |
 | 交叉工程检查 | CLI、Host／Runner／验收 owner、多成员共享来源及持久控制去重 | 22 passed |
 | 集成收口 | 新预算代理／CLI／集成、usage、旧 Lean | 82 passed，23 subtests passed，3.25s |
-| Team 全量 Round 2 | 与Round 1相同命令，当前冻结源码 | **3677 passed，12 skipped，359 warnings，318 subtests passed，588.57s** |
+| Team 全量 Round 2 | 与Round 1相同命令，初版 `728ac57` 冻结源码 | **3677 passed，12 skipped，359 warnings，318 subtests passed，588.57s** |
 
 Round 1 第一阻塞均为工程合同：两个历史 native Agent fixture 未携带新增可选预算字段，分别影响 P2a idle send 与旧 Examiner continuation；一个新预算用例使用了旧的暂停原因断言格式。三项已修复，Round 2无失败。另有裸 Python 运行的开发检查被 `pydantic._internal._signature` 缺失阻断，统一使用上述 backend `uv` 环境后的相关测试通过，不归因模型质量。
 
 静态及文档检查：改动的预算、Host、CLI、proxy、runtime及测试文件 Ruff 通过；`runner.py` 的7项及 `acceptance_runtime.py` 的1项存量 Ruff 发现与HEAD基线一致，本轮未扩大修改。相关 `py_compile`／`compileall`、暂存差异检查、11份文档本地链接检查均通过；修改后的两个 Skill 验证器通过。README 的预算创建／追加示例已在临时目录用真实 `TaskBudget` 验证，无 Provider 请求。
 
 本地用例验证金额公式、源选择、去重、异常恢复、权限隔离、进程控制和消息合同。负责CLI与文档的Agent另对预算核心、Host／Runner整合做了交叉检查；CLI本身仍属开发测试。上述检查不是独立业务语义验收。
+
+## 后续价格配置
+
+- 用户要求：将 `glm-5.3-flash` 与 `deepseek-flash` 均设为缓存输入／未缓存输入／输出
+  `0.02 / 1 / 4` 元／百万token。该值是用户指定的估算价，不是供应商报价验证。
+- 保存为 [默认价表](../../../modeling_team/task-budget-prices.json)，覆盖两模型各自的
+  Responses／Messages 路由。新建预算仅在任务省略价表时，按已明确获准绑定选择并冻结；
+  显式价表优先，不增加金额授权，不改历史快照，创建重试不受后续默认改价影响。
+- 预算核心／默认价格、CLI、集成、proxy、usage回归：**141 passed，4.50s**；验证四路由
+  均按新价格得到样本金额¥0.16，其他模型／路由／币种、显式空价表及原授权边界保持。
+- Host／Delivery／托管启动相关回归：**350 passed，42.48s**。该增量两组共491项通过；
+  未重跑初版Team全量，运行时控制代码保持。Ruff、编译、JSON与文档链接检查通过。
 
 ## 证据边界
 
