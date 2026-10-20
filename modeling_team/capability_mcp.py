@@ -126,7 +126,7 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "candidate_ref": {"type": ["string", "null"]},
                 "changes": {"type": "array", "minItems": 1, "items": {"type": "object"}},
             }, "required": ["schema_version", "candidate_ref", "changes"], "additionalProperties": False},
-        }, "required": ["modeling_id", "request"],
+        }, "required": ["modeling_id"],
         "additionalProperties": False,
     },
     "modeling_inspect_associations": {
@@ -593,9 +593,18 @@ CAPABILITY_TOOL_SCHEMAS[CQ_OPERATION] = {
 
 if __package__:
     from .direct_modeling import model_change_item_schema
-    from .handoff_materials import HANDOFF_TOOL_SPECS
+    from .handoff_materials import HANDOFF_TOOL_SPECS, REF_SCHEMA
 
     CAPABILITY_TOOL_SCHEMAS["modeling_submit_model_changes"]["properties"]["request"]["properties"]["changes"]["items"] = model_change_item_schema()
+    CAPABILITY_TOOL_SCHEMAS["modeling_submit_model_changes"]["properties"]["request_ref"] = {
+        **REF_SCHEMA,
+        "description": (
+            "Complete request JSON published by this Modeling agent to recipient runner using "
+            "publish_handoff_material. Supply exactly one of request or request_ref. "
+            "Use the returned material_id; path selects a directory's file member. "
+            "The program reads the immutable full request without model transcription."
+        ),
+    }
     CAPABILITY_TOOL_SCHEMAS.update({spec["name"]: spec["inputSchema"] for spec in HANDOFF_TOOL_SPECS})
 
 
@@ -853,7 +862,9 @@ class RunnerCapabilityEndpoint:
         if method == "tools/list":
             protocol_descriptions = {
                 "modeling_submit_model_changes": (
-                    "Submit explicit semantic changes against the current immutable unified candidate. "
+                    "Submit exactly one of inline request or request_ref for the complete request JSON "
+                    "published to runner. Prefer request_ref for an already prepared request; do not "
+                    "retype its contents. candidate_ref selects a candidate, not a request document. "
                     "The program compiles, binds real execution context and calls apply_atomic once "
                     "per batch. No command plan, technical identity, dry-run or Protocol approval. "
                     "Optional placement_ref selects one Host-confirmed frozen plan entry for fields-only creation. "

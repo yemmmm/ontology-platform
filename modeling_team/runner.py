@@ -3707,8 +3707,11 @@ class TeamRunner:
                         "Class/relation_type definitions. Do not create individuals solely to fit "
                         "the candidate kinds. For fields-only changes item_id=null; candidate_ref "
                         "may be null when no candidate item is selected. Then directly call "
-                        "modeling_submit_model_changes(modeling_id=modeling, request=..., placement_ref=... "
-                        "only when choosing an existing confirmed placement). The request "
+                        "modeling_submit_model_changes with exactly one of request or request_ref. "
+                        "For a prepared complete request, publish_handoff_material to recipient_id=runner "
+                        "and pass its material_id plus optional directory-member path as request_ref; "
+                        "do not regenerate its JSON. Add placement_ref only when choosing an existing "
+                        "confirmed placement. The request "
                         "has schema_version=r4-3-025-model-changes/v1, candidate_ref, changes; each "
                         "change has change_id,action,resource_kind,item_id,target_ref,fields. "
                         "Use actual retained resource-entry references; never author command plans or "
@@ -5756,15 +5759,37 @@ class TeamRunner:
         if operation == "modeling_finish_changes":
             return (self._direct_model_executor.close_session() if self._direct_model_executor is not None
                     else {"closed": True, "session_id": None, "errors": []})
-        request = args.get("request")
-        if not isinstance(request, Mapping):
-            raise StagedSubmissionRejection("model_change_request_invalid", "Use the current model-change request contract")
+        request: Mapping[str, Any] = {}
         ticket = self._cq_write_admission.admit("modeling_submit_model_changes")
         if ticket is None:
             raise StagedSubmissionRejection("staged_write_quiescing", "Checkpoint capture or independent acceptance has closed new model writes; retry after authorized production resumes")
         reference = None
         digest = None
         try:
+            if ("request" in args) == ("request_ref" in args):
+                raise SubmissionInputError(
+                    "model_change_request_invalid", "Supply exactly one of request or request_ref",
+                    "/request_ref",
+                )
+            value = args.get("request")
+            if "request_ref" in args:
+                store = self.run.handoff_materials
+                try:
+                    store.authorize_ref(args["modeling_id"], "runner", args["request_ref"])
+                    value = json.loads(store.resolve(args["modeling_id"], args["request_ref"]))
+                except MaterialError as exc:
+                    raise SubmissionInputError(exc.code, str(exc), "/request_ref") from exc
+                except json.JSONDecodeError as exc:
+                    raise SubmissionInputError(
+                        "model_change_request_invalid", "Referenced request must be a complete JSON object",
+                        "/request_ref",
+                    ) from exc
+            if not isinstance(value, Mapping):
+                raise SubmissionInputError(
+                    "model_change_request_invalid", "Use the complete model-change request object",
+                    "/request_ref" if "request_ref" in args else "/request",
+                )
+            request = value
             if not candidate_gate_open(self.run.root):
                 raise SubmissionInputError("scope_binding_required", "Wait for the existing confirmed scope/topology before model writes")
             if self._competency_questions and self._cq_freeze is None:

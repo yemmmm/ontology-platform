@@ -86,7 +86,8 @@ def test_025_modeling_capability_advertises_direct_change_contract(tmp_path):
         submit = tools["modeling_submit_model_changes"]
         schema = submit["inputSchema"]
         request = schema["properties"]["request"]
-        assert schema["required"] == ["modeling_id", "request"]
+        assert schema["required"] == ["modeling_id"]
+        assert schema["properties"]["request_ref"]["required"] == ["material_id"]
         assert request["required"] == ["schema_version", "candidate_ref", "changes"]
         assert request["properties"]["schema_version"]["enum"] == [
             "r4-3-025-model-changes/v1"

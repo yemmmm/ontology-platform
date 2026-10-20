@@ -9,7 +9,20 @@
       "candidate_ref": "run-relative immutable stage3-neutral-graph/candidates/<candidate>-r<revision>.json, or null for supported fields-only changes including Class/relation_type creation",
       "changes": "nonempty ordered list of the closed change shape below"
     },
+    "request_ref": "alternative to request: {material_id, optional path} returned by publish_handoff_material to recipient_id=runner; path selects one directory file member, not a JSON Pointer",
     "placement_ref": "optional {artifact_ref,path} copied from a Host-confirmed frozen ontology-plan entry; omit when placement is already unambiguous"
+  },
+  "request_input": {
+    "selection": "Supply exactly one of request or request_ref; omit the unused key rather than setting it to null. Both use the same complete r4-3-025-model-changes/v1 object and compiler/application path. candidate_ref inside that object selects a candidate, not the complete request document.",
+    "prepared_request": "Write the complete request JSON once with write_handoff_output, publish that source to recipient_id=runner, then submit its returned material reference. Do not retype a correct prepared request into a second tool argument. Inline request remains valid for short new changes.",
+    "submit_example": {
+      "modeling_id": "modeling",
+      "request_ref": {"material_id": "<copy the returned material_id>"}
+    },
+    "content": "The file is the complete request object with schema_version, candidate_ref and changes; it is not a wrapper containing modeling_id/request, a candidate-only artifact, a command plan or an arbitrary local path. A directory reference must select its request file with path.",
+    "binding": "The current Modeling actor must have published this immutable material to runner. The existing material channel checks current run, source/recipient authorization, manifest and member digest. The program loads the full selected JSON once; editing or deleting the author's source does not change published bytes.",
+    "execution": "The resolved content enters the existing canonical submission snapshot and digest, compiler, write admission, atomic apply and receipt flow. Input transport does not change semantic submission identity: inline/reference retries of the same content reuse the original success or uncertain-write reconciliation. No field repair, content dropping or semantic inference is implied.",
+    "errors": "Missing/changed/forbidden material, missing directory member or invalid JSON returns typed retryable not_written feedback at /request_ref before any model write. Invalid request contents retain existing compiler paths and diagnostics; correct and republish within the same goal."
   },
   "change": {
     "required_fields": [

@@ -43,11 +43,22 @@ update并绑定原资源，不能因候选完整重发而把故障再建一次�
 
 ### 3.1 程序核心接口
 
-对外能力入口为`modeling_submit_model_changes(modeling_id, request)`，由Runner核验真实
+对外能力入口为`modeling_submit_model_changes(modeling_id, request或request_ref)`，由Runner核验真实
 Modeling身份和范围，读取／冻结candidate与获准绑定，再调用compiler及§3.3的Executor。
 Executor不重新理解candidate、target_ref或语义引用。接口目标已明确；并行代码出现同名
 入口不等于本轮已验证实际能力目录、调用及绑定集成。
-Agent只提交`request`；`execution_context`由已认证Runner构造，不能透传Agent自报值。
+Agent提交完整`request`或其获准不可变`request_ref`；`execution_context`由已认证Runner
+构造，不能透传Agent自报值。
+
+2026-10-20 用户确认补齐完整请求引用：原接口只有 candidate_ref，未覆盖 Class 等
+fields-only 完整交付的引用输入，导致已正确保存的请求仍由模型再次转录。保留内联，
+新增 `request_ref={material_id,path?}`，复用原 HandoffMaterials：由当前 Modeling 发布给
+runner，目录必须选择单一文件；不用任意宿主路径，不新增通信边或文件服务。
+两种输入恰选一个，未用键省略。Runner 沿现有来源／接收方／当前 run／摘要检查完整
+载入一次正文，正文仍是下述原请求对象，不接受工具参数包装。引用错误在写入前返回
+准确可恢复反馈；解析后的内容沿同一编译、规范化提交快照、身份去重及原子应用路径，
+不把传输方式计入语义提交身份，不更改既有业务字段或不确定写入恢复。原设计审阅
+结论保留为当时版本证据，不据它宣称本增量已通过独立审阅或真实降耗验证。
 
 request外层封闭字段：
 

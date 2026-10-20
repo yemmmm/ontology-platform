@@ -554,7 +554,7 @@ Delivery 不再暴露 `verify_repair`，保留 `get_repair_verification_status` 
 
 | 工具 | 调用者与输入 | 输出及边界 |
 | --- | --- | --- |
-| `modeling_submit_model_changes` | unified Modeling；modeling_id、request（schema_version、candidate_ref、显式 changes）、可选 placement_ref | 程序生成命令、填真实上下文、逐批单次原子 apply；保留原 item／JSON Pointer 错误定位、真实资源／修订／索引、成功去重及不确定身份对账；不裁决业务语义 |
+| `modeling_submit_model_changes` | unified Modeling；modeling_id；request（schema_version、candidate_ref、显式 changes）或 request_ref 二选一；可选 placement_ref | 完整请求可按获准不可变材料引用无损载入，再进入同一编译／原子 apply；保留原 item／JSON Pointer 错误定位、真实资源／修订／索引、成功去重及不确定身份对账；不裁决业务语义 |
 | `modeling_inspect_associations` | unified Modeling；modeling_id、可选 focus_iris | 在本 run 实际获准 Ontology 集合完整治理分页读取，调用既有关联辅助；部分、权限或修订漂移保持局部结论，不开放任意 SPARQL |
 | `modeling_finish_changes` | unified Modeling；modeling_id | 完成程序持有的 Build Session 并释放租约；不等同最终语义验收 |
 | `protocol_execute_approved_plans` | 保留计划能力；有序 plan_refs、ontology lease_tokens、mode=apply_atomic | apply 请求内校验；新模型 dry-run 和翻译／dry proof 前置门已退役。当前统一图正常写入使用 Modeling 直接能力；历史计划仍可解释 |
@@ -569,6 +569,16 @@ item_id=null，创建时target_ref=null。工具宣告已有合法枚举及语�
 操作组合、引用和内容校验，可修正内层错误返回原字段诊断，不变成不透明的认证拒绝。
 `semantic_definition`仅使用现有六类字段，不支持exclusions；业务排除条件保留在有依据
 的语义说明中。后续关系端点复制实际回执的resource_bindings引用，不能按数组位置猜。
+
+完整请求已有文件时，先通过 `write_handoff_output` 保存一次，再调用
+`publish_handoff_material(recipient_id="runner", source_path=...)`，将返回的
+`material_id` 放入 `request_ref={"material_id":"…"}`；目录材料另加 `path` 选择一个文件。
+文件正文为完整 `r4-3-025-model-changes/v1` 对象，不含外层 `modeling_id/request` 包装。
+`request` 和 `request_ref` 只提供一个，另一键省略；小修改仍可内联。`candidate_ref` 是正文
+内部的候选引用，不能代替完整请求引用。Runner 沿原材料授权／摘要检查一次读取完整正文，
+不重新生成或修正字段；引用与内联的相同内容共用原提交身份、成功去重和不确定写入对账。
+材料缺失、变化、越权、成员未选及 JSON 非法返回 `/request_ref` 可重试未写入反馈；原业务
+内容错误仍由同一 compiler 定位。发布材料不等于获得模型写入授权。
 
 028增量路径在写入前按显式获准Ontology集合进行业务表达检索，再按候选所属图及实际IRI
 补读完整定义、RDF类型、有向关系和必要路径；无匹配、词面降级或截断不证明不存在。

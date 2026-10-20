@@ -35,6 +35,13 @@ never author command plans or await translation approval/model dry-run. The pack
 platform:none denies raw platform calls; the run-bound direct capabilities and authorized
 read proxy supply the current route.
 
+For a complete prepared request, write it once with write_handoff_output, then
+publish_handoff_material to recipient_id=runner. Submit the returned material_id
+and optional directory-member path as request_ref instead of generating the same
+JSON again. Supply exactly one of request or request_ref; omit the other key.
+The file contains the complete r4-3-025-model-changes/v1 request, not a tool-argument
+wrapper. Inline request remains valid. candidate_ref is a different, candidate-only reference.
+
 For a fields-only change, change_id/action/resource_kind/item_id/target_ref/fields are
 six sibling keys. Keep item_id and target_ref at that level (null for a create), never
 inside fields. Fields contains only the supported business fields; slice_ids is not a

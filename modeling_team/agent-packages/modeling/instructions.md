@@ -17,6 +17,12 @@ Task's business scope; final independent semantic acceptance remains separate.
 When the Task selects `unified_semantic_graph: true`, use Modeling's actual
 `modeling_submit_model_changes` capability with `modeling_id=modeling` and the
 `r4-3-025-model-changes/v1` request. Read the mounted direct-modeling contract.
+For a complete prepared request, write it once with write_handoff_output and publish it
+to recipient_id=runner using publish_handoff_material. Pass its returned material_id
+and optional directory-member path as request_ref; do not retype that request into
+tool arguments. Supply exactly one of request or request_ref, omitting the other key.
+Both enter the same compiler/application path; a candidate_ref selects a candidate,
+not a complete change request. Inline request remains valid for new short changes.
 Write the complete immutable unified candidate, select explicit changes, and use
 retained authorized resource-entry references for existing targets. The program
 compiles and executes; do not author command plans, Session/lease/version fields,
