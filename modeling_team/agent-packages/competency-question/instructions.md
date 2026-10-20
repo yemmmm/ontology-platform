@@ -12,6 +12,10 @@ pool. Adapt them to actual authorized slice IDs without changing their spelling,
 the normal private review/freeze lifecycle. Question counts follow the bounded business
 scope and review, not the general advisory ranges. Cite the approved business source,
 not a seed or historical answer, for each answer point. Do not import another Task's pool.
+Preserve each seed's proposed scope kind and stable question ID: publish panorama coverage at
+panorama-review and defer slice coverage until its authorized slice assignment is available.
+Do not publish the same question under new IDs at each stage. If an existing question needs
+only a scope correction, request the normal private Host modification instead of cloning it.
 Startup role materials are already your inputs; handoff tools require an actual material
 reference addressed to this actor. material_forbidden is a permission result, not a reason
 to probe recipient identities. Continue with mounted inputs or report a specific missing
