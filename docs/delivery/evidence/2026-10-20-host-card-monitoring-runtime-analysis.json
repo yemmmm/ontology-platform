@@ -1,0 +1,119 @@
+{
+  "current": {
+    "run_id": "minimal-chain-20261020-dsh-glm-low-new-r1",
+    "timestamps": {
+      "semantic_start": "2026-10-20T02:49:51.470057+00:00",
+      "write_session_closed": "2026-10-20T02:55:49.486+00:00",
+      "production_handoff_accepted": "2026-10-20T02:59:55.080863+00:00",
+      "acceptance_pass_accepted": "2026-10-20T03:14:38.587197+00:00",
+      "first_standby_accepted": "2026-10-20T03:15:09.743574+00:00"
+    },
+    "seconds": {
+      "start_to_write_close": 358.015943,
+      "write_close_to_handoff": 245.594863,
+      "handoff_to_acceptance_pass": 883.506334,
+      "start_to_acceptance_pass": 1487.11714,
+      "start_to_first_standby": 1518.273517
+    }
+  },
+  "previous": {
+    "run_id": "minimal-chain-20261020-dsh-glm-low-r3",
+    "timestamps": {
+      "semantic_start": "2026-10-20T01:04:37.586733+00:00",
+      "write_session_closed": "2026-10-20T01:09:57.018+00:00",
+      "production_handoff_accepted": "2026-10-20T01:14:29.577705+00:00",
+      "acceptance_pass_accepted": "2026-10-20T01:18:04.567836+00:00",
+      "first_standby_accepted": "2026-10-20T01:18:47.757285+00:00"
+    },
+    "seconds": {
+      "start_to_write_close": 319.431267,
+      "write_close_to_handoff": 272.559705,
+      "handoff_to_acceptance_pass": 214.990131,
+      "start_to_acceptance_pass": 806.981103,
+      "start_to_first_standby": 850.170552
+    }
+  },
+  "differences_seconds": {
+    "start_to_write_close": 38.584676,
+    "write_close_to_handoff": -26.964842000000004,
+    "handoff_to_acceptance_pass": 668.516203,
+    "start_to_acceptance_pass": 680.1360370000001,
+    "start_to_first_standby": 668.102965
+  },
+  "acceptance_share_of_extra_elapsed": 0.9829154266677975,
+  "usage": {
+    "current_host": 13328154,
+    "previous_host": 7517221,
+    "current_delivery": 10473070,
+    "previous_delivery": 6039158
+  },
+  "host_observation": {
+    "status_script_calls": 32,
+    "outer_exec_calls": 83,
+    "sleep_calls": 23,
+    "reasoning_records": 78,
+    "basis": "Current Host retained rollout through prior final, excluding this analysis turn. Counts are activity, not token attribution or time saved."
+  },
+  "current_user_wait": {
+    "request_at": "2026-10-20T02:47:51.050Z",
+    "final_at": "2026-10-20T03:19:00.140Z",
+    "seconds": 1869.09
+  },
+  "card_coverage_observation": {
+    "run_id": "minimal-chain-20261020-dsh-glm-low-new-r1",
+    "observed_at": "2026-10-20T03:23:41.432514+00:00",
+    "reported_cards": [
+      "coordinator",
+      "modeling"
+    ],
+    "card_count": 2,
+    "limitation": "No full Delivery/CQ/Consumer/Judge card coverage shown by current work-board; missing cards do not prove role state."
+  },
+  "sources": [
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/evidence/semantic-start.jsonl",
+      "bytes": 137,
+      "sha256": "6d5b1764d151576c8a954273005758a328ae76c9a33ddbc3312cec800fc5e1e8"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/evidence/outer-input-receipts.jsonl",
+      "bytes": 4528,
+      "sha256": "e066f695af3a1fe9e21c42d4eb7a11c908f6f56449b7e66d0ad25181a59832ca"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-new-r1/evidence/cq-acceptance-complete.jsonl",
+      "bytes": 946,
+      "sha256": "8dfa7c41f433ab145eddc31b3453f9c18bf81b7dbed71d8535de84531ccea158"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/evidence/semantic-start.jsonl",
+      "bytes": 137,
+      "sha256": "cf048aecf90918af7b902ed6479d8cac0a56ccd764c0f37c1dd854046fd34e77"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/evidence/outer-input-receipts.jsonl",
+      "bytes": 3241,
+      "sha256": "a8563ef9fdff6f80413892efd338b67b5531ac8250d33d188a0e457fc07aff94"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/evidence/cq-acceptance-complete.jsonl",
+      "bytes": 473,
+      "sha256": "43c40bf712d5ca3814a52cce8c5c31f805e4aa7dbd12d6fc0356847103ee21f6"
+    },
+    {
+      "path": "docs/delivery/evidence/2026-10-20-dsh-glm-low-new-modeling.json",
+      "bytes": 23278,
+      "sha256": "fad14decb2b9d5b8206974829d882f6ded8bfc065437064612ae644ae6c31299"
+    },
+    {
+      "path": "docs/delivery/evidence/2026-10-20-request-ref-live-verification.json",
+      "bytes": 37724,
+      "sha256": "3f484e01d2b408f5bc3d34ea5cfcca9d86f9b441866258fd52cb1c77aed61cb8"
+    }
+  ],
+  "limitations": [
+    "Stage intervals are wall-clock observations, not summed effective semantic or repair labor.",
+    "Same business source/task/model/effort/denominator; code and concrete errors differ. No provider latency or model-speed causal claim.",
+    "Periodic-card rule has passed document and existing-CLI checks only; no new semantic start or token-saving validation."
+  ]
+}

@@ -28,7 +28,7 @@ authorization：[来源引用、适用范围、计数口径、建模轮次已用
 wait：[无，或缺失决定/权限/兼容性/额度；影响动作与独立可做项]
 resource：[实际保留/撤销/重新准备/待核实状态、时点和范围]
 handoff：[下一观察者、时间、run 根/日志偏移/恢复入口；未安排如实写明]
-supervision：[当前主动观察者；下一次读取方式／已验证唤醒或接手证据；若拟结束回合，列实际满足的结束条件]
+supervision：[当前检查责任方；卡片检查周期／下一检查时间／上次record_seq；若有异常列定向读取入口；后台调度或交接须有实际承接证据]
 evidence：[get_run_status 核实来源及原 events/pending/profile/报告链接、行号或偏移]
 limitations：[只覆盖什么、未执行什么、冲突/不可读证据、unverified 项]
 ```
