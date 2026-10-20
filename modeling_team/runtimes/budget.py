@@ -186,6 +186,19 @@ class RuntimeBudget:
                 else source_identity(self.owner_id, source_path, kind)
             )
         current = self.budget.show("host")
+        capture_session = metadata.get("capture_session_id")
+        if self.runtime == "codex" and metadata.get("shared") and capture_session:
+            # Link this member's existing numeric stream to the shared transport
+            # session. Keep this Host attribution out of role/native inputs.
+            for native_id, source in (current.get("sources") or {}).items():
+                native_metadata = source.get("metadata") or {}
+                if (source.get("kind") == "capture"
+                        and native_metadata.get("owner_id") == self.owner_id
+                        and not native_metadata.get("shared")):
+                    self.budget.register_source(
+                        native_id, source["path"], source["kind"], source.get("binding"),
+                        native_capture_session_id=capture_session,
+                    )
         if source_id not in (current.get("sources") or {}):
             # Register a live empty append-only source before the first model
             # request.  A later missing file remains observable as a source

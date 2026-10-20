@@ -888,6 +888,12 @@ class TaskBudget:
             row for row in records
             if row.get("_cumulative") or row.get("source_mode") == "dsh_assistant_cumulative"
         ]
+        # The persisted map is sorted by digest. Restore append order for each
+        # source before the shared accounting core checks cumulative resets.
+        cumulative.sort(key=lambda row: (
+            (row.get("sources") or [{}])[0].get("source_id", ""),
+            (row.get("sources") or [{}])[0].get("byte_offset", 0),
+        ))
         ordinary = [row for row in records if row not in cumulative]
         try:
             accounted = account_usage_units(ordinary, cumulative=cumulative, native=native)
@@ -916,6 +922,7 @@ class TaskBudget:
         inflight = 0
         latest = None
         cost_units = []
+        metered_sources = set()
         issues = list(accounted.get("issues", []))
         # Source parser failures are current projection blockers; historical
         # issue entries remain in the private source log but do not keep a
@@ -998,15 +1005,63 @@ class TaskBudget:
             }
             unit_map[key] = entry
             cost_units.append(entry)
+            if entry["amount"] is not None:
+                metered_sources.update(ref["source_id"] for ref in row.get("sources", []))
             role = row.get("role") or row.get("semantic_role") or "unassigned"
             model = row.get("actual_model") or row.get("requested_model") or row.get("model") or "unassigned"
             aggregate(by_role.setdefault(str(role), {}), entry)
             aggregate(by_model.setdefault(str(model), {}), entry)
             aggregate(by_role_model.setdefault(f"{role}|{model}", {}), entry)
+        # Codex's shared proxy records transport, not token receipts. Successful
+        # transport is covered by its explicitly linked native numeric stream;
+        # do not fabricate a second per-request receipt or charge it again.
+        native_coverage = {}
+        native_samples = {}
+        for row in cumulative:
+            if row.get("runtime") != "codex":
+                continue
+            stamp = _timestamp(row.get("timestamp") or row.get("received_at"))
+            for ref in row.get("sources", []):
+                source_id = ref["source_id"]
+                metadata = state.get("sources", {}).get(source_id, {}).get("metadata", {})
+                capture_session = metadata.get("native_capture_session_id")
+                selector = (capture_session, row.get("provider"), row.get("key_ref"),
+                            row.get("actual_model") or row.get("requested_model"))
+                if (source_id not in metered_sources or None in selector or stamp is None
+                        or "" in selector):
+                    continue
+                sample = (row.get("runtime_session_id"),
+                          tuple(row["usage"].get(field) for field in TOKEN_FIELDS))
+                native_samples.setdefault(selector, set()).add(sample)
+                if stamp >= native_coverage.get(selector, {}).get("through", float("-inf")):
+                    native_coverage[selector] = {"source": ref, "through": stamp, "additive": False}
+        transport_counts = {}
+        for attempt in state.get("_attempts", {}).values():
+            source = state.get("sources", {}).get((attempt.get("source") or {}).get("source_id"), {})
+            metadata = source.get("metadata", {})
+            if (attempt.get("status") == "completed" and metadata.get("shared") is True
+                    and metadata.get("runtime") == "codex"):
+                selector = (attempt.get("session_id"), attempt.get("provider"), attempt.get("key_ref"),
+                            attempt.get("actual_model") or attempt.get("requested_model"))
+                transport_counts[selector] = transport_counts.get(selector, 0) + 1
         # Attempts without usage are first pending, then a metering error after
         # the fixed settlement grace period.  Normal in-flight calls stay so.
         now_stamp = _timestamp(now) if now is not None else _now().timestamp()
         for attempt in state.get("_attempts", {}).values():
+            attempt.pop("native_coverage", None)
+            source = state.get("sources", {}).get((attempt.get("source") or {}).get("source_id"), {})
+            metadata = source.get("metadata", {})
+            selector = (attempt.get("session_id"), attempt.get("provider"), attempt.get("key_ref"),
+                        attempt.get("actual_model") or attempt.get("requested_model"))
+            covered = native_coverage.get(selector)
+            settled = _timestamp(attempt.get("settled_at"))
+            if (attempt.get("status") == "completed" and metadata.get("shared") is True
+                    and metadata.get("runtime") == "codex"
+                    and metadata.get("capture_session_id") == attempt.get("session_id")
+                    and len(native_samples.get(selector, ())) >= transport_counts.get(selector, 0)
+                    and covered and settled is not None and covered["through"] >= settled):
+                attempt["native_coverage"] = _copy(covered)
+                continue
             source_kinds = set(attempt.get("source_kinds") or [])
             if attempt.get("native_lifecycle"):
                 if not native_primary_for(attempt):
