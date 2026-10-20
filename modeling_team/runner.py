@@ -230,6 +230,7 @@ from .start_ledger import (
     StartLedgerConfig,
     resolve_ledger_config,
 )
+from .task_budget import BudgetError, TaskBudget, bind_budget, budget_for
 from .transport_mcp import (
     TERMINAL_REPORT_GUARD_REJECTIONS,
     RoutingError,
@@ -501,6 +502,7 @@ class TeamRunner:
         deepseek_credential_path: Path | None = None,
         glm_credential_path: Path | None = None,
         staged_batch_forwarder: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        budget_ref: Path | str | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
             repository_root,
@@ -512,6 +514,12 @@ class TeamRunner:
             ledger_now,
         )
         self.prestart_preflight = prestart_preflight
+        self.budget = TaskBudget(budget_ref) if budget_ref is not None else None
+        self._budget_control_epoch = None
+        self._budget_pause_active = False
+        self._budget_buffered_messages = []
+        self._budget_pending_start_agents = []
+        self._flow_pause_reasons = set()
         self.canonical_base_url = canonical_base_url
         self.canonical_admin_key = canonical_admin_key
         self.monotonic_clock = monotonic_clock or time.monotonic
@@ -860,6 +868,8 @@ class TeamRunner:
     ) -> TeamRun:
         if self.run is not None or not self._safe_run_id(run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
+        if self.budget:
+            self.budget.require_available(operation="production")
         # R3.0-002 increment 6(b): non-formal multi-slice tasks load through
         # the three-role branch; every other task keeps the strict formal
         # loader unchanged.
@@ -1078,16 +1088,17 @@ class TeamRunner:
             ledger_root = self._canonical_ledger_root()
             if not formal_acceptance and self.ledger_root is not None:
                 ledger_root = self.ledger_root
-            self._ledger = self._create_ledger(root=ledger_root, config=ledger_config)
-            # The reservation is the freeze gate: no mutable run state exists before it succeeds.
-            self._ledger.reserve(
-                run_id,
-                baseline_hash,
-                self.freeze_started_at,
-                gate_binding=gate_binding,
-            )
+            if self.budget:
+                StartLedger.validate_amount_start(baseline_hash, self.freeze_started_at, gate_binding,
+                    requirement_id=ledger_config.requirement_id, now=self.ledger_now)
+            else:
+                self._ledger = self._create_ledger(root=ledger_root, config=ledger_config)
+                # The reservation is the freeze gate: no mutable run state exists before it succeeds.
+                self._ledger.reserve(run_id, baseline_hash, self.freeze_started_at, gate_binding=gate_binding)
         root.mkdir(parents=True, mode=0o700)
         (root / "evidence").mkdir(mode=0o700)
+        if self.budget:
+            bind_budget(root, self.budget.ref, "run:" + run_id, kind="production", run_id=run_id)
         self.run = TeamRun(
             run_id,
             root,
@@ -2625,7 +2636,8 @@ class TeamRunner:
                         **self._formal_ledger_identity(),
                     },
                 )
-            for agent in self.run.configuration.profile.agents:
+            configured_agents = self.run.configuration.profile.agents
+            for index, agent in enumerate(configured_agents):
                 try:
                     self.adapter.start_task(
                         agent.agent_id,
@@ -2633,6 +2645,13 @@ class TeamRunner:
                         [str(path) for path in agent.package.required_skills],
                         roster,
                     )
+                except BudgetError as exc:
+                    # No native request was admitted. Keep every live thread,
+                    # original task and receipt, then dispatch only this suffix
+                    # after explicit same-budget continuation.
+                    self._budget_pending_start_agents = list(configured_agents[index:])
+                    self._hold_budget_refusal(exc)
+                    break
                 except Exception:
                     failures = self._consume_runtime_failures()
                     if failures:
@@ -2645,7 +2664,8 @@ class TeamRunner:
                     self._state("FAILED")
                     self._finalize_runtime_failure(failures)
                     return
-            self._state("RUNNING", identities=[item.agent_id for item in identities])
+            self._state("PAUSE_PENDING" if self._budget_pending_start_agents else "RUNNING",
+                        identities=[item.agent_id for item in identities])
             # R2.3-009 T3: the run-level fallback clock starts only after the
             # whole role Runtime came up, and excludes later issue-pending time.
             parameters = self.run.configuration.profile.parameters
@@ -4230,6 +4250,12 @@ class TeamRunner:
         if not self.run or not isinstance(message, dict):
             return self._receive_outer_normalized(message)
         action = message.get("action")
+        if getattr(self, "budget", None) and action in {
+                "instruction", "user", "consult", "recover_provider", "issue_resolution"}:
+            try:
+                self.budget.require_available(operation="production")
+            except BudgetError as exc:
+                raise RecoverableOuterInputError(str(exc), code=exc.code, run_id=self.run.run_id) from exc
         metadata = {}
         if action in {"instruction", "user", "consult"}:
             recipient = self._issue_coordinator_id()
@@ -4243,6 +4269,8 @@ class TeamRunner:
         self._outer_material_context = metadata
         try:
             return self._receive_outer_normalized(message)
+        except BudgetError as exc:
+            raise RecoverableOuterInputError(str(exc), code=exc.code, run_id=self.run.run_id) from exc
         finally:
             self._outer_material_context = {}
 
@@ -4553,8 +4581,22 @@ class TeamRunner:
         return self.drain()
 
     def _relay_flow_message(self, action: str, message: dict[str, Any]) -> list[dict[str, Any]]:
+        if getattr(self, "budget", None):
+            cause = "task_budget" if message.get("source") == "task_budget" else "user"
+            state = self.budget.show()
+            if cause == "task_budget" and message.get("epoch") != state["epoch"]:
+                return [{"type": "flow-control", "action": action, "status": "stale_control"}]
+            if action == "pause":
+                self._flow_pause_reasons.add(cause)
+            else:
+                self._flow_pause_reasons.discard(cause)
+                if self._flow_pause_reasons or not state["admission_open"]:
+                    return [{"type": "flow-control", "action": action, "status": "pause_pending",
+                             "remaining_reasons": sorted(self._flow_pause_reasons | set(state["pause_reasons"]))}]
         if getattr(self.adapter, "runtime", "codex") == "dsh":
             return self._control_dsh_flow(action, message)
+        if message.get("source") == "task_budget":
+            return self._relay_budget_members(action, message)
         coordinator = self._issue_coordinator_id()
         text = message.get("text") or ("请暂停当前工作，通知相关成员，自行等待下一条用户指示。"
                                       if action == "pause" else "请沿原任务和上下文继续，避免重复已完成工作。")
@@ -4570,6 +4612,98 @@ class TeamRunner:
         self._append_evidence("team-lifecycle", event)
         return [{"type": "flow-instruction", **event}]
 
+    def _relay_budget_members(self, action, message):
+        targets = []
+        for configured in self.run.configuration.profile.agents:
+            native = getattr(self.adapter, "agents", {}).get(configured.agent_id)
+            process = getattr(native, "process", None)
+            if process is not None and process.poll() is not None:
+                member_budget = getattr(native, "budget", None)
+                if member_budget is not None:
+                    member_budget.record_control(message["epoch"], "not_running", action=action,
+                                                 exit_code=process.poll())
+                continue
+            if getattr(self.adapter, "runtime_identity", lambda _: None)(configured.agent_id) is not None:
+                targets.append(configured.agent_id)
+        request_id = message["request_id"]
+        self._budget_member_control = {"request_id": request_id, "action": action,
+            "epoch": message["epoch"], "targets": targets, "confirmed": [], "results": {}}
+        self._flow_requests = {**getattr(self, "_flow_requests", {}), request_id: action}
+        for agent_id in targets:
+            instruction = {**message, "instruction": (
+                "暂停原任务并等待；回复正文附 flow_confirmation={request_id:本消息ID,action:pause}。"
+                if action == "pause" else "沿原任务和原回执继续，不重复写入；回复 flow_confirmation。")}
+            try:
+                self.adapter.send_message(agent_id, RuntimeDelivery(
+                    sender_id="host/task-budget", recipient_id=agent_id, kind="budget-control",
+                    text=json.dumps(instruction, ensure_ascii=False)))
+                status = "instruction_delivered"
+            except Exception:
+                status = "unknown"
+            self._budget_member_control["results"][agent_id] = status
+        event = {"type": "flow-control", "source": "task_budget", "action": action,
+                 "request_id": request_id, "status": "instruction_delivered" if targets else "not_started",
+                 "member_results": self._budget_member_control["results"]}
+        self._append_evidence("team-lifecycle", event)
+        return [event]
+
+    def _sync_task_budget(self):
+        if not getattr(self, "budget", None):
+            return False
+        # require_available also notices a dead/stale metering owner. Its typed
+        # refusal closes new work, while the current Runner remains observable.
+        try:
+            self.budget.require_available(operation="production")
+        except BudgetError:
+            pass
+        state = self.budget.show()
+        paused = not state["admission_open"]
+        key = (state["epoch"], paused)
+        if key != self._budget_control_epoch and (paused or self._budget_pause_active):
+            self._budget_control_epoch = key
+            action = "pause" if paused else "resume"
+            self._budget_pause_active = paused
+            self._cq_write_admission.set_flow_paused(paused or bool(self._flow_pause_reasons - {"task_budget"}))
+            owner_id = "run:" + self.run.run_id
+            message = {"source": "task_budget", "budget_ref": str(self.budget.ref),
+                "epoch": state["epoch"], "reason": ",".join(state["pause_reasons"]), "action": action,
+                "request_id": "budget-" + str(state["epoch"]) + "-" + hashlib.sha256(owner_id.encode()).hexdigest()[:20]}
+            try:
+                self.budget.record_control(owner_id, state["epoch"], "requested", action=action)
+            except BudgetError:
+                pass
+            try:
+                result = self._relay_flow_message(action, message)
+                status = result[0].get("status", "unknown") if result else "unknown"
+                status = {"pause-pending": "unknown", "resume-pending": "unknown"}.get(status, status)
+                self.budget.record_control(owner_id, state["epoch"], status, action=action,
+                                           evidence_ref="evidence/team-lifecycle.jsonl")
+            except Exception:
+                try:
+                    self.budget.record_control(owner_id, state["epoch"], "unknown", action=action)
+                except BudgetError:
+                    self._append_evidence("team-lifecycle", {"source": "task_budget", "action": action,
+                        "epoch": state["epoch"], "status": "unknown", "reason": "control_receipt_unavailable"})
+        locally_paused = paused or bool(self._flow_pause_reasons)
+        if locally_paused:
+            for message in self.adapter.receive_messages():
+                if not self._observe_flow_confirmation(message):
+                    self._budget_buffered_messages.append(message)
+            if key != getattr(self, "_budget_state_key", None):
+                self._budget_state_key = key
+                self._state("PAUSE_PENDING", budget_ref=str(self.budget.ref), epoch=state["epoch"])
+        return locally_paused
+
+    def _hold_budget_refusal(self, exc):
+        try:
+            if self.budget and self.budget.show()["admission_open"]:
+                self.budget.request_pause("metering_error", error_code=exc.code,
+                                          owner_id="run:" + self.run.run_id)
+        except BudgetError:
+            # An unreadable budget already refuses consumption. Keep the live
+            # Runner and original budget evidence for Host reconciliation.
+            pass
+
     def _control_dsh_flow(self, action: str, message: dict[str, Any]) -> list[dict[str, Any]]:
         # Close write admission before freezing any process. Already admitted Host calls
         # keep running and persist their original receipts; PAUSED never asserts no write.
@@ -4580,7 +4714,13 @@ class TeamRunner:
             self._flow_wait_last_tick = now
             self._cq_wait_windows.open_window("user-flow-wait", now)
         try:
-            groups = self.adapter.pause() if action == "pause" else self.adapter.resume()
+            if message.get("source") == "task_budget" and callable(getattr(self.adapter, "control_budget", None)):
+                control = self.adapter.control_budget(message)
+                if control.get("status") != "effective":
+                    raise RuntimeError("task budget process control remains pending")
+                groups = control.get("groups", [])
+            else:
+                groups = self.adapter.pause() if action == "pause" else self.adapter.resume()
         except Exception as exc:
             event = {"action": action, "status": "pause-pending" if action == "pause" else "resume-pending",
                      "request_id": message.get("request_id"), "detail": str(exc),
@@ -4601,7 +4741,9 @@ class TeamRunner:
     def _observe_flow_confirmation(self, message: Any) -> bool:
         if getattr(self.adapter, "runtime", "codex") == "dsh":
             return False
-        if message.agent_id != self._issue_coordinator_id():
+        budget_control = getattr(self, "_budget_member_control", None)
+        if message.agent_id != self._issue_coordinator_id() and not (
+                budget_control and message.agent_id in budget_control["targets"]):
             return False
         try:
             value = json.loads(message.text)
@@ -4613,6 +4755,27 @@ class TeamRunner:
         identity, action = confirmation.get("request_id"), confirmation.get("action")
         if getattr(self, "_flow_requests", {}).get(identity) != action or action not in {"pause", "resume"}:
             return False
+        if budget_control and identity == budget_control["request_id"]:
+            if message.agent_id not in budget_control["targets"]:
+                return False
+            if message.agent_id not in budget_control["confirmed"]:
+                budget_control["confirmed"].append(message.agent_id)
+            native = getattr(self.adapter, "agents", {}).get(message.agent_id)
+            member_budget = getattr(native, "budget", None)
+            if member_budget is not None:
+                member_budget.record_control(budget_control["epoch"], "effective", action=action)
+            effective = set(budget_control["confirmed"]) == set(budget_control["targets"])
+            self.budget.record_control("run:" + self.run.run_id, budget_control["epoch"],
+                "effective" if effective else "instruction_delivered", action=action,
+                confirmed_members=list(budget_control["confirmed"]),
+                evidence_ref="evidence/team-lifecycle.jsonl")
+            self._append_evidence("team-lifecycle", {"event": "flow_confirmed", "source": "task_budget",
+                "request_id": identity, "action": action, "agent_id": message.agent_id,
+                "status": "effective" if effective else "partial", "acknowledgement": value})
+            if effective:
+                self._state("PAUSED" if action == "pause" else "RUNNING",
+                            budget_ref=str(self.budget.ref), epoch=budget_control["epoch"])
+            return True
         now = self.monotonic_clock()
         self._flow_waiting = action == "pause"
         self._flow_wait_last_tick = now
@@ -11190,8 +11353,30 @@ class TeamRunner:
         )
 
     def drain(self) -> list[dict[str, Any]]:
+        try:
+            return self._drain_current_work()
+        except BudgetError as exc:
+            # A final admission check can race the monitor between two
+            # scheduled actions. It is a recoverable refusal, never teardown.
+            self._hold_budget_refusal(exc)
+            self._state("PAUSE_PENDING", budget_error=exc.code)
+            return [{"type": "budget-pause", "code": exc.code, "retryable": True}]
+
+    def _drain_current_work(self) -> list[dict[str, Any]]:
         if not self.run or not self.transport:
             return []
+        if self._sync_task_budget():
+            return []
+        while getattr(self, "_budget_pending_start_agents", []):
+            agent = self._budget_pending_start_agents[0]
+            try:
+                self.adapter.start_task(agent.agent_id, self._task_text(agent.package.role),
+                    [str(path) for path in agent.package.required_skills],
+                    [item.agent_id for item in self.run.configuration.profile.agents])
+            except BudgetError as exc:
+                self._hold_budget_refusal(exc)
+                return []
+            self._budget_pending_start_agents.pop(0)
         from .runtime_handoff import DshRunMaterials
 
         store = getattr(self.run, "handoff_materials", None)
@@ -11314,7 +11499,7 @@ class TeamRunner:
                         states_reader(), protocol_agent_id=protocol
                     )
             return output
-        for delivery in deliveries:
+        for delivery_index, delivery in enumerate(deliveries):
             try:
                 formal_candidate_event = self._observe_formal_candidate_delivery(delivery)
             except FormalCandidateError as exc:
@@ -11467,6 +11652,10 @@ class TeamRunner:
                     self._candidate_progress.bind_dispatch(
                         dispatch_receipt, now=self.monotonic_clock()
                     )
+            except BudgetError as exc:
+                self.transport.requeue(deliveries[delivery_index:])
+                self._hold_budget_refusal(exc)
+                return output
             except FormalCandidatePlatformContractError:
                 self._latch_formal_candidate_failure(
                     "platform-contract", "internal-invariant:turn-binding-missing"
@@ -11641,7 +11830,8 @@ class TeamRunner:
                 )
                 output.append(delivered)
                 self._terminal_handoffs_notified.add(pair)
-        messages = self.adapter.receive_messages()
+        messages = getattr(self, "_budget_buffered_messages", []) + self.adapter.receive_messages()
+        self._budget_buffered_messages = []
         failures = self._consume_runtime_failures()
         if failures:
             return self._finalize_runtime_failure(failures)
@@ -13227,6 +13417,13 @@ class TeamRunner:
             )
         if self.run is not None or not self._safe_run_id(new_run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
+        original_budget = budget_for(source_run_root)
+        if original_budget is not None:
+            if self.budget and Path(self.budget.ref) != Path(original_budget.ref):
+                raise BudgetError("budget_binding_conflict", "checkpoint continuation must retain the original task budget")
+            self.budget = original_budget
+        if self.budget:
+            self.budget.require_available(operation="production")
         if fork_reason is not None and not self.canonical_admin_key:
             raise CheckpointError(
                 "checkpoint_data_credentials_missing",

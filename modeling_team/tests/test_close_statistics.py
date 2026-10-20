@@ -341,6 +341,39 @@ def test_attempt_retries_without_usage_are_counted_independently_of_tokens():
     assert member["usage"]["tokens"]["input_tokens"] is None
 
 
+def test_not_admitted_attempt_is_not_projected_as_llm_interval():
+    from modeling_team.close_statistics import aggregate_activity
+
+    attempt = {
+        "runtime": "dsh",
+        "process_instance": "p1",
+        "agent_id": "modeling",
+        "runtime_session_id": "s1",
+        "proxy_session_id": "proxy",
+        "request_id": "denied",
+        "attempt_index": 1,
+        "event": "attempt_end",
+        "status": "not_admitted",
+        "clock_ref": "test-clock",
+        "monotonic_end_ns": 5_000_000_000,
+    }
+    value = aggregate_activity(
+        {
+            "view": "run_close",
+            "members": [{
+                "runtime": "dsh",
+                "process_instance": "p1",
+                "agent_id": "modeling",
+                "runtime_session_id": "s1",
+            }],
+        },
+        {"cost_units": [], "attempts": [attempt]},
+        [event("launch", 0), event("exit", 10, status="completed")],
+    )
+    assert value["members"][0]["llm"]["logical_requests"] == 0
+    assert value["members"][0]["llm"]["executed"] == 0
+
+
 @pytest.mark.parametrize(
     "change,code",
     [

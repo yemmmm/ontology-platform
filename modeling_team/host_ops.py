@@ -59,6 +59,7 @@ from .checkpoint_recovery import (
 )
 from .checkpoints import CheckpointError
 from .checkpoints import inspect_checkpoints as inspect_checkpoints_readonly
+from .task_budget import BudgetError, TaskBudget, bind_budget, budget_for
 from .handoff_materials import HandoffMaterials, MaterialError
 from .competency_questions import (
     CQ_ACCEPTANCE_COMPLETE_FIELDS,
@@ -1235,6 +1236,8 @@ def get_run_status(run_id: str, *, repository_root: Path | None = None) -> dict[
     return {
         "run_id": run_id,
         "identity": identity,
+        **({"task_budget": budget_for(run_root).show(audience="delivery")}
+           if budget_for(run_root) is not None else {}),
         "close_statistics": read_close_statistics(run_root),
         "recorded_state": recorded_state,
         "stage": stage,
@@ -3250,6 +3253,34 @@ def _assert_launch_target_free(
     )
 
 
+def _launch_budget(budget_ref=None, host_session_ref=None, *, operation="production"):
+    """Resolve the Host's immutable task binding before a consuming launch."""
+    if host_session_ref:
+        try:
+            session = json.loads(Path(host_session_ref).read_text())
+        except (OSError, ValueError) as exc:
+            if budget_ref:
+                raise HostOpError("budget_binding_unavailable", "original Host session is unavailable",
+                    retryable=True, next_action="restore the original session binding") from exc
+            session = {}
+        original = session.get("resource_authorization", {})
+        if original.get("mode") == "amount":
+            retained = original.get("budget_ref")
+            if not retained or (budget_ref and Path(budget_ref).resolve() != Path(retained).resolve()):
+                raise HostOpError("budget_binding_conflict", "keep the original task budget",
+                    retryable=True, next_action="use the budget bound to the Host session")
+            budget_ref = retained
+    if not budget_ref:
+        return None
+    try:
+        budget = TaskBudget(budget_ref)
+        budget.require_available(operation=operation)
+        return budget
+    except BudgetError as exc:
+        raise HostOpError(exc.code, str(exc), retryable=True,
+            next_action="reconcile the original task budget; no resources were removed") from exc
+
+
 def _launch_managed_run(
     *,
     run_id: str,
@@ -3259,6 +3290,8 @@ def _launch_managed_run(
     repository_root: Path | None = None,
     launcher: Callable[..., Any] | None = None,
     host_session_ref: str | None = None,
+    budget_ref: str | None = None,
+    budget_operation: str = "production",
     request_id: str | None = None,
     run_root_wait_seconds: float = LAUNCH_RUN_ROOT_WAIT_SECONDS,
 ) -> dict[str, Any]:
@@ -3297,6 +3330,18 @@ def _launch_managed_run(
         if repository_root is not None
         else default_repository_root()
     )
+    budget = _launch_budget(budget_ref, host_session_ref, operation=budget_operation)
+    if budget is not None:
+        budget_ref = str(budget.ref)
+        argv = [*argv, "--budget-ref", budget_ref]
+        if budget_operation == "evaluation":
+            owner_root = repository / ".delivery-ops" / (run_id + ".owner")
+            bind_budget(owner_root, budget.ref, "evaluation:" + run_id,
+                        kind="evaluation", run_id=run_id)
+            argv.extend(["--owner-root", str(owner_root)])
+        else:
+            budget.bind_owner("run:" + run_id, kind="production", run_id=run_id,
+                              root=str(run_root))
     launches = _host_launches_root(runs_root)
     try:
         launches.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -3324,6 +3369,7 @@ def _launch_managed_run(
         "pid": None,
         "started_at": started_at,
         "host_session_ref": host_session_ref,
+        **({"budget_ref": budget_ref} if budget is not None else {}),
         "request_id": request_id,
         "log_paths": {
             "stdout": log_paths["stdout"],
@@ -3443,6 +3489,7 @@ def start_run(
     repository_root: Path | None = None,
     launcher: Callable[..., Any] | None = None,
     host_session_ref: str | None = None,
+    budget_ref: str | None = None,
     run_root_wait_seconds: float = LAUNCH_RUN_ROOT_WAIT_SECONDS,
 ) -> dict[str, Any]:
     """Design §5.1: one managed ``python -m modeling_team run`` launch.
@@ -3507,6 +3554,7 @@ def start_run(
         repository_root=repository_root,
         launcher=launcher,
         host_session_ref=host_session_ref,
+        budget_ref=budget_ref,
         request_id=request_id,
         run_root_wait_seconds=run_root_wait_seconds,
     )
@@ -3536,12 +3584,14 @@ def pause_run(
     request_id: str | None = None,
     text: str | None = None,
     source_reference: str | None = None,
+    budget_control: dict | None = None,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
     """Design §5.2: the outer ``pause`` envelope -- a pause is not a stop."""
 
     return _submit_lifecycle_action(
         run_id, "pause", {"action": "pause", **({"text": text} if text is not None else {}),
+                              **(budget_control or {}),
                               **({"source_reference": source_reference} if source_reference is not None else {})},
         request_id=request_id, repository_root=repository_root,
     )
@@ -3553,12 +3603,14 @@ def resume_live_run(
     request_id: str | None = None,
     text: str | None = None,
     source_reference: str | None = None,
+    budget_control: dict | None = None,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
     """Design §5.2: continue the same live thread, never rebuild or hot-load."""
 
     return _submit_lifecycle_action(
         run_id, "resume", {"action": "resume", **({"text": text} if text is not None else {}),
+                              **(budget_control or {}),
                               **({"source_reference": source_reference} if source_reference is not None else {})},
         request_id=request_id, repository_root=repository_root,
     )
@@ -3738,6 +3790,7 @@ def resume_from_checkpoint(
     repository_root: Path | None = None,
     launcher: Callable[..., Any] | None = None,
     host_session_ref: str | None = None,
+    budget_ref: str | None = None,
     run_root_wait_seconds: float = LAUNCH_RUN_ROOT_WAIT_SECONDS,
 ) -> dict[str, Any]:
     """Design §5.5: one managed ``checkpoint resume`` of an explicit package.
@@ -3770,7 +3823,13 @@ def resume_from_checkpoint(
     _new_root, new_runs_root = _validated_run_root(
         new_run_id, repository_root=repository_root
     )
-    _validated_run_root(source_run_id, repository_root=repository_root)
+    source_root, _ = _validated_run_root(source_run_id, repository_root=repository_root)
+    original_budget = budget_for(source_root)
+    if original_budget is not None:
+        if budget_ref and Path(budget_ref).resolve() != Path(original_budget.ref).resolve():
+            raise HostOpError("budget_binding_conflict", "continuation inherits the original task budget",
+                retryable=True, next_action="retain the source task budget")
+        budget_ref = str(original_budget.ref)
     _assert_launch_target_free(new_run_id, _new_root, new_runs_root)
     if mode not in {"production", "acceptance"}:
         raise HostOpError(
@@ -3905,6 +3964,8 @@ def resume_from_checkpoint(
         repository_root=repository_root,
         launcher=launcher,
         host_session_ref=host_session_ref,
+        budget_ref=budget_ref,
+        budget_operation="evaluation" if mode == "acceptance" else "production",
         request_id=request_id,
         run_root_wait_seconds=run_root_wait_seconds,
     )

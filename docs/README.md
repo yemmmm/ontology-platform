@@ -29,8 +29,14 @@ delivery evidence. Use the following locations for new documentation.
   R4.4-002 defines one monetary budget across the same task's runs, modeling and independent
   acceptance, with configurable token prices and programmatic usage aggregation. Its
   [detailed design](delivery/designs/2026-10-20-r4-4-002-task-cost-budget-design.md) passed
-  independent design review (0 Critical / 0 High); implementation and real budget control
-  remain unverified. See the [review record](delivery/records/2026-10-20-r4-4-002-design-review-record.md).
+  independent design review (0 Critical / 0 High). Implementation and the full local Team suite
+  pass (3677 tests, 318 subtests; 12 skipped). Real managed-chain budget control and business semantics
+  remain unverified. The Host-only CLI contract is `task-budget create|add|show`; its active
+  instruction/reference wording preserves historical `authorize-budget --additional-starts`
+  semantics and keeps amount authorization read-only to Delivery/Agents. See the
+  [review record](delivery/records/2026-10-20-r4-4-002-design-review-record.md).
+  Engineering scope and test evidence are in the
+  [delivery record](delivery/records/2026-10-20-r4-4-002-task-cost-budget-delivery-record.md).
   The current Delivery token-reduction priority remains R4.3-030.
 - [v4.3 modeling efficiency, semantic retrieval, and rapid iteration](requirements/requirements-v4.3.md):
   target of at most two hours from a fresh start to complete independent semantic acceptance,

@@ -35,7 +35,18 @@ corrections within the same repair task do not add rounds. A fresh production
 start/resume costs one, without double charging its repair round. Record the
 round goal, trigger, actual start evidence, result and balance in the existing
 Host ledger, separately from semantic starts; never infer balance from candidate
-versions or apply counts. Check quota before dispatching substantive repair.
+versions or apply counts. In starts mode, check the Host round ledger before dispatching
+substantive repair. In amount mode, read the same budget's admission/control projection
+instead of adding a round-balance confirmation turn; only Host/user writes or adds the amount,
+and Delivery/Agent remain read-only.
+When the Host authorization explicitly supplies
+`resource_authorization.mode=amount` and a stable `budget_ref`, do not apply the
+default three-round or round-balance gate. Bind every production, repair and
+acceptance operation to that same budget and use its read-only projection before
+launching work. The budget is a resource limit; it does not expand the approved
+business target, model bindings, write authority or acceptance scope. Only the
+Host/user may create or add an amount budget; Delivery can read it and report
+the actual control state, never write its amount or prices.
 After acceptance failure, preserve the report and diagnose the narrow layer.
 Confirmed model defects with remaining authorization and safe write state go
 to the Modeling Team for a charged repair round, governed application/readback
@@ -48,10 +59,12 @@ iteration or wait for redundant user approval. User modeling quota and provider
 usage limits are separate. Preserve historical accounting and append corrections
 when the old ledger counted only starts; unresolved round counts stay unverified.
 
-Include the current round goal/balance in dispatch or resume guidance and have Coordinator
-obtain Modeling's acknowledgement. An applied relation's endpoint correction after self-check
+In starts mode, include the current round goal/balance in dispatch or resume guidance and have
+Coordinator obtain Modeling's acknowledgement. In amount mode, include the same budget's
+current admission/control state without adding a model confirmation turn. An applied relation's
+endpoint correction after self-check
 is substantive remodeling even when its original textual meaning was right; it is not a free
-pointer/technical correction. With zero remaining, the current initial round may still finish,
+pointer/technical correction. In starts mode with zero remaining, the current initial round may still finish,
 but any newly discovered semantic gap must be preserved for read-only handoff, not repaired.
 At the self-check transition, confirm that instruction's actual acknowledgement and subsequent
 actions; arrange existing resource closure and sealing after writes settle. Do not equate
@@ -291,7 +304,7 @@ the original step without replaying uncertain requests. Existing in-flight
 repair operations may still be observed or cleaned up, but they do not grant a
 new Delivery repair launch.
 
-Pause, cancel and budget revocation take priority over new launches. Do not
+Pause, cancel and budget exhaustion/revocation take priority over new launches. Do not
 treat elapsed waiting time as approval. The local business adapter preserves the exact control and its original sourced
 message. 暂停/继续 follow the bound owner's runtime. For DSH production use
 pause_run/resume_live_run, verify actual process-control receipts and keep

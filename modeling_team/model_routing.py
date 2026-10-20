@@ -687,6 +687,7 @@ class ProviderSessionManager:
         on_failure: Callable[[str], None] | None = None,
         session_factory: Callable[..., ResponsesProviderSession] = ResponsesProviderSession,
         on_attempt: Callable[[dict], None] | None = None,
+        before_request: Callable[[dict], None] | None = None,
     ) -> None:
         if not isinstance(credential_bindings, Mapping) or not credential_bindings:
             raise ProviderSessionManagerError("provider credential bindings are unavailable")
@@ -705,6 +706,7 @@ class ProviderSessionManager:
             self._bindings[provider_id] = credential_bindings[provider_id]
             self._routes[provider_id] = route
         self._on_attempt = on_attempt
+        self._before_request = before_request
         self._on_failure = on_failure
         self._session_factory = session_factory
         self._lock = threading.RLock()
@@ -720,6 +722,26 @@ class ProviderSessionManager:
         if session is None:
             raise ProviderSessionManagerError("provider session is not started")
         return session.base_url
+
+    def authorize_control(self, provider_id: str, text: str, control_id: str) -> None:
+        """Bind a durably admitted native control to one exact HTTP input."""
+        with self._lock:
+            session = self._sessions.get(provider_id)
+        if session is None:
+            raise ProviderSessionManagerError("provider session is not started")
+        session.authorize_control(text, control_id)
+
+    def credential_ref_for(self, provider_id: str) -> str | None:
+        """Return the opaque identity of the actual verified Host binding."""
+        value = getattr(self._bindings[provider_id], "key_ref", None)
+        return value if isinstance(value, str) else None
+
+    def _record_attempt(self, event: dict) -> None:
+        if self._on_attempt is None:
+            return
+        provider_id = event.get("provider")
+        key_ref = self.credential_ref_for(provider_id) if provider_id in self._bindings else None
+        self._on_attempt({**event, **({"key_ref": key_ref} if key_ref is not None else {})})
 
     def started(self) -> bool:
         with self._lock:
@@ -763,7 +785,8 @@ class ProviderSessionManager:
                             provider_id=provider_id,
                             upstream_url=self._routes[provider_id].upstream_url,
                             on_failure=self._on_failure,
-                            **({"on_attempt": self._on_attempt} if self._on_attempt else {}),
+                            **({"on_attempt": self._record_attempt} if self._on_attempt else {}),
+                            **({"before_request": self._before_request} if self._before_request else {}),
                         )
                         session.start()
                     finally:
@@ -864,7 +887,8 @@ class ProviderSessionManager:
                         upstream_url=route.upstream_url,
                         port=port,
                         on_failure=self._on_failure,
-                        **({"on_attempt": self._on_attempt} if self._on_attempt else {}),
+                        **({"on_attempt": self._record_attempt} if self._on_attempt else {}),
+                        **({"before_request": self._before_request} if self._before_request else {}),
                     )
                     candidate.start()
                 except Exception:

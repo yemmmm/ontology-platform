@@ -90,7 +90,10 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
    若必须交接，先核实接手者实际承接，或向用户明确
    提出当前阻塞所需的决定。不得只留下后台进程并写“无人接手”就结束未完成的任务。
    `暂停`／`取消`／`撤回预算` 通过业务入口及时处理；恢复不会复活已撤回权限。扩大授权时
-   按现有配置合同建立明确获准的新 session，旧证据保留。
+   按现有配置合同建立明确获准的新 session，旧证据保留。次数模式继续使用历史
+   `additional-starts`；新金额模式只能由 Host／用户通过 `task-budget create|add` 写入
+   真实授权引用，Delivery／Agent 仅用 `task-budget show` 或既有只读预算视图读取。
+   金额模式不套用默认三轮或轮余额门，轮次仍只作分析；预算金额不能扩展业务目标或模型范围。
 
 下文记录共用的运行、授权和证据规则。独立模式由 Delivery 按其实际 Host 工具执行；外层
 不依照旧 CLI／FIFO 示例再开相互竞争的控制链，但仍按卡片周期发现异常，按需交接和核验恢复结果。
@@ -254,9 +257,9 @@ effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`
 证据接续；
 隐藏完成而获准公开仍待办时继续公开，窄修复后回原失败步骤。
 
-新业务定义、权限扩大、兼容性决定或新建模轮次额度实质缺失时，只等待依赖该决定的动作，
-写明原因、影响范围、独立可做项和恢复入口。额度上限不必耗尽；耗尽不再新开 production
-或开始新的实质修模任务，
+新业务定义、权限扩大、兼容性决定或次数模式的新建模轮次额度实质缺失时，只等待依赖该决定的动作；
+金额模式按同一预算的 admission/control 状态处理，不增加轮次确认往返。写明原因、影响范围、
+独立可做项和恢复入口。次数模式额度上限不必耗尽；耗尽不再新开 production 或开始新的实质修模任务，
 已有授权内安全核查、只读验收和收尾仍可做。用户暂停/取消、到期、原目标完成或确无安全
 动作时暂停推进并记录待办，正常完成保持原会话待命；明确 stop 才最终销毁并核对清理，
 保留模型/证据。进程已结束临时 key 及时撤销，仍服务连续任务
@@ -983,7 +986,8 @@ retryable, next_action}}`，Runner 原拒绝码原样透传；`unknown` 只在 `
 | CLI | 适用合同与调用时机 |
 | --- | --- |
 | `classify-failure` | 归因与四类失败分层登记；在决定修复/放弃前调用 |
-| `authorize-repair` / `authorize-budget` / `authorize-initial` | 授权台账登记（repair/budget/initial 三类）；授权记录是后续 run 的凭据，不经 MCP 工具代签 |
+| `authorize-repair` / `authorize-budget` / `authorize-initial` | 授权台账登记（repair/budget/initial 三类）；`authorize-budget --additional-starts` 保留历史次数语义，授权记录是后续 run 的凭据，不经 MCP 工具代签 |
+| `task-budget create|add|show` | Host／用户管理或读取一个稳定金额预算；create/add 必须读取结构化 Host 配置并绑定真实授权引用，show 按 `host`／`delivery` 投影只读，不启动模型；金额模式不自动换算历史次数余额 |
 | `publish-handoff` | 离线交接发布（`≠ cq_handoff_complete`：后者是 run 内 CQ 生产交接收口） |
 | `cq-acceptance` | 独立验收执行器，产生 `acceptance-v3/reports/<batch>/attempt-NNNN/batch-report.json`；报告保留后由 `complete_cq_acceptance` 引用 |
 

@@ -25,12 +25,19 @@ joins by actual thread, keeps one total and records differences in a separate re
 Missing native receipts remain partial. Do not wait for billing, reopen modeling or
 rewrite sealed semantic reports to complete this accounting.
 
-Use the existing Host round ledger for initial and post-self-check substantive modeling, not
-just fresh starts. Before dispatch/resume, give Coordinator the current round goal and balance
-and obtain the original Modeling role's acknowledgement through Coordinator. Correcting an
+Use the existing Host round ledger for historical or explicit starts-mode authorization when
+dispatching initial and post-self-check substantive modeling, not just fresh starts. A new Host
+authorization with `resource_authorization.mode=amount` and a stable `budget_ref` does not use
+the default three-round or round-balance gate; bind every consuming operation to that budget and
+read its current projection before dispatch. The monetary budget limits resource consumption and
+does not enlarge the approved business target, model binding, write authority or acceptance scope.
+In starts mode, before dispatch/resume give Coordinator the current round goal/balance and
+obtain the original Modeling role's acknowledgement through Coordinator. In amount mode, pass
+the same budget's current admission/control state without adding a model confirmation turn;
+only Host/user may write or add the amount. Correcting an
 applied relation's endpoints after self-check costs a repair round even if its textual meaning
 was already right. A message saying "technical pointer correction" does not grant that round.
-At zero remaining, distinguish finishing the current initial build from starting repair: after
+In starts mode at zero remaining, distinguish finishing the current initial build from starting repair: after
 the build reaches self-check, arrange read-only checks, resource closure and independent handoff;
 do not tell production to "fix and finish". Use existing controls to resolve outstanding writes
 and seal production once it settles. Do not add platform round counters or interrupt an unknown
@@ -185,7 +192,9 @@ record_flow_confirmation with actual role acknowledgements or bound DSH Host
 control evidence; instruction_delivered alone means pause_pending. Disclose
 in-flight calls and partial acknowledgements. While awaiting user input, wait without
 new inference; resume only on explicit input, on the same thread and remaining task.
-Authorization expiry, cancellation and budget revocation remain separate controls.
+Authorization expiry, cancellation, budget exhaustion and budget revocation remain separate
+controls. Only Host/user actions through the task-budget Host entry may create or add money or
+prices; Delivery and Agent read the projection and actual pause receipts.
 
 Before standby/seal/CQ handoff, once production operations have actually ended
 with no in-flight or unknown writes and this round's evidence preserved, first
@@ -333,6 +342,13 @@ apply subsequent task-context changes. Preserve its exact operation names/prefix
 timeout, model, scope and close-on-completion instructions instead of inventing defaults.
 `authorization_budget` is the Host-configured starting snapshot, not a live balance;
 account for actual modeling rounds since that snapshot through the existing ledger.
+For a new Host authorization with `resource_authorization.mode=amount`, use the
+bound `budget_ref` as the task resource boundary and do not apply the default
+three-round or round-balance gate. Amount mode still binds the original business
+target, model and operations; it cannot enlarge them. The Host/user alone may
+create or add money or prices, while Delivery reads the budget projection and
+control receipts. Historical `authorize-budget --additional-starts` remains the
+starts-mode contract and is not converted.
 An authorization reference or ledger_reference is provenance, not a file-read grant.
 Use supplied artifact/Host-result references; do not guess authorization.json,
 round-ledger.json or user-input.jsonl paths. Empty recovery user_messages means there
@@ -437,7 +453,8 @@ operations have started and writes have settled. Then end the activity.
 The program may defer a switch for queued input, an unknown receipt/write or
 incomplete handoff; continue the original task normally. A new phase receives
 current facts, original user constraints and effective decisions, not the old
-conversation. Never start production again or reset authorization/rounds.
+conversation. Never start production again or reset the original authorization, budget reference
+or historical round record merely by changing a session or run.
 Mechanical continuations remain separate work; yield does not execute them.
 When core.phase_thread_handoff.status is deferred, follow its bound blocker and the
 unresolved request feedback. Continue the original task on the current thread;

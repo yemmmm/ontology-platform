@@ -43,6 +43,7 @@ from .delivery_conversation import ConversationLog, ConversationServer, Conversa
 from .delivery_host_actions import (
     append_session_event, request_host_action, host_action_state, read_session_journal,
 )
+from .task_budget import BudgetError, TaskBudget, bind_budget
 
 _PUBLIC_KINDS = {"status", "business_question", "decision_request", "final"}
 _READ = {
@@ -50,6 +51,7 @@ _READ = {
     "inspect_checkpoints", "get_evaluation_status", "get_repair_status",
     "read_platform_record", "reconcile_write_state",
     "get_team_work_board",
+    "get_task_budget",
 }
 _MODEL_QUERIES = {"get_run_status", "get_pending_actions", "get_evaluation_status",
                   "get_request_result"}
@@ -671,6 +673,9 @@ def _decision_observation(observation: dict,
     # exactly the same keys, including evidence_refs and observed_at.
     for run in projected.get("runs", {}).values():
         status = run.get("status", {}).get("data", {})
+        # Amount/heartbeat changes are queried on demand. Only the session's
+        # stable budget-control identity is a Delivery decision input.
+        status.pop("task_budget", None)
         for key in ("observed_at", "events_cursor", "last_verifiable_activity", "evidence_refs"):
             status.pop(key, None)
         progress = status.get("semantic_progress", {})
@@ -692,6 +697,7 @@ def _decision_observation(observation: dict,
     for collection in ("operations", "repair_verifications"):
         for envelope in projected.get(collection, {}).values():
             data = envelope.get("data", {})
+            data.pop("task_budget", None)
             for key in ("log_tails", "stdout_tail", "stderr_tail", "stdout_bytes", "stderr_bytes"):
                 data.pop(key, None)
     # Stage timestamp/ordinal alone may advance as the same phase emits more
@@ -990,6 +996,11 @@ _LOCAL_SPECS.append({
         "required": ["request_id", "run_id", "kind", "bindings"],
         "additionalProperties": False},
 })
+_LOCAL_SPECS.append({
+    "name": "get_task_budget",
+    "description": "Read this task's local amount estimate, coverage and pause state; no authorization changes or model calls.",
+    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+})
 _DELIVERY_HOST_ONLY_TOOLS = frozenset({
     "submit_cq_review", "prepare_repair_task", "start_repair", "verify_repair",
 })
@@ -1019,6 +1030,20 @@ class DeliverySession:
         self.authorization = config["authorization_reference"]
         if not isinstance(self.authorization, str) or not self.authorization.strip():
             raise ValueError("authorization_reference is required")
+        resource = config.get("resource_authorization") or {}
+        if resource.get("mode", "starts") not in {"starts", "amount"}:
+            raise ValueError("resource_authorization.mode must be starts or amount")
+        self.budget = None
+        self.budget_ref = None
+        if resource.get("mode") == "amount":
+            if not resource.get("budget_ref"):
+                raise ValueError("amount authorization requires the original budget_ref")
+            self.budget_ref = str(self._path(resource["budget_ref"]))
+            self.budget = TaskBudget(self.budget_ref)
+            self.budget.show()
+        self.resource_authorization = {"mode": "amount", "budget_ref": self.budget_ref} if self.budget else {"mode": "starts"}
+        self._budget_control_epoch = None
+        self._budget_paused = False
         self.allowed_operations = set(config.get("allowed_operations", ["read"]))
         self.business_input_role = config.get("business_input_role", "user")
         if self.business_input_role not in {"user", "test-answerer"}:
@@ -1063,6 +1088,8 @@ class DeliverySession:
         self.recovery_pending = self.runtime_name == "dsh" and resume
         if resume:
             previous = json.loads((self.session_root / "session.json").read_text())
+            if previous.get("resource_authorization", {"mode": "starts"}) != self.resource_authorization:
+                raise ValueError("resumption cannot change the original task budget")
             if previous.get("runtime", "codex") != self.runtime_name:
                 raise ValueError("resumption cannot change original Delivery runtime; use an explicit handoff")
             if self.runtime_name == "dsh" and previous.get("runtime_task_binding") != self.runtime_task_binding:
@@ -1092,7 +1119,15 @@ class DeliverySession:
             self.phase_thread_history = previous.get("phase_thread_history", [])
             self.stop_pending = self.activity == "stopping"
         else:
-            self.session_root.mkdir(parents=True, exist_ok=False, mode=0o700)
+            # Host may have created the immutable budget before the first Delivery launch.
+            if self.session_root.exists():
+                if not self.budget or set(p.name for p in self.session_root.iterdir()) != {"cost-budget"}:
+                    raise FileExistsError(self.session_root)
+            else:
+                self.session_root.mkdir(parents=True, mode=0o700)
+        if self.budget:
+            bind_budget(self.session_root, self.budget_ref, "delivery:" + self.session_id,
+                        kind="delivery", session_id=self.session_id)
         self.handoff_materials = HandoffMaterials(
             self.session_root / "handoff-materials", self.session_id
         )
@@ -1124,6 +1159,7 @@ class DeliverySession:
             properties = schema.get("properties", {})
             for name in (
                 "repository_root", "host_session_ref", "base_url",
+                "budget_ref", "budget_control",
                 "handoff_materials", "material_actor_id", "material_recipient_id",
             ):
                 properties.pop(name, None)
@@ -1890,6 +1926,8 @@ class DeliverySession:
                   **{field: self.config.get(field) for field in
                      ("production_start_limit", "incremental_request_id", "incremental_run_id")},
                   "authorization_reference": self.authorization, "state": state,
+                  "resource_authorization": self.resource_authorization,
+                  **({"task_budget": self.budget.show(audience="delivery")} if self.budget else {}),
                   "run_ids": sorted(self.run_ids), "operation_ids": sorted(self.operation_ids),
                   "operation_kinds": self.operation_kinds,
                   "verification_ids": sorted(self.verification_ids),
@@ -1967,6 +2005,16 @@ class DeliverySession:
         return packet
 
     def apply_user_control(self, text: str, *, source_reference: str | None = None) -> dict | None:
+        if self.budget and text in {"暂停", "继续", "撤回预算"}:
+            self._budget_next_check = 0
+            if text == "暂停":
+                self.budget.request_pause("user_paused", source_reference=source_reference)
+            elif text == "撤回预算":
+                self.budget.request_pause("authorization_revoked", source_reference=source_reference)
+            elif self.business_input_role == "user" and source_reference:
+                self.budget.continue_authorized(source_reference, source_reference=source_reference,
+                                               clear_reasons=["budget_exhausted", "metering_error", "user_paused"])
+            return {"control": text, "source": "user", "task_budget": self.budget.show(audience="delivery")}
         if text in {"暂停", "继续"}:
             # DSH production requires actual process control, while Codex and
             # unmigrated evaluation retain their cooperative owner contract.
@@ -2023,6 +2071,60 @@ class DeliverySession:
     def drain_messages(self) -> list[dict]:
         messages, self.messages = self.messages, []
         return messages
+
+    def sync_budget_control(self, runtime) -> bool:
+        if not self.budget:
+            return False
+        if time.monotonic() < getattr(self, "_budget_next_check", 0):
+            return self._budget_paused
+        self._budget_next_check = time.monotonic() + 2
+        if self.authorization_valid_until and datetime.now(UTC) >= datetime.fromisoformat(self.authorization_valid_until.replace("Z", "+00:00")):
+            self.budget.request_pause("authorization_expired", source_reference=self.authorization)
+        try:
+            self.budget.require_available(operation="supervise")
+        except BudgetError:
+            pass
+        state = self.budget.show()
+        paused = not state["admission_open"]
+        key = (state["epoch"], paused)
+        if key != self._budget_control_epoch and (paused or self._budget_paused):
+            self._budget_control_epoch = key
+            self._budget_paused = paused
+            action = "pause" if paused else "resume"
+            owner_id = "delivery:" + self.session_id
+            message = {"source": "task_budget", "budget_ref": self.budget_ref, "epoch": state["epoch"],
+                "action": action, "reason": ",".join(state["pause_reasons"]),
+                "request_id": "budget-" + str(state["epoch"]) + "-" + hashlib.sha256(owner_id.encode()).hexdigest()[:20],
+                "instruction": ("停止安排新任务并等待；用 record_flow_confirmation 确认 request_id。"
+                                if paused else "沿原任务和原回执继续，勿重复提交；确认 request_id。")}
+            message["text"] = json.dumps(message, ensure_ascii=False)
+            self._budget_control_message = message
+            try:
+                self.budget.record_control(owner_id, state["epoch"], "requested", action=action)
+            except BudgetError:
+                pass  # Recording trouble must not prevent the pause itself.
+            try:
+                result = runtime.control_budget(message)
+                status = result.get("status", "unknown")
+                if status not in {"effective", "instruction_delivered", "not_running", "not_started"}:
+                    status = "unknown"
+            except Exception:
+                status = "unknown"
+            try:
+                self.budget.record_control(owner_id, state["epoch"], status, action=action,
+                                           request_id=message["request_id"])
+            except BudgetError:
+                status = "unknown"
+            self._append("session-events.jsonl", {"event": "task_budget_control", **message, "status": status})
+        return paused
+
+    def _hold_budget_refusal(self, exc):
+        try:
+            if self.budget and self.budget.show()["admission_open"]:
+                self.budget.request_pause("metering_error", error_code=exc.code,
+                                          owner_id="delivery:" + self.session_id)
+        except BudgetError:
+            pass  # Keep the original ledger and Host control path available.
 
     def _read_artifact(self, value: str, *, source_ref: dict | None = None,
                        selection: dict | None = None, max_bytes: int = 16384,
@@ -2250,6 +2352,9 @@ class DeliverySession:
                     raise
                 raise HostOpError("artifact_selection_invalid", "invalid artifact read parameters",
                     retryable=True, next_action="use path, optional source_ref/selection and max_bytes 1..16384") from exc
+            if name == "get_task_budget":
+                return {"ok": True, "data": self.budget.show(audience="delivery") if self.budget else {
+                    "mode": "starts", "budget_ref": None, "limitations": ["historical_start_authorization"]}}
             if name == "yield_delivery":
                 try:
                     return self._yield_delivery(arguments)
@@ -2370,6 +2475,17 @@ class DeliverySession:
                     "pending_owners": pending_owners,
                     "note": "Work result recorded; original Team retained until explicit stop. This is not semantic PASS."}}
             if name == "record_flow_confirmation":
+                control = getattr(self, "_budget_control_message", None)
+                if control and arguments["message_id"] == control["request_id"]:
+                    state = self.budget.show()
+                    if arguments["action"] != control["action"] or control["epoch"] != state["epoch"]:
+                        raise ValueError("confirmation belongs to a stale budget control")
+                    if arguments["status"] == "effective" and not arguments["evidence_references"]:
+                        raise ValueError("effective requires acknowledgement references")
+                    self.budget.record_control("delivery:" + self.session_id, control["epoch"],
+                        arguments["status"], action=arguments["action"],
+                        evidence_references=arguments["evidence_references"])
+                    return {"ok": True, "data": {"status": arguments["status"]}}
                 if not self.conversation:
                     raise ValueError("unified conversation has not been enabled")
                 original = self.conversation.receipt(arguments["message_id"])
@@ -2466,6 +2582,10 @@ class DeliverySession:
                 return {'ok': True, 'data': data}
             if self._permission(name) not in self.allowed_operations:
                 raise ValueError("operation is outside the recorded authorization")
+            if self.budget and (name in _PRODUCTION or name in {
+                    "start_evaluation", "start_repair", "submit_instruction", "answer_question",
+                    "consult_team", "recover_provider"}):
+                self.budget.require_available(operation=self._permission(name))
             if self._permission(name) in {"production", "evaluation", "repair"} and self.authorization_valid_until:
                 from datetime import datetime, UTC
                 deadline = datetime.fromisoformat(self.authorization_valid_until.replace("Z", "+00:00"))
@@ -2503,7 +2623,7 @@ class DeliverySession:
                         if args.get("request_id") != self.config["incremental_request_id"]:
                             raise ValueError("incremental launch must retain its original request_id")
                     limit = self.config.get("production_start_limit")
-                    if limit is not None and args.get("run_id") not in self.run_ids and len(self.run_ids) >= limit:
+                    if self.budget is None and limit is not None and args.get("run_id") not in self.run_ids and len(self.run_ids) >= limit:
                         raise ValueError("authorized production start limit exhausted")
                     for key in ("task", "profile", "scope", "model_profile", "task_overlay"):
                         if key in self.config and args.get(key, self.config[key]) != self.config[key]:
@@ -2519,6 +2639,9 @@ class DeliverySession:
                 if args.get("model_profile", selected) not in {None, selected}:
                     raise ValueError("evaluation model profile differs from the selected binding")
                 args["model_profile"] = selected
+            if self.budget and name in _PRODUCTION | {"start_evaluation"}:
+                # This argument is absent from the model's tool schema.
+                args["budget_ref"] = self.budget_ref
             if name in {"submit_instruction", "resume_from_checkpoint", "start_repair"}:
                 if args.get("authorization_reference") != self.authorization:
                     raise ValueError("authorization reference does not match this session")
@@ -2583,6 +2706,9 @@ class DeliverySession:
                 if data.get('readback_only') is True and proof.get('blocked') == [] and proof.get('scope_drift') == []:
                     self.reconciled_runs.add(args['run_id'])
             return {"ok": True, "data": data}
+        except BudgetError as exc:
+            return {"ok": False, "error": {"code": exc.code, "message": str(exc),
+                    "retryable": True, "next_action": "reconcile the original task budget; preserve existing resources and receipts"}}
         except HostOpError as exc:
             self._discard_prelaunch_owner(
                 name, arguments, exc, newly_registered=newly_registered_operation
@@ -2766,6 +2892,9 @@ class DeliverySession:
             context["efficiency_round"] = {key: timing[key] for key in
                 ("identity", "started_at", "start_reference") if key in timing}
         context["quota_remaining"] = "unknown; use original authorization and round records"
+        if self.budget:
+            context["resource_authorization"] = self.resource_authorization
+            context["quota_remaining"] = "amount mode; use get_task_budget, counts are analytics only"
         return context
 
     def _recovery_context(self) -> dict:
@@ -3129,6 +3258,10 @@ class DeliverySession:
             "allowed_operations": sorted(self.allowed_operations), "activity": self.activity,
             "work_result": self.work_result, "flow_confirmation": self.flow_confirmation,
             "task_context": self._task_context()}
+        if self.budget:
+            state = self.budget.show(audience="delivery")
+            projected["session"]["budget_control"] = {key: state.get(key) for key in
+                ("budget_ref", "epoch", "admission_open", "pause_reasons", "authorized_amount")}
         projected["deadline_events"] = self._deadline_events(observation)
         decision = _decision_observation(projected, self._decision_event_state)
         # Appendix lengths/digests change with ordinary appends. The identity
@@ -3464,10 +3597,21 @@ class DeliverySession:
                      if item["input_id"] == data.get("input_id")), None)
         if item is None:
             return True
+        if self.budget:
+            try:
+                self.budget.require_available(operation="supervise")
+            except BudgetError:
+                return True  # The unchanged input remains pending on this session.
         self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
             "input_id": item["input_id"], "status": "attempted"})
         try:
             receipt = (runtime.steer if steer else runtime.send)(json.dumps(payload, ensure_ascii=False))
+        except BudgetError as exc:
+            self._hold_budget_refusal(exc)
+            item["delivery_status"] = "pending"
+            self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
+                "input_id": item["input_id"], "status": "deferred_budget"})
+            return True
         except DeliveryRuntimeError as exc:
             status = "rejected" if exc.category == "rejected" else "unknown"
             item["delivery_status"] = status
@@ -3506,6 +3650,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         instructions += "\n" + (repository_root / "modeling_team/references/efficiency-round-record.md").read_text()
     providers = None
     runtime = None
+    budget_monitor = None
     server = None
     incoming: queue.Queue = queue.Queue()
 
@@ -3516,29 +3661,54 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         incoming.put(None)
 
     try:
+        if session.budget:
+            budget_monitor = session.budget.start_monitor()
+            # Zero or retained pauses reject the first native call without creating a thread.
+            try:
+                session.budget.require_available(operation="supervise")
+            except BudgetError as exc:
+                session.budget.record_control("delivery:" + session.session_id,
+                    session.budget.show()["epoch"], "not_started")
+                session._save("budget_paused", budget_error=exc.code)
+                return 2
         base_url = None
         if session.runtime_name == "codex" and uses_external_credential_session(session.binding.provider_id):
             selected = replace(session.profile, bindings={"delivery": session.binding})
+            def before_provider_request(receipt: dict) -> None:
+                if receipt.get("_budget_control_admitted") is True:
+                    return
+                session.budget.require_available(operation="supervise", binding={
+                    "provider": receipt["provider"],
+                    "actual_model": receipt.get("requested_model"),
+                })
+
             providers = ProviderSessionManager(preflight_profile_credentials(selected),
                 on_attempt=NumericReceiptWriter(session_root / "native" / "provider-attempts.jsonl",
                     {"session_id": config["session_id"], "phase": "supervision",
-                     "role": "delivery"}))
+                     "role": "delivery"}),
+                **({"before_request": before_provider_request} if session.budget else {}))
             providers.start()
             base_url = providers.base_url_for(session.binding.provider_id)
         if session.runtime_name == "dsh":
             runtime = DSHDeliveryRuntime(binding=session.binding, home=session_root / "native",
                 instructions=instructions, tools=session.tool_specs(), tool_handler=session.call_tool,
-                session_id=session.session_id, profile=session.profile, resume=resume,
+                session_id=session.session_id, profile=session.profile,
+                resume=resume and (session_root / "native/dsh-session.json").exists(),
                 repository_root=repository_root)
         else:
             runtime = DeliveryRuntime(
                 binding=session.binding, home=session_root / "native", instructions=instructions,
                 usage_context={"session_id": config["session_id"], "phase": "supervision",
-                               "role": "delivery"},
+                               "role": "delivery",
+                               **({"key_ref": providers.credential_ref_for(session.binding.provider_id)}
+                                  if providers is not None else {})},
                 tools=session.tool_specs(), tool_handler=session.call_tool,
                 service_tier=config.get("service_tier", "unset"), provider_base_url=base_url,
                 model_context_window=config.get("model_context_window", 544000),
                 model_auto_compact_token_limit=config.get("model_auto_compact_token_limit", 489600),
+                **({"before_budget_control": lambda text, control_id: providers.authorize_control(
+                    session.binding.provider_id, text, control_id,
+                )} if providers is not None and session.budget is not None else {}),
             )
         runtime.start()
         session.runtime_identity = getattr(runtime, "identity", {"runtime": "codex"})
@@ -3573,7 +3743,10 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         elif session._pending_decisions:
             session._dispatch_observation(runtime, initial_packet, steer=False)
         else:
-            runtime.send(json.dumps(initial_packet, ensure_ascii=False))
+            try:
+                runtime.send(json.dumps(initial_packet, ensure_ascii=False))
+            except BudgetError as exc:
+                session._hold_budget_refusal(exc)
         next_observation = 0.0
         pending_input: list[dict] = []
         steer_blocked_turn: str | None = None
@@ -3584,7 +3757,11 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                 session.runtime_identity = runtime.identity
                 session.record_native_consumption(runtime.dispatch_status())
             if any(item.get("status") == "failed" for item in observations):
-                raise RuntimeError("Delivery native turn failed")
+                if session.budget and not session.budget.show()["admission_open"]:
+                    session._append("session-events.jsonl", {"event": "native_turn_failed_during_budget_pause",
+                        "failure_layer": "runtime/infrastructure", "observations": observations})
+                else:
+                    raise RuntimeError("Delivery native turn failed")
             for message in session.drain_messages():
                 print(message["text"], flush=True)
             while not incoming.empty():
@@ -3651,6 +3828,11 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         session.conversation.append("control_result", message_id=session.stop_message_id,
                                                     action="stop", status="effective", basis="bound_owners_exited")
                 continue
+            if session.sync_budget_control(runtime):
+                if time.monotonic() >= next_observation:
+                    next_observation = time.monotonic() + 2
+                    session.record_observation(session.observe())
+                continue
             if runtime.busy and pending_input and steer_blocked_turn != runtime.turn_id:
                 # An active turn must not starve later sourced input: deliver
                 # the original packets promptly onto the same live thread and
@@ -3662,6 +3844,9 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                             dispatch_attempt_id=__import__("uuid").uuid4().hex)
                     try:
                         receipt = runtime.steer(json.dumps(current, ensure_ascii=False))
+                    except BudgetError as exc:
+                        session._hold_budget_refusal(exc)
+                        break
                     except DeliveryRuntimeError as exc:
                         if session.conversation:
                             rejected = exc.category == "rejected"
@@ -3692,7 +3877,11 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                 if not session._dispatch_observation(runtime, packet, steer=True):
                     steer_blocked_turn = runtime.turn_id
             if not runtime.busy:
-                session.maybe_switch_phase_thread(runtime, pending_inputs=pending_input)
+                try:
+                    session.maybe_switch_phase_thread(runtime, pending_inputs=pending_input)
+                except BudgetError as exc:
+                    session._hold_budget_refusal(exc)
+                    continue
                 if pending_input:
                     current = pending_input.pop(0)
                     if session.conversation:
@@ -3700,6 +3889,10 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                             dispatch_attempt_id=__import__("uuid").uuid4().hex)
                     try:
                         receipt = runtime.send(json.dumps(current, ensure_ascii=False))
+                    except BudgetError as exc:
+                        session._hold_budget_refusal(exc)
+                        pending_input.insert(0, current)
+                        continue
                     except DeliveryRuntimeError:
                         if session.conversation:
                             session.conversation.append("dispatch_result", message_id=current["message_id"], status="unknown", reason="native_receipt_unknown")
@@ -3757,6 +3950,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                 if not close_failed:
                     raise
             finally:
+                if budget_monitor is not None:
+                    budget_monitor.stop(timeout=5)
                 _publish_delivery_statistics(session)
 
 

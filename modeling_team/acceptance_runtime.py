@@ -1389,6 +1389,9 @@ class LeanExaminerRuntime:
         platform_child_timeout_seconds: float | None = None,
         platform_retry_limit: int = 1,
         acceptance_retry_limit: int = 0,
+        budget=None,
+        budget_root=None,
+        budget_owner_prefix: str = "acceptance",
     ):
         if codex_adapter is not None:
             if any(executor is not None for executor in (source_executor, platform_executor, acceptance_executor)):
@@ -1430,6 +1433,10 @@ class LeanExaminerRuntime:
         self.acceptance_executor = acceptance_executor
         self._platform_retry_limit = max(0, int(platform_retry_limit))
         self._acceptance_retry_limit = max(0, int(acceptance_retry_limit))
+        self._budget_source = budget
+        self._budget_root = budget_root
+        self._budget_owner_prefix = budget_owner_prefix
+        self._codex_adapter = codex_adapter
         if platform_child_timeout_seconds is not None:
             try:
                 platform_child_timeout_seconds = float(platform_child_timeout_seconds)
@@ -1439,6 +1446,34 @@ class LeanExaminerRuntime:
                 raise ChildRuntimeError("platform child timeout is invalid")
         self._platform_child_timeout_seconds = platform_child_timeout_seconds
         self._failure_metrics: tuple[dict[str, Any], ...] = ()
+
+    def _require_budget(self, role: str, ordinal: int, operation: str, attempt: int = 0) -> None:
+        """Gate injected acceptance executors before each real model request.
+
+        The production Codex adapter performs the same gate at the native child
+        ``turn/start``/continuation boundary.  Avoid double admission checks for
+        that path while keeping deterministic executor fixtures honest.
+        """
+
+        if self._codex_adapter is not None:
+            return
+        root = self._budget_root
+        if root is None:
+            root = getattr(self._codex_adapter, "_run_root", None)
+        if root is None:
+            return
+        from .runtimes.budget import runtime_budget
+
+        gate = runtime_budget(
+            root,
+            f"{self._budget_owner_prefix}:{role}:{ordinal}:{attempt}",
+            runtime="acceptance",
+            operation="evaluation",
+            explicit=self._budget_source,
+            role=role,
+            question_ordinal=ordinal,
+        )
+        gate.require(operation)
 
     @property
     def failure_metrics(self) -> tuple[dict[str, Any], ...]:
@@ -1501,6 +1536,7 @@ class LeanExaminerRuntime:
             else:
                 try:
                     source_metrics.bind_first_turn_input([{"type": "packet", "digest": source_packet.canonical_digest}], packet=source_packet)
+                    self._require_budget("source", question_ordinal, "start")
                     source_report = self.source_executor(source_packet, source_metrics)
                     source_evidence_ids = _source_report_evidence_ids(source_packet, source_report)
                     source_metrics.record_terminal_report(source_report)
@@ -1512,6 +1548,7 @@ class LeanExaminerRuntime:
             try:
                 platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
                 try:
+                    self._require_budget("platform", question_ordinal, "start")
                     platform_report = self.platform_executor(platform_packet, platform_metrics)
                 except ExaminerRuntimeBlocked:
                     # A Platform child that stops generating after the retrieval
@@ -1523,6 +1560,7 @@ class LeanExaminerRuntime:
                     platform_retry_used = True
                     platform_metrics = ExaminerRunMetrics("platform")
                     platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
+                    self._require_budget("platform", question_ordinal, "retry", attempt=1)
                     platform_report = self.platform_executor(platform_packet, platform_metrics)
                 platform_evidence_ids = _platform_report_ref_ids(platform_report)
                 platform_metrics.record_terminal_report(platform_report)
@@ -1558,6 +1596,7 @@ class LeanExaminerRuntime:
                 )
                 acceptance_metrics.bind_first_turn_input([{"type": "packet", "digest": acceptance_packet.canonical_digest}], packet=acceptance_packet)
                 try:
+                    self._require_budget("acceptance", question_ordinal, "start")
                     verdict = dict(self.acceptance_executor(acceptance_packet, acceptance_metrics))
                 except ExaminerRuntimeBlocked:
                     # The Acceptance model frequently reasons without calling the
@@ -1568,6 +1607,7 @@ class LeanExaminerRuntime:
                     acceptance_retry_used = True
                     acceptance_metrics = ExaminerRunMetrics("acceptance")
                     acceptance_metrics.bind_first_turn_input([{"type": "packet", "digest": acceptance_packet.canonical_digest}], packet=acceptance_packet)
+                    self._require_budget("acceptance", question_ordinal, "retry", attempt=1)
                     verdict = dict(self.acceptance_executor(acceptance_packet, acceptance_metrics))
                 _validate_acceptance_evidence_ids(verdict, source_evidence_ids | platform_evidence_ids)
                 verdict.setdefault("question_ordinal", question_ordinal)

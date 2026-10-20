@@ -6,6 +6,7 @@ advisory and must never change tool execution, stop receipts or resource cleanup
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
@@ -22,11 +23,12 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 
-from .usage_capture import identity, utc_now
+from .usage_capture import TOKEN_FIELDS, identity, utc_now
 
 LOG = logging.getLogger(__name__)
 SCHEMA = "team-close-statistics/v1"
 CAPTURE_DIRECTORY = "evidence/close-statistics-capture"
+OPEN_CUMULATIVE_END = "9999-12-31T23:59:59.999999+00:00"
 _WRITE_LOCK = threading.Lock()
 EVENTS = {
     "launch",
@@ -116,7 +118,19 @@ def _append(path, value):
 class ActivityRecorder:
     """One actual launch instance, registered before attempting process creation."""
 
-    def __init__(self, root, context, *, usage_sources=(), fresh_session=False):
+    def __init__(
+        self,
+        root,
+        context,
+        *,
+        usage_sources=(),
+        fresh_session=False,
+        budget=None,
+        budget_owner_id=None,
+        budget_binding=None,
+        budget_runtime=None,
+        budget_cumulative_segment=None,
+    ):
         self.root = Path(root).resolve()
         self.context = {**identity(context)}
         self.context.setdefault("process_instance", uuid.uuid4().hex)
@@ -125,6 +139,100 @@ class ActivityRecorder:
         self.exited = False
         self._exit_lock = threading.Lock()
         self.path = self.root / CAPTURE_DIRECTORY / "activity.jsonl"
+        self.budget = budget
+        self.budget_owner_id = budget_owner_id
+        self.budget_runtime = budget_runtime or self.context.get("runtime")
+        self.fresh_session = bool(fresh_session)
+        self._budget_sources = [
+            # All members append lifecycle rows to this run-level file.  Keep
+            # its source binding row-driven so one member cannot constrain the
+            # other members' call identities.
+            {"path": self.path, "kind": "activity", "shared": True},
+            *[dict(source) for source in usage_sources],
+        ]
+        self._budget_binding = None
+        if budget is not None and budget_owner_id:
+            try:
+                from .runtimes.budget import (
+                    binding_projection,
+                    ensure_source_file,
+                    shared_source_identity,
+                    source_identity,
+                )
+
+                budget.bind_owner(
+                    budget_owner_id,
+                    runtime=self.budget_runtime,
+                    process_instance=self.context.get("process_instance"),
+                    **{
+                        key: value
+                        for key, value in {
+                            "agent_id": self.context.get("agent_id"),
+                            "role": self.context.get("role"),
+                            "runtime_session_id": self.context.get("runtime_session_id"),
+                        }.items()
+                        if value is not None
+                    },
+                )
+                projected_binding = binding_projection(budget_binding)
+                explicit_segment = budget_cumulative_segment
+                if explicit_segment is None:
+                    explicit_segment = projected_binding.get("cumulative_segment")
+                if explicit_segment is not None:
+                    segment = copy.deepcopy(explicit_segment)
+                elif self.fresh_session and self.budget_runtime == "codex":
+                    segment = {
+                        "id": self.context.get("thread_id")
+                        or self.context.get("runtime_session_id")
+                        or self.context.get("process_instance"),
+                        "evidence_ref": str(self.path),
+                        "baseline": dict.fromkeys(TOKEN_FIELDS, 0),
+                        "fresh_zero_baseline": True,
+                        "start": self.started_at,
+                        # A live segment is open until the real exit closes it.
+                        # The finite sentinel keeps online ticks chargeable
+                        # without treating the still-running source as missing
+                        # a window; exit replaces it with the observed cutoff.
+                        "end": OPEN_CUMULATIVE_END,
+                    }
+                else:
+                    segment = None
+                if segment is not None:
+                    projected_binding["cumulative_segment"] = segment
+                self._budget_binding = projected_binding
+                for source in self._budget_sources:
+                    if not source.get("path") or not source.get("kind"):
+                        continue
+                    source_binding = (
+                        {}
+                        if source.get("shared")
+                        else copy.deepcopy(projected_binding)
+                    )
+                    source_segment = source_binding.get("cumulative_segment")
+                    if isinstance(source_segment, dict):
+                        source_segment["evidence_ref"] = str(Path(source["path"]).resolve())
+                    source_id = source.get("source_id") or (
+                        shared_source_identity(Path(source["path"]), source["kind"])
+                        if source.get("shared")
+                        else source_identity(
+                            budget_owner_id, Path(source["path"]), source["kind"]
+                        )
+                    )
+                    if source_id not in (budget.show("host").get("sources") or {}):
+                        ensure_source_file(Path(source["path"]))
+                    budget.register_source(
+                        source_id,
+                        str(Path(source["path"]).resolve()),
+                        source["kind"],
+                        binding=source_binding,
+                        owner_id=budget_owner_id,
+                        runtime=self.budget_runtime,
+                    )
+            except Exception:
+                # Runtime admission repeats this registration through its hard
+                # gate.  Closing statistics must preserve its advisory capture
+                # contract when a budget source is temporarily unavailable.
+                LOG.warning("close_statistics_budget_source_unavailable")
         _append(
             self.root / CAPTURE_DIRECTORY / "statistics-members.jsonl",
             {
@@ -160,7 +268,78 @@ class ActivityRecorder:
         self.context["runtime_session_id"] = native_session_id
         if self.context.get("runtime") == "codex":
             self.context["thread_id"] = native_session_id
+        self._sync_budget_cumulative(native_session_id=native_session_id)
         self.emit("bind")
+
+    def _sync_budget_cumulative(self, *, native_session_id=None, end=None):
+        """Refresh the private source binding after native identity/lifecycle changes."""
+
+        if self.budget is None or not self.budget_owner_id or not isinstance(self._budget_binding, dict):
+            return
+        segment = self._budget_binding.get("cumulative_segment")
+        if not isinstance(segment, dict):
+            return
+        if native_session_id:
+            segment["id"] = native_session_id
+            if self.context.get("runtime") == "codex":
+                self._budget_binding["thread_id"] = native_session_id
+                self._budget_binding["runtime_session_id"] = native_session_id
+            try:
+                self.budget.bind_owner(
+                    self.budget_owner_id,
+                    runtime=self.budget_runtime,
+                    process_instance=self.context.get("process_instance"),
+                    runtime_session_id=native_session_id,
+                    **(
+                        {"thread_id": native_session_id}
+                        if self.context.get("runtime") == "codex"
+                        else {}
+                    ),
+                )
+            except Exception:
+                LOG.warning("close_statistics_budget_bind_unavailable")
+        if end is not None:
+            segment["end"] = end
+        for source in self._budget_sources:
+            if not source.get("path") or not source.get("kind"):
+                continue
+            source_binding = (
+                {}
+                if source.get("shared")
+                else copy.deepcopy(self._budget_binding)
+            )
+            source_segment = source_binding.get("cumulative_segment")
+            if isinstance(source_segment, dict):
+                source_segment["evidence_ref"] = str(Path(source["path"]).resolve())
+            try:
+                from .runtimes.budget import (
+                    ensure_source_file,
+                    shared_source_identity,
+                    source_identity,
+                )
+
+                source_id = source.get("source_id") or (
+                    shared_source_identity(Path(source["path"]), source["kind"])
+                    if source.get("shared")
+                    else source_identity(
+                        self.budget_owner_id, Path(source["path"]), source["kind"]
+                    )
+                )
+                if source_id not in (self.budget.show("host").get("sources") or {}):
+                    ensure_source_file(Path(source["path"]))
+                self.budget.register_source(
+                    source_id,
+                    str(Path(source["path"]).resolve()),
+                    source["kind"],
+                    binding=source_binding,
+                    owner_id=self.budget_owner_id,
+                    runtime=self.budget_runtime,
+                )
+            except Exception:
+                # Source binding refresh is advisory just like the original
+                # close-statistics registration; the runtime admission path
+                # remains responsible for blocking an unsafe next request.
+                LOG.warning("close_statistics_budget_source_unavailable")
 
     def exit(self, returncode, *, startup_failed=False, time_known=True):
         with self._exit_lock:
@@ -176,6 +355,23 @@ class ActivityRecorder:
                     else "failed",
                 )
                 self.exited = True
+                if self.budget is not None and self.budget_owner_id:
+                    try:
+                        self._sync_budget_cumulative(end=utc_now())
+                        self.budget.bind_owner(
+                            self.budget_owner_id,
+                            status="exited",
+                            returncode=returncode,
+                            startup_failed=bool(startup_failed),
+                            process_instance=self.context.get("process_instance"),
+                            runtime=self.budget_runtime,
+                            runtime_session_id=self.context.get("runtime_session_id"),
+                            exited_at=utc_now(),
+                        )
+                    except Exception:
+                        # Closure evidence remains advisory; an unavailable
+                        # budget store must not hide the real process exit.
+                        LOG.warning("close_statistics_budget_exit_unavailable")
 
     def execute_tool(self, call_id, name, callback):
         self.emit("tool_start", call_id=str(call_id), tool_name=name)
@@ -348,6 +544,11 @@ def aggregate_activity(config, usage, events):
     activity = list(events)
     for attempt in usage.get("attempts", []):
         if attempt.get("event") not in {"attempt_start", "attempt_end"}:
+            continue
+        # A local budget denial never reached the provider.  Keep its numeric
+        # receipt in usage evidence, but do not turn the denial into a fake
+        # LLM interval or a paid close-statistics call.
+        if attempt.get("status") == "not_admitted":
             continue
         end = attempt["event"] == "attempt_end"
         activity.append(

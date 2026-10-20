@@ -69,6 +69,12 @@ class DshAcceptanceChild:
         return self.agent.process if self.agent else None
 
     @property
+    def budget(self):
+        """Expose the Host-side child budget for evaluation control receipts."""
+
+        return getattr(self.agent, "budget", None)
+
+    @property
     def identity(self):
         return {
             "runtime": "dsh",
@@ -120,6 +126,8 @@ class DshAcceptanceChild:
     def control(self, message):
         action = message["action"]
         transport = self.adapter.transport
+        if message.get("source") == "task_budget":
+            return transport.control_budget(message)
         if action in {"pause", "resume"}:
             groups = getattr(transport, action)()
             self.user_waiting = action == "pause"
@@ -192,11 +200,18 @@ class DshAcceptanceRuntime:
     runtime = "dsh"
 
     def __init__(
-        self, *, repository_root, harness_root=None, provider_factory=MessagesProviderSession
+        self, *, repository_root, harness_root=None, provider_factory=MessagesProviderSession,
+        budget=None, budget_owner_prefix=None
     ):
         self.root = Path(repository_root)
+        self._budget_source = budget
+        self._budget_owner_prefix = budget_owner_prefix or "acceptance"
         self.transport = DshRuntimeAdapter(
-            repository_root=self.root, harness_root=harness_root, provider_factory=provider_factory
+            repository_root=self.root,
+            harness_root=harness_root,
+            provider_factory=provider_factory,
+            budget=budget,
+            budget_owner_prefix=self._budget_owner_prefix,
         )
         self._run_root = None
         self.profile = None
@@ -267,9 +282,12 @@ class DshAcceptanceRuntime:
                 repository_root=self.root,
                 harness_root=previous.harness_root,
                 provider_factory=previous.provider_factory,
+                budget=self._budget_source,
+                budget_owner_prefix=self._budget_owner_prefix,
             )
         child = self.resource = DshAcceptanceChild(self, packet, reports, private, evidence_root)
         transport = self.transport
+        transport._statistics_parent = statistics_parent
         transport._run = SimpleNamespace(root=evidence_root, run_id=packet.payload["run_id"])
         transport._closed = transport._paused = False
         transport.agents.clear()
@@ -278,12 +296,14 @@ class DshAcceptanceRuntime:
             role = "platform-examiner" if platform else "acceptance"
             binding = self.profile.bindings[role]
             reader = read_glm_credential if binding.provider_id == "glm-messages" else read_deepseek_credential
+            credential_binding = preflight_profile_credentials(
+                dataclasses.replace(self.profile, bindings={role: binding})
+            )[binding.provider_id]
+            transport._run.provider_credential_bindings = {
+                binding.provider_id: credential_binding
+            }
             credential = bytearray(
-                reader(
-                    preflight_profile_credentials(
-                        dataclasses.replace(self.profile, bindings={role: binding})
-                    )[binding.provider_id]
-                )
+                reader(credential_binding)
             )
             try:
                 transport._provider = transport.provider_factory(

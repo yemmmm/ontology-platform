@@ -6,12 +6,14 @@ import os
 import select
 import time
 import threading
+import hashlib
 from functools import wraps
 from pathlib import Path
 
 from .outer_input import OuterInputFifo, OuterInputFramingError
 from .runtimes.base import RuntimeDelivery
 from .close_statistics import publish_close_statistics, register_statistics_link
+from .task_budget import BudgetError, budget_for
 
 
 class EvaluationStopped(RuntimeError):
@@ -44,6 +46,11 @@ class EvaluationOwner:
         self.task_closed = False
         self.pending_pause = None
         self._flow_message = None
+        self.budget = budget_for(root)
+        self.budget_owner_id = "evaluation:" + root.name.removesuffix(".owner")
+        self._budget_control_epoch = None
+        self._budget_paused = False
+        self._pause_reasons = set()
         self._save()
 
     def _identity(self, resource):
@@ -64,6 +71,8 @@ class EvaluationOwner:
                  "current": self._identity(self.current) if self.current else None,
                  "active_members": [self._identity(r) for r in self.active],
                  "retained_members": [self._identity(r) for r in self.retained], "receipts": self.receipts}
+        if self.budget:
+            value["budget_ref"] = str(self.budget.ref)
         value["stage_waiting"] = bool(self.current is None and self.pending_pause)
         value["consult_replies"] = self.consult_replies
         value["destroyed_members"] = self.destroyed_members
@@ -113,12 +122,21 @@ class EvaluationOwner:
             raise ValueError("confirmation belongs to another current role")
         if resource.thread_id not in receipt.get("target_threads", [resource.thread_id]):
             raise ValueError("confirmation belongs to another control request")
+        current = self._flow_message and self._flow_message.get("request_id") == identity
+        if self.budget and (not current or (receipt.get("source") == "task_budget"
+                           and receipt.get("epoch") != self.budget.show()["epoch"])):
+            return {"status": "stale_control", "action": action}
         resource.user_waiting = action == "pause"
         confirmed = receipt.setdefault("confirmed_threads", [])
         if resource.thread_id not in confirmed:
             confirmed.append(resource.thread_id)
+        if receipt.get("source") == "task_budget":
+            member_budget = getattr(resource, "budget", None) or getattr(getattr(resource, "_child_agent", None), "budget", None)
+            if member_budget is not None:
+                member_budget.record_control(receipt["epoch"], "effective", action=action)
         if set(confirmed) == set(receipt.get("target_threads", confirmed)):
             receipt.update(status="effective", thread_id=resource.thread_id)
+        self._record_budget_control(receipt)
         if action == "pause":
             self.pending_pause = identity
         elif receipt["status"] == "effective":
@@ -146,12 +164,16 @@ class EvaluationOwner:
                         pass
                     self.consult_replies.append({**self._identity(resource), "text": message.text})
                     self._save()
-        if select.select([self.fifo], [], [], 0)[0]:
-            self.fifo.read_ready()
-        try:
-            line = self.fifo.pop_line()
-        except OuterInputFramingError:
-            return
+        message = self._next_budget_control()
+        if message is None:
+            if select.select([self.fifo], [], [], 0)[0]:
+                self.fifo.read_ready()
+            try:
+                line = self.fifo.pop_line()
+            except OuterInputFramingError:
+                return
+        else:
+            line = json.dumps(message)
         if line is None:
             self._save()
             return
@@ -163,13 +185,25 @@ class EvaluationOwner:
             action, text = message["action"], message["text"]
             if action not in {"consult", "pause", "resume", "stop"} or not isinstance(text, str):
                 raise ValueError("unsupported evaluation control")
-            self.receipts[identity] = {"action": action, "status": "dispatch_started"}
+            cause = "task_budget" if message.get("source") == "task_budget" else "user"
+            if cause == "task_budget" and self.budget and message.get("epoch") != self.budget.show()["epoch"]:
+                return
+            self.receipts[identity] = {"action": action, "status": "dispatch_started",
+                                      **{k: message[k] for k in ("source", "epoch") if k in message}}
             self._save()
             if action == "stop":
                 self.stopping = True
                 self.receipts[identity]["status"] = "stopping"
                 self._save()
                 raise EvaluationStopped("explicit evaluation stop")
+            if action == "pause":
+                self._pause_reasons.add(cause)
+            elif action == "resume":
+                self._pause_reasons.discard(cause)
+                if self._pause_reasons or (self.budget and not self.budget.show()["admission_open"]):
+                    self.receipts[identity]["status"] = "pause_pending"
+                    self._save()
+                    return
             resources = list(self.active) + list(self.retained) if action in {"pause", "resume"} else list(self.active) or self.retained[:1]
             if action == "consult":
                 resources = resources[:1]
@@ -186,9 +220,40 @@ class EvaluationOwner:
                 self.receipts[identity]["status"] = "owner_waiting" if action == "pause" else "owner_ready" if action == "resume" else "rejected_no_current_role"
             for resource in resources:
                 self._dispatch_control(resource, message)
+            self._record_budget_control(self.receipts[identity])
             self._save()
         except (ValueError, KeyError, TypeError):
             return
+
+    def _next_budget_control(self):
+        if not self.budget:
+            return None
+        try:
+            self.budget.require_available(operation="evaluation")
+        except BudgetError:
+            pass
+        state = self.budget.show()
+        paused = not state["admission_open"]
+        key = (state["epoch"], paused)
+        if key == self._budget_control_epoch or not (paused or self._budget_paused):
+            return None
+        self._budget_control_epoch = key
+        self._budget_paused = paused
+        return {"source": "task_budget", "budget_ref": str(self.budget.ref),
+                "epoch": state["epoch"], "reason": ",".join(state["pause_reasons"]),
+                "request_id": "budget-" + str(state["epoch"]) + "-" + hashlib.sha256(self.budget_owner_id.encode()).hexdigest()[:20],
+                "action": "pause" if paused else "resume", "text": "任务预算暂停" if paused else "按原任务预算继续"}
+
+    def _record_budget_control(self, receipt):
+        if self.budget and receipt.get("source") == "task_budget":
+            status = receipt["status"]
+            if status in {"owner_waiting", "owner_ready"}:
+                status = "not_started"
+            elif status in {"dispatch_started", "pause_pending"}:
+                status = "pending"
+            self.budget.record_control(self.budget_owner_id, receipt["epoch"], status,
+                action=receipt["action"], confirmed_members=receipt.get("confirmed_threads", []),
+                evidence_ref=str(self.root / "state.json"))
 
     def _dispatch_control(self, resource, message):
         """Called under the owner lock; release it across native dispatch."""
@@ -201,6 +266,9 @@ class EvaluationOwner:
                 receipt = self.receipts[identity]
                 receipt.setdefault("member_results", {})[self._member_id(resource)] = evidence
                 if action in {"pause", "resume"}:
+                    if evidence.get("status") != "effective":
+                        receipt["status"] = "unknown"
+                        return
                     confirmed = receipt.setdefault("confirmed_threads", [])
                     if self._member_id(resource) not in confirmed:
                         confirmed.append(self._member_id(resource))
@@ -232,8 +300,10 @@ class EvaluationOwner:
             # owner lock across that round trip.
             self._lock.release()
             try:
-                dispatched = adapter.send_message(agent.agent_id, RuntimeDelivery(sender_id="user/outer", recipient_id=agent.agent_id,
-                    kind="user-control", text=json.dumps({**message, "instruction": instruction}, ensure_ascii=False)))
+                dispatched = adapter.send_message(agent.agent_id, RuntimeDelivery(
+                    sender_id="host/task-budget" if message.get("source") == "task_budget" else "user/outer", recipient_id=agent.agent_id,
+                    kind="budget-control" if message.get("source") == "task_budget" else "user-control",
+                    text=json.dumps({**message, "instruction": instruction}, ensure_ascii=False)))
             finally:
                 self._lock.acquire()
             if metrics is not None and getattr(dispatched, "mode", None) == "steer":
@@ -245,7 +315,7 @@ class EvaluationOwner:
 
     def before_next_task(self):
         self.poll()
-        while self.pending_pause:
+        while self.pending_pause or (self.budget and not self.budget.show()["admission_open"]):
             self.poll()
             time.sleep(0.1)
 

@@ -7,6 +7,7 @@ See modeling_team/README.md for the scope and evidence contracts.
 from __future__ import annotations
 
 import argparse
+import copy
 import decimal
 import hashlib
 import json
@@ -14,7 +15,7 @@ import shutil
 import tempfile
 from collections import defaultdict
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -915,6 +916,7 @@ def _account_dsh_native(native, canonical, issues):
         native_ordinary = [r for r in settled if r.get("purpose") == "assistant"]
         left, right = summarize(ordinary), summarize(native_ordinary)
         comparisons.append({"runtime": session[0], "runtime_session_id": session[1],
+                            "provider": provider, "key_ref": key_ref,
                             "provider_usage": left, "native_assistant_usage": right,
                             "additive": False,
                             "difference": {field: left["tokens"][field] - right["tokens"][field]
@@ -945,6 +947,436 @@ def _groups(units):
     return [
         {"identity": dict(zip(GROUP, keys)), **summarize(rows)} for keys, rows in groups.items()
     ]
+
+
+def account_usage_units(records, *, cumulative=(), native=(), issues=None):
+    """Run the 019/034 attribution and replacement core on numeric records.
+
+    ``TaskBudget`` consumes the same canonical units as the offline report.  The
+    wrapper intentionally returns the diagnostics instead of deciding whether a
+    task is complete; that remains a report-level concern.  Callers must pass
+    already-bound numeric records and never provider bodies.
+    """
+    issues = issues if issues is not None else []
+    canonical, ambiguous = _deduplicate(copy.deepcopy(list(records)), issues)
+    native_rows = list(native)
+    native_units, native_comparisons = _account_dsh_native(
+        native_rows, canonical, issues
+    ) if native_rows else ([], [])
+    dsh_cumulative = [
+        row for row in cumulative
+        if row.get("source_mode") == "dsh_assistant_cumulative"
+    ]
+    ordinary_cumulative = [row for row in cumulative if row not in dsh_cumulative]
+    units, observed = _account(canonical, ordinary_cumulative, issues)
+    units.extend(native_units)
+    if dsh_cumulative:
+        deltas, dsh_observed = _account([], dsh_cumulative, issues)
+        observed.extend(dsh_observed)
+        for delta in deltas:
+            matching = [
+                row for row in units
+                if _session_key(row) == _session_key(delta)
+                and row.get("provider") == delta.get("provider")
+                and row.get("key_ref") == delta.get("key_ref")
+            ]
+            ordinary = [row for row in matching if row.get("purpose") == "assistant"]
+            if not matching:
+                _issue(issues, "dsh_provider_original_missing", delta["sources"][0])
+                delta.update(source_mode="partial_dsh_native", purpose="assistant")
+                units.append(delta)
+            native_comparisons.append(
+                {
+                    "runtime": "dsh",
+                    "runtime_session_id": delta.get("runtime_session_id"),
+                    "provider": delta.get("provider"),
+                    "key_ref": delta.get("key_ref"),
+                    "native_cumulative_delta": delta["usage"],
+                    "sources": delta["sources"],
+                    "provider_usage": summarize(ordinary),
+                    "additive": False,
+                    "selected_source": "bound_records" if matching else "partial_cumulative",
+                }
+            )
+    return {
+        "canonical": canonical,
+        "units": units,
+        "ambiguous": ambiguous,
+        "observed": observed,
+        "issues": issues,
+        "dsh_native_comparisons": native_comparisons,
+        "native_comparisons": native_comparisons,
+    }
+
+
+def budget_usage_buckets(usage, *, usage_semantics=None, raw_usage=None):
+    """Normalize usage into the budget's C/U/O buckets.
+
+    This is deliberately separate from vendor billing.  DSH's source buckets
+    are exclusive: ``input_tokens`` in ``raw_usage`` is the original uncached
+    input, while cache-read and cache-write are separate values.  For ordinary
+    provider records ``input_tokens`` includes cached input and U is the
+    residual.  Missing values remain missing so a budget can distinguish
+    ``pending_settlement`` from a real zero.
+    """
+    usage = usage or {}
+    raw_usage = raw_usage or {}
+    result = {
+        "cached_input_tokens": None,
+        "uncached_input_tokens": None,
+        "output_tokens": None,
+        "status": "unknown",
+        "issues": [],
+    }
+    if usage_semantics == DSH_SEMANTICS:
+        # Messages/native fixtures use either wire names or canonical names.
+        def value(*names):
+            for name in names:
+                if name in raw_usage:
+                    return raw_usage[name]
+            for name in names:
+                if name in usage:
+                    return usage[name]
+            return None
+
+        original = value("input_tokens", "inputTokens", "uncachedInputTokens")
+        cached = value("cache_read_input_tokens", "cacheReadTokens", "cached_input_tokens")
+        write = value("cache_creation_input_tokens", "cacheWriteTokens", "cache_write_tokens")
+        output = value("output_tokens", "outputTokens")
+        numbers = (original, cached, write, output)
+        if any(item is not None and (type(item) is not int or item < 0) for item in numbers):
+            result["issues"].append("invalid_usage")
+            return result
+        result["cached_input_tokens"] = cached
+        result["uncached_input_tokens"] = (
+            original + write if original is not None and write is not None else None
+        )
+        result["output_tokens"] = output
+    else:
+        total = usage.get("input_tokens")
+        cached = usage.get("cached_input_tokens")
+        output = usage.get("output_tokens")
+        numbers = (total, cached, output)
+        if any(item is not None and (type(item) is not int or item < 0) for item in numbers):
+            result["issues"].append("invalid_usage")
+            return result
+        if total is not None and cached is not None and cached > total:
+            result["issues"].append("cached_input_exceeds_input")
+            return result
+        result["cached_input_tokens"] = cached
+        result["uncached_input_tokens"] = total - cached if total is not None and cached is not None else None
+        result["output_tokens"] = output
+    if all(result[field] is not None for field in (
+        "cached_input_tokens", "uncached_input_tokens", "output_tokens"
+    )):
+        result["status"] = "priced"
+    elif (
+        result["uncached_input_tokens"] is None
+        and result["cached_input_tokens"] is None
+        and result["output_tokens"] is None
+    ):
+        result["status"] = "unknown"
+    elif result["output_tokens"] is not None and (
+        (usage.get("input_tokens") is not None and usage.get("cached_input_tokens") is None)
+    ):
+        result["status"] = "cache_unknown"
+    else:
+        result["status"] = "pending_settlement"
+    return result
+
+
+def estimate_budget_cost(record, price):
+    """Estimate one normalized usage unit using a frozen three-rate price.
+
+    The return value is numeric-only and never rounds to display precision.
+    ``provisional`` is true only when total input and output are known while
+    the cache split is absent; the higher input rate is used for custom price
+    tables whose cache rate is greater than the uncached rate.
+    """
+    buckets = budget_usage_buckets(
+        record.get("usage") or {},
+        usage_semantics=record.get("usage_semantics"),
+        raw_usage=record.get("raw_usage"),
+    )
+    result = {
+        "amount": None,
+        "currency": price.get("currency") if isinstance(price, dict) else None,
+        "status": buckets["status"],
+        "provisional": False,
+        "buckets": buckets,
+        "basis": "local_estimate",
+    }
+    if buckets["issues"]:
+        result["status"] = "metering_error"
+        return result
+    if not isinstance(price, dict):
+        result["status"] = "budget_price_missing"
+        return result
+    rates = price.get("rates") or {}
+    try:
+        cached_rate = Decimal(str(rates["cached_input_tokens"]))
+        uncached_rate = Decimal(str(rates["uncached_input_tokens"]))
+        output_rate = Decimal(str(rates["output_tokens"]))
+        unit = Decimal(str(price.get("unit_tokens", 1_000_000)))
+        currency = price.get("currency")
+        if not currency or unit != Decimal("1000000") or not unit.is_finite():
+            raise ValueError
+        if any(rate < 0 or not rate.is_finite() for rate in (cached_rate, uncached_rate, output_rate)):
+            raise ValueError
+    except (KeyError, InvalidOperation, TypeError, ValueError):
+        result["status"] = "budget_price_missing"
+        return result
+    c = buckets["cached_input_tokens"]
+    u = buckets["uncached_input_tokens"]
+    o = buckets["output_tokens"]
+    if buckets["status"] == "cache_unknown":
+        total = record.get("usage", {}).get("input_tokens")
+        if total is None or o is None:
+            return result
+        input_rate = max(cached_rate, uncached_rate)
+        values = (total, o)
+        rates_for_precision = (input_rate, output_rate)
+        with localcontext() as context:
+            context.prec = _budget_decimal_precision(values, rates_for_precision)
+            result["amount"] = (Decimal(total) * input_rate + Decimal(o) * output_rate) / unit
+        result["status"] = "cache_unknown"
+        result["provisional"] = True
+        result["basis"] = "cache_unknown"
+    elif buckets["status"] == "priced":
+        values = (c, u, o)
+        rates_for_precision = (cached_rate, uncached_rate, output_rate)
+        with localcontext() as context:
+            context.prec = _budget_decimal_precision(values, rates_for_precision)
+            result["amount"] = (
+                Decimal(c) * cached_rate + Decimal(u) * uncached_rate + Decimal(o) * output_rate
+            ) / unit
+        result["status"] = "usage_priced"
+    return result
+
+
+def _budget_decimal_precision(values, rates):
+    """Choose enough significant digits for token/rate multiplication.
+
+    ``decimal`` defaults to 28 significant digits, which is too small for a
+    large cumulative token count multiplied by a deliberately tiny price.  A
+    budget estimate keeps the exact Decimal result through the division by the
+    fixed million-token denominator; display formatting happens elsewhere.
+    """
+    token_digits = max(
+        (len(str(abs(int(value)))) for value in values if value is not None),
+        default=1,
+    )
+    rate_digits = 1
+    rate_scale = 0
+    for rate in rates:
+        decimal_rate = rate if isinstance(rate, Decimal) else Decimal(str(rate))
+        rate_digits = max(rate_digits, len(decimal_rate.as_tuple().digits))
+        rate_scale = max(rate_scale, max(0, -decimal_rate.as_tuple().exponent))
+    return max(50, token_digits + rate_digits + rate_scale + 16)
+
+
+def estimate_tail_bound(
+    prices=None,
+    limits=None,
+    inflight=(),
+    control_delay=(),
+    control_turns=(),
+    late_usage=(),
+):
+    """Compute a bounded post-pause tail estimate from explicit limits.
+
+    Every item must provide a credible ``input_max_tokens``/``output_max_tokens``
+    pair (or an explicit non-negative ``amount``).  The formula is the design's
+    ``q_i = (Imax * max(input price) + Omax * output price) / unit``.  Missing
+    limits or prices produce ``status='unknown'`` and never a fabricated upper
+    bound.  Inputs are incremental tail items; callers must exclude usage already
+    included in ``charged_estimate``.
+    """
+    sections = {
+        "inflight": list(inflight or ()),
+        "control_delay": list(control_delay or ()),
+        "control_turns": list(control_turns or ()),
+        "late_usage": list(late_usage or ()),
+    }
+    if isinstance(limits, dict):
+        for name in sections:
+            configured = limits.get(name)
+            if configured is None:
+                # Accept the singular names used by compact Host config files.
+                configured = limits.get(name.rstrip("s"))
+            if configured is not None:
+                if isinstance(configured, dict):
+                    configured = [configured]
+                if isinstance(configured, (list, tuple)):
+                    sections[name] = list(configured) + sections[name]
+    price_rows = prices if isinstance(prices, (list, tuple)) else [prices] if isinstance(prices, dict) else []
+
+    def aggregation_precision():
+        """Size the final sum for many high precision tail components."""
+        values = []
+        rates_for_precision = []
+        decimal_shapes = []
+        count = 0
+        for rows in sections.values():
+            for item in rows:
+                count += 1
+                if not isinstance(item, dict):
+                    continue
+                for name in (
+                    "input_max_tokens", "i_max", "Imax", "input_max",
+                    "output_max_tokens", "o_max", "Omax", "output_max",
+                ):
+                    value = item.get(name)
+                    if type(value) is int and value >= 0:
+                        values.append(value)
+                if "amount" in item:
+                    try:
+                        amount = Decimal(str(item["amount"]))
+                    except (InvalidOperation, TypeError, ValueError):
+                        amount = None
+                    if amount is not None and amount.is_finite():
+                        decimal_shapes.append(amount)
+                candidates = []
+                inline = item.get("price")
+                if isinstance(inline, dict):
+                    candidates.append(inline)
+                candidates.extend(price_rows if not candidates else [])
+                for candidate in candidates:
+                    raw_rates = candidate.get("rates") if isinstance(candidate.get("rates"), dict) else candidate
+                    if not isinstance(raw_rates, dict):
+                        continue
+                    for key in (
+                        "cached_input_tokens", "cached_input_per_million",
+                        "uncached_input_tokens", "uncached_input_per_million",
+                        "output_tokens", "output_per_million",
+                    ):
+                        if key not in raw_rates:
+                            continue
+                        try:
+                            rate = Decimal(str(raw_rates[key]))
+                        except (InvalidOperation, TypeError, ValueError):
+                            continue
+                        if rate.is_finite():
+                            rates_for_precision.append(rate)
+        base = _budget_decimal_precision(values or [0], rates_for_precision or [Decimal(0)])
+        shape = max(
+            (
+                len(value.as_tuple().digits) + max(0, -value.as_tuple().exponent)
+                for value in decimal_shapes
+            ),
+            default=1,
+        )
+        return max(80, base + len(str(max(1, count))) + shape + 16)
+
+    def rates(item):
+        price = item.get("price") if isinstance(item, dict) else None
+        price = price if isinstance(price, dict) else None
+        candidates = [price] if price else list(price_rows)
+        inputs, outputs, units, currencies = [], [], [], []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            raw_rates = candidate.get("rates") if isinstance(candidate.get("rates"), dict) else candidate
+            try:
+                cached = Decimal(str(raw_rates.get("cached_input_tokens", raw_rates.get("cached_input_per_million"))))
+                uncached = Decimal(str(raw_rates.get("uncached_input_tokens", raw_rates.get("uncached_input_per_million"))))
+                output = Decimal(str(raw_rates.get("output_tokens", raw_rates.get("output_per_million"))))
+                unit = Decimal(str(candidate.get("unit_tokens", 1_000_000)))
+                if unit != Decimal("1000000") or not unit.is_finite() or any(
+                    not value.is_finite() or value < 0 for value in (cached, uncached, output)
+                ):
+                    continue
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+            inputs.append(max(cached, uncached))
+            outputs.append(output)
+            units.append(unit)
+            currencies.append(candidate.get("currency"))
+        if not inputs or not outputs:
+            return None
+        # A task uses one currency and one unit.  Mixed rows cannot establish a
+        # safe bound and are therefore deliberately unknown.
+        if len(set(units)) != 1 or len(set(currencies)) > 1:
+            return None
+        return inputs[0] if price else max(inputs), outputs[0] if price else max(outputs), units[0], currencies[0]
+
+    def amount_for(item):
+        if not isinstance(item, dict):
+            return None, {"reason": "tail_limit_missing"}
+        if "amount" in item:
+            try:
+                amount = Decimal(str(item["amount"]))
+                if amount.is_finite() and amount >= 0:
+                    return amount, {"basis": "explicit_amount"}
+            except (InvalidOperation, TypeError, ValueError):
+                pass
+            return None, {"reason": "tail_amount_invalid"}
+        def pick(*names):
+            for name in names:
+                if name in item:
+                    return item[name]
+            return None
+        input_max = pick("input_max_tokens", "i_max", "Imax", "input_max")
+        output_max = pick("output_max_tokens", "o_max", "Omax", "output_max")
+        if type(input_max) is not int or input_max < 0 or type(output_max) is not int or output_max < 0:
+            return None, {"reason": "tail_limit_missing"}
+        selected = rates(item)
+        if selected is None:
+            return None, {"reason": "tail_price_missing"}
+        input_rate, output_rate, unit, currency = selected
+        with localcontext() as context:
+            context.prec = _budget_decimal_precision(
+                (input_max, output_max), (input_rate, output_rate)
+            )
+            amount = (
+                Decimal(input_max) * input_rate + Decimal(output_max) * output_rate
+            ) / unit
+        return (
+            amount,
+            {
+                "basis": "q_i",
+                "input_max_tokens": input_max,
+                "output_max_tokens": output_max,
+                "currency": currency,
+            },
+        )
+
+    with localcontext() as context:
+        context.prec = aggregation_precision()
+        total = Decimal(0)
+        known = Decimal(0)
+        unknown = []
+        components = {}
+        for section, rows in sections.items():
+            section_total = Decimal(0)
+            section_unknown = 0
+            for index, item in enumerate(rows):
+                amount, basis = amount_for(item)
+                if amount is None:
+                    section_unknown += 1
+                    unknown.append({"section": section, "index": index, **basis})
+                    continue
+                section_total += amount
+                known += amount
+            total += section_total
+            components[section] = {
+                "count": len(rows),
+                "known_amount": format(section_total, "f"),
+                "unknown": section_unknown,
+            }
+        result = {
+            "status": "bounded" if not unknown else "unknown",
+            "amount": format(total, "f") if not unknown else None,
+            "known_amount": format(known, "f"),
+            "unknown": unknown,
+            "components": components,
+            "basis": "q_i=(Imax*max_input_rate+Omax*output_rate)/unit",
+        }
+    return result
+
+
+# Explicit alias for callers that use the budget terminology.
+estimate_budget_tail = estimate_tail_bound
 
 
 def _costs(units, prices):
@@ -1401,28 +1833,17 @@ def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
     receipts, cumulative, attempts, timings, compactions, sources, snapshots, native, activity = _read_sources(
         scope, base, issues
     )
-    canonical, ambiguous = _deduplicate(receipts, issues)
-    native_units, native_comparisons = _account_dsh_native(native, canonical, issues)
-    dsh_cumulative = [r for r in cumulative if r.get("source_mode") == "dsh_assistant_cumulative"]
-    cumulative = [r for r in cumulative if r not in dsh_cumulative]
-    units, observed = _account(canonical, cumulative, issues)
-    units.extend(native_units)
-    dsh_deltas, dsh_observed = _account([], dsh_cumulative, issues)
-    observed.extend(dsh_observed)
-    for delta in dsh_deltas:
-        matching = [r for r in units if _session_key(r) == _session_key(delta)
-                    and r.get("provider") == delta.get("provider")
-                    and r.get("key_ref") == delta.get("key_ref")]
-        ordinary = [r for r in matching if r.get("purpose") == "assistant"]
-        native_comparisons.append({"runtime": "dsh",
-            "runtime_session_id": delta.get("runtime_session_id"),
-            "native_cumulative_delta": delta["usage"], "sources": delta["sources"],
-            "provider_usage": summarize(ordinary), "additive": False,
-            "selected_source": "bound_records" if matching else "partial_cumulative"})
-        if not matching:
-            _issue(issues, "dsh_provider_original_missing", delta["sources"][0])
-            delta.update(source_mode="partial_dsh_native", purpose="assistant")
-            units.append(delta)
+    accounted = account_usage_units(
+        receipts,
+        cumulative=cumulative,
+        native=native,
+        issues=issues,
+    )
+    canonical = accounted["canonical"]
+    ambiguous = accounted["ambiguous"]
+    units = accounted["units"]
+    observed = accounted["observed"]
+    native_comparisons = accounted["dsh_native_comparisons"]
     units, snapshot_comparisons = _reconcile_consumer_snapshots(units, snapshots, issues)
     task = []
     task_window = scope.get("task_window") or {}

@@ -23,6 +23,13 @@ from ..messages_provider_proxy import MessagesProviderSession
 from ..usage_capture import NumericReceiptWriter
 from ..close_statistics import ActivityRecorder, clock_ref
 from ..model_routing import preflight_profile_credentials, PROVIDER_CATALOG
+from ..task_budget import BudgetError
+from .budget import (
+    binding_with_key_ref,
+    normalize_control_epoch,
+    runtime_budget,
+    valid_key_ref,
+)
 
 
 def validate_delivery_runtime(config, binding):
@@ -44,10 +51,11 @@ class DSHDeliveryRuntime:
 
     def __init__(self, *, binding, home, instructions, tools, tool_handler,
                  session_id, profile=None, resume=False, repository_root=None,
-                 harness_root=None, provider_factory=MessagesProviderSession):
+                 harness_root=None, provider_factory=MessagesProviderSession,
+                 budget=None, budget_owner_id=None):
         self.binding, self.home = binding, Path(home)
         self.instructions, self.tools, self.tool_handler = instructions, tools, tool_handler
-        self.session_id, self.profile, self.resume = session_id, profile, resume
+        self.session_id, self.profile, self._resume_existing = session_id, profile, resume
         self.root = Path(repository_root or Path(__file__).resolve().parents[2])
         self.harness_root = Path(harness_root or "/home/yangxiang/deepseek-harness")
         self.provider_factory = provider_factory
@@ -67,12 +75,53 @@ class DSHDeliveryRuntime:
         self._pump_failed = False
         self.projection = None
         self.activity = None
+        self._budget_source = budget
+        self._budget_owner_id = budget_owner_id or f"delivery:{session_id}:{self.process_instance}"
+        self._budget = None
+        self._budget_control_epochs: set[str] = set()
+        self._budget_control_receipts: dict[str, dict] = {}
+        self._native_pid_identity = None
 
     def _record(self, kind, **value):
         with self._lock:
             with (self.home / f"dsh-{kind}.jsonl").open("a") as stream:
                 stream.write(json.dumps({"runtime": "dsh", "process_instance": self.process_instance,
                     "runtime_session_id": self.runtime_session_id, **value}, ensure_ascii=False) + "\n")
+
+    def _before_provider_request(self, receipt):
+        """Admit a Delivery Messages request before it reaches the provider."""
+
+        if self._budget is None or getattr(self._budget, "budget", None) is None:
+            return
+        session_id = receipt.get("runtime_session_id")
+        # This provider instance belongs only to this Delivery session.  The
+        # DSH harness normally sends the session header; a missing header is
+        # still unambiguous here, unlike the shared production adapter.
+        if session_id is not None and session_id != self.runtime_session_id:
+            raise BudgetError(
+                "budget_member_identity_missing",
+                {"runtime_session_id": session_id, "expected": self.runtime_session_id},
+            )
+        self._budget.require("send")
+
+    def _record_budget_control(self, epoch, status, **metadata):
+        """Persist a receipt when possible without blocking physical control."""
+
+        if self._budget is None:
+            return
+        try:
+            self._budget.record_control(epoch, status, **metadata)
+        except Exception:
+            # SIGSTOP/SIGCONT remains authoritative even if the shared budget
+            # ledger is unavailable or corrupt.  The local Host evidence keeps
+            # that fact visible for later reconciliation.
+            self._record(
+                "budget-control",
+                action=metadata.get("action"),
+                epoch=epoch,
+                status="unavailable",
+                requested_status=status,
+            )
 
     @property
     def identity(self):
@@ -107,16 +156,43 @@ class DSHDeliveryRuntime:
             "/agent/home/entry.mjs", "/agent/home/dsh.json"]
 
     def start(self):
+        credential_binding = None
+        if self.profile is not None:
+            from dataclasses import replace
+            selected = replace(self.profile, bindings={"delivery": self.binding})
+            credential_bindings = preflight_profile_credentials(selected)
+            credential_binding = credential_bindings.get(self.binding.provider_id)
+        key_ref = valid_key_ref(getattr(credential_binding, "key_ref", None))
+        budget_binding = binding_with_key_ref(self.binding, key_ref)
+        self._budget = runtime_budget(
+            self.home.parent,
+            self._budget_owner_id,
+            binding=budget_binding,
+            runtime="dsh",
+            explicit=self._budget_source,
+            session_id=self.session_id,
+            process_instance=self.process_instance,
+            role="delivery",
+        )
+        self._budget.register_source(self.home / "dsh-provider.jsonl", "dsh_capture")
+        self._budget.register_source(self.home / "dsh-native-delivery.jsonl", "dsh_native")
         self.activity = ActivityRecorder(self.home.parent, {
             "runtime": "dsh", "agent_id": "delivery", "role": "delivery",
             "session_id": self.session_id, "process_instance": self.process_instance,
             "provider": self.binding.provider_id, "requested_model": self.binding.model,
             "requested_effort": self.binding.requested_effort,
             "effective_effort": self.binding.effective_effort,
-        }, usage_sources=[{"path": str(self.home / "dsh-provider.jsonl"), "kind": "dsh_capture"}])
+        }, usage_sources=[
+            {"path": str(self.home / "dsh-provider.jsonl"), "kind": "dsh_capture"},
+            {"path": str(self.home / "dsh-native-delivery.jsonl"), "kind": "dsh_native"},
+        ],
+            budget=self._budget.budget,
+            budget_owner_id=self._budget_owner_id,
+            budget_binding=self._budget.binding,
+            budget_runtime="dsh")
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         state = self.home / "dsh-session.json"
-        if self.resume:
+        if self._resume_existing:
             if not state.exists():
                 raise DeliveryRuntimeError("original DSH session missing; no replacement created")
             self.runtime_session_id = json.loads(state.read_text())["runtime_session_id"]
@@ -140,19 +216,26 @@ class DSHDeliveryRuntime:
             (self.home / part).mkdir(exist_ok=True, mode=0o700)
         credential = bytearray()
         if self.profile is not None:
-            from dataclasses import replace
-            selected = replace(self.profile, bindings={"delivery": self.binding})
             reader = read_glm_credential if self.binding.provider_id == "glm-messages" else read_deepseek_credential
-            credential.extend(reader(preflight_profile_credentials(selected)[self.binding.provider_id]))
+            credential.extend(reader(credential_binding))
         self.provider = self.provider_factory(credential,
             **({"provider_id": self.binding.provider_id} if self.binding.provider_id == "glm-messages" else {}),
-            on_attempt=NumericReceiptWriter(self.home / "dsh-provider.jsonl"))
+            on_attempt=NumericReceiptWriter(
+                self.home / "dsh-provider.jsonl",
+                budget=self._budget.budget,
+                budget_owner_id=self._budget_owner_id,
+                budget_binding=self._budget.binding,
+                budget_kind="dsh_capture",
+            ),
+            before_request=self._before_provider_request,
+        )
         self._usage_context = {
             "session_id": self.session_id, "agent_id": "delivery", "role": "delivery", "phase": "supervision",
             "process_instance": self.process_instance, "provider": self.binding.provider_id,
             "requested_model": self.binding.model,
             "requested_effort": self.binding.requested_effort,
             "effective_effort": self.binding.effective_effort,
+            **({"key_ref": key_ref} if key_ref is not None else {}),
         }
         self.provider.register_usage_session(self.runtime_session_id, self._usage_context,
                                              evidence_ref="dsh-baseline.jsonl")
@@ -173,6 +256,7 @@ class DSHDeliveryRuntime:
             self.process = subprocess.Popen(self.namespace_command(), stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=self._stderr, text=True, bufsize=1,
                 start_new_session=True, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+            self._native_pid_identity = self._process_info(self.process.pid)[2]
             self._pump_thread = threading.Thread(target=self._pump, daemon=True)
             self._pump_thread.start()
             result = self._rpc("initialize", {"cwd": "/agent/work",
@@ -194,13 +278,13 @@ class DSHDeliveryRuntime:
                 "composition": {name: digest(directory / name) for name in ("entry.mjs", "delivery.mjs", "activity.mjs")},
                 "instructions_sha256": hashlib.sha256(self.instructions.encode()).hexdigest()}
             baseline_path = self.home / "dsh-baseline.jsonl"
-            if self.resume and baseline_path.exists():
+            if self._resume_existing and baseline_path.exists():
                 previous = json.loads(baseline_path.read_text().splitlines()[-1])
                 changed = [key for key in baseline if baseline[key] != previous.get(key)]
                 if changed:
                     raise DeliveryRuntimeError(f"dsh-recovery-binding-drift: {', '.join(changed)}; no replacement created")
             self._record("baseline", **baseline)
-            if self.resume:
+            if self._resume_existing:
                 self._check_tool_recovery()
                 self._recover_events()
                 self._rpc("session/resume", {"sessionId": self.runtime_session_id})
@@ -250,6 +334,11 @@ class DSHDeliveryRuntime:
                 if value.get("method") != "host/activity":
                     session_id = value.get("params", {}).get("sessionId", self.runtime_session_id)
                     self._record("wire", frame=value, runtime_session_id=session_id)
+                    if value.get("method") == "session.event":
+                        self._record(
+                            "native-delivery",
+                            frame=value,
+                        )
                 if value.get("method") == "host/activity":
                     params = value.get("params", {})
                     if self.activity and params.get("sessionId") == self.runtime_session_id:
@@ -401,6 +490,8 @@ class DSHDeliveryRuntime:
     def _dispatch(self, text, active):
         if self._closed:
             raise DeliveryRuntimeError("DSH Delivery is closed", category="rejected")
+        if self._budget is not None:
+            self._budget.require("steer" if active else "start")
         dispatch_id = uuid.uuid4().hex
         payload = {"host_dispatch_id": dispatch_id, "payload": json.loads(text)}
         if any(row.get("payload") == payload["payload"] and row["state"] in {
@@ -431,6 +522,188 @@ class DSHDeliveryRuntime:
 
     def steer(self, text):
         return self._dispatch(text, True)
+
+    @staticmethod
+    def _process_info(pid):
+        try:
+            raw = Path(f"/proc/{pid}/stat").read_text()
+            values = raw[raw.rfind(")") + 2 :].split()
+            return values[0], int(values[2]), values[19], int(values[1])
+        except (OSError, ValueError, IndexError):
+            return None, None, None, None
+
+    def _native_group(self):
+        """Return the currently owned native process group after PID checks."""
+
+        if self.process is None or self.process.poll() is not None:
+            raise DeliveryRuntimeError("DSH Delivery native process is not running", category="rejected")
+        pid = self.process.pid
+        state, pgid, identity, _ = self._process_info(pid)
+        if identity != self._native_pid_identity or pgid != pid:
+            raise DeliveryRuntimeError("DSH Delivery native PID identity changed")
+        rows = []
+        for path in Path("/proc").iterdir():
+            if not path.name.isdigit():
+                continue
+            child = int(path.name)
+            child_state, child_pgid, child_identity, parent = self._process_info(child)
+            if child_pgid == pid and child_identity:
+                rows.append({
+                    "pid": child,
+                    "pgid": child_pgid,
+                    "state": child_state,
+                    "start_identity": child_identity,
+                    "parent_pid": parent,
+                })
+        if not any(row["pid"] == pid for row in rows):
+            rows.append({"pid": pid, "pgid": pgid, "state": state, "start_identity": identity})
+        return sorted(rows, key=lambda row: row["pid"])
+
+    def pause(self, *, epoch=None, _budget_checked=False):
+        """Freeze only the DSH native process group; Host polling stays live."""
+
+        if epoch is None:
+            epoch = 0
+            if self._budget is not None:
+                show = getattr(self._budget.budget, "show", None)
+                if callable(show):
+                    try:
+                        epoch = show("delivery").get("epoch", 0)
+                    except Exception:
+                        pass
+        epoch = normalize_control_epoch(epoch)
+        if self._closed or self.process is None or self.process.poll() is not None:
+            self._record_budget_control(epoch, "not_running", action="pause")
+            evidence = {"status": "not_running", "epoch": epoch, **self.identity}
+            self._budget_control_epochs.add(f"pause:{epoch}")
+            self._budget_control_receipts[f"pause:{epoch}"] = evidence
+            return evidence
+        key = f"pause:{epoch}"
+        if key in self._budget_control_epochs:
+            return {"status": "already_recorded", "epoch": epoch, **self.identity}
+        self._native_group()
+        os.killpg(self.process.pid, signal.SIGSTOP)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            current = self._native_group()
+            if current and all(item["state"] in {"T", "t"} for item in current):
+                self._budget_control_epochs.add(key)
+                evidence = {"status": "effective", "epoch": epoch, "groups": current, **self.identity}
+                self._record("control", action="pause", **evidence)
+                self._record_budget_control(epoch, "effective", action="pause", groups=current)
+                self._budget_control_receipts[key] = evidence
+                return evidence
+            time.sleep(0.02)
+        current = self._native_group()
+        self._record("control", action="pause", status="pause_pending", epoch=epoch, groups=current, **self.identity)
+        self._record_budget_control(epoch, "pending", action="pause", groups=current)
+        self._budget_control_receipts[key] = {
+            "status": "pending", "epoch": epoch, "groups": current, **self.identity
+        }
+        raise DeliveryRuntimeError("pause-pending: DSH native process group did not stop")
+
+    def resume(self, *, epoch=None, _budget_checked=False):
+        """Resume only the previously validated DSH native process group."""
+
+        if epoch is None:
+            epoch = 0
+            if self._budget is not None:
+                show = getattr(self._budget.budget, "show", None)
+                if callable(show):
+                    try:
+                        epoch = show("delivery").get("epoch", 0)
+                    except Exception:
+                        pass
+        epoch = normalize_control_epoch(epoch)
+        key = f"resume:{epoch}"
+        if key in self._budget_control_epochs:
+            return {"status": "already_recorded", "epoch": epoch, **self.identity}
+        if self._closed or self.process is None or self.process.poll() is not None:
+            self._record_budget_control(epoch, "not_running", action="resume")
+            evidence = {"status": "not_running", "epoch": epoch, **self.identity}
+            self._budget_control_epochs.add(key)
+            self._budget_control_receipts[key] = evidence
+            return evidence
+        group = self._native_group()
+        os.killpg(self.process.pid, signal.SIGCONT)
+        deadline = time.monotonic() + 3
+        current = group
+        while time.monotonic() < deadline:
+            try:
+                current = self._native_group()
+            except DeliveryRuntimeError:
+                self._record_budget_control(epoch, "pending", action="resume", groups=group)
+                self._record("control", action="resume", status="resume_pending", epoch=epoch,
+                             groups=group, **self.identity)
+                raise
+            if current and all(item["state"] not in {"T", "t"} for item in current):
+                break
+            time.sleep(0.02)
+        if not current or any(item["state"] in {"T", "t"} for item in current):
+            self._record("control", action="resume", status="resume_pending", epoch=epoch,
+                         groups=current, **self.identity)
+            self._record_budget_control(epoch, "pending", action="resume", groups=current)
+            self._budget_control_receipts[key] = {
+                "status": "pending", "epoch": epoch, "groups": current, **self.identity
+            }
+            raise DeliveryRuntimeError("resume-pending: DSH native process group did not resume")
+        self._budget_control_epochs.add(key)
+        evidence = {"status": "effective", "epoch": epoch, "groups": current, **self.identity}
+        self._record("control", action="resume", **evidence)
+        self._record_budget_control(epoch, "effective", action="resume", groups=current)
+        self._budget_control_receipts[key] = evidence
+        return evidence
+
+    def control_budget(self, message: dict) -> dict:
+        if not isinstance(message, dict) or message.get("action") not in {"pause", "resume"}:
+            raise DeliveryRuntimeError("task-budget control binding is invalid", category="rejected")
+        action = message["action"]
+        epoch = message.get("epoch")
+        if epoch is None:
+            raise DeliveryRuntimeError("task-budget control epoch is invalid", category="rejected")
+        try:
+            epoch = normalize_control_epoch(epoch)
+        except ValueError as exc:
+            raise DeliveryRuntimeError("task-budget control epoch is invalid", category="rejected") from exc
+        key = f"{action}:{epoch}"
+        if key in self._budget_control_epochs:
+            return {
+                **self._budget_control_receipts.get(key, {
+                    "status": "already_recorded", "action": action, "epoch": epoch, **self.identity
+                }),
+                "deduplicated": True,
+            }
+        if action == "resume" and self._budget is not None:
+            budget_core = self._budget.budget
+            show = getattr(budget_core, "show", None)
+            if callable(show):
+                try:
+                    state = show("delivery")
+                except Exception:
+                    # A broken budget ledger must not prevent physical native
+                    # process control; the local control evidence remains the
+                    # source of truth until Host reconciliation.
+                    state = None
+                if state is not None and (
+                    not state.get("admission_open") or state.get("pause_reasons")
+                ):
+                    evidence = {
+                        "status": "pending", "action": action, "epoch": epoch,
+                        "pause_reasons": state.get("pause_reasons", []), **self.identity,
+                    }
+                    self._record_budget_control(
+                        epoch,
+                        "pending",
+                        action=action,
+                        pause_reasons=state.get("pause_reasons", []),
+                    )
+                    self._budget_control_receipts[key] = evidence
+                    return evidence
+        return (
+            self.pause(epoch=epoch, _budget_checked=True)
+            if action == "pause"
+            else self.resume(epoch=epoch, _budget_checked=True)
+        )
 
     def interrupt(self):
         return self._rpc("ontoweave/delivery/interrupt", {"sessionId": self.runtime_session_id})

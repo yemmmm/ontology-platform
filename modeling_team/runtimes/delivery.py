@@ -13,6 +13,13 @@ from typing import Any, Callable, Protocol
 
 from modeling_team.usage_capture import NumericReceiptWriter
 from modeling_team.close_statistics import ActivityRecorder
+from .budget import (
+    binding_with_key_ref,
+    normalize_control_epoch,
+    runtime_budget,
+    valid_key_ref,
+)
+from modeling_team.task_budget import BudgetError
 
 from modeling_team.model_routing import (
     RoleModelBinding, codex_auth_cache_path, preflight_codex_subscription_auth,
@@ -112,13 +119,20 @@ class DeliveryRuntime:
         model_context_window: int | None = None,
         model_auto_compact_token_limit: int | None = None,
         usage_context: dict | None = None,
+        budget: object | None = None,
+        budget_owner_id: str | None = None,
+        before_budget_control: Callable[[str, str], Any] | None = None,
     ) -> None:
+        self.binding = binding
+        self._usage_context = dict(usage_context or {})
+        self._budget_binding = binding_with_key_ref(
+            binding, valid_key_ref(self._usage_context.get("key_ref"))
+        )
         self._usage_writer = NumericReceiptWriter(Path(home) / "usage-events.jsonl", {
-            **(usage_context or {}), "provider": binding.provider_id,
+            **self._usage_context, "provider": binding.provider_id,
             "requested_model": binding.model, "requested_effort": binding.requested_effort,
             "effective_effort": binding.effective_effort,
         })
-        self.binding = binding
         self.home = Path(home).resolve()
         self.instructions = instructions
         self.tools = tools
@@ -137,8 +151,17 @@ class DeliveryRuntime:
         self._stderr = None
         self._observations: list[dict] = []
         self._turn_id: str | None = None
+        self._activity_turn_id: str | None = None
         self.process_instance = uuid.uuid4().hex
         self.activity = None
+        self._budget_source = budget
+        self._budget_owner_id = budget_owner_id or (
+            f"delivery:{(usage_context or {}).get('session_id', 'runtime')}:{self.process_instance}"
+        )
+        self._before_budget_control = before_budget_control
+        self._budget = None
+        self._budget_control_epochs: set[str] = set()
+        self._budget_control_receipts: dict[str, dict] = {}
 
     @property
     def identity(self) -> dict:
@@ -148,6 +171,22 @@ class DeliveryRuntime:
     def start(self) -> None:
         if self.process is not None:
             raise DeliveryRuntimeError("Delivery runtime already started")
+        self._budget = runtime_budget(
+            self.home.parent,
+            self._budget_owner_id,
+            binding=self._budget_binding,
+            runtime="codex",
+            explicit=self._budget_source,
+            session_id=(self._usage_writer.context.get("session_id")),
+            process_instance=self.process_instance,
+            role="delivery",
+        )
+        self._budget.register_source(self.home / "usage-events.jsonl", "capture")
+        if self.provider_base_url:
+            self._budget.register_source(
+                self.home / "provider-attempts.jsonl", "capture", shared=True,
+                capture_session_id=self._usage_writer.context.get("session_id"),
+            )
         self.activity = ActivityRecorder(self.home.parent, {
             **self._usage_writer.context, "runtime": "codex", "agent_id": "delivery",
             "role": "delivery", "process_instance": self.process_instance,
@@ -155,7 +194,11 @@ class DeliveryRuntime:
                           *([{"path": str(self.home / "provider-attempts.jsonl"), "kind": "capture",
                               "shared": True,
                               "capture_session_id": self._usage_writer.context.get("session_id")}] if self.provider_base_url else [])],
-            fresh_session=True)
+            fresh_session=True,
+            budget=self._budget.budget,
+            budget_owner_id=self._budget_owner_id,
+            budget_binding=self._budget.binding,
+            budget_runtime="codex")
         self._usage_writer.context.update(self.activity.context)
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.home, 0o700)
@@ -297,6 +340,34 @@ class DeliveryRuntime:
                 f" (not reported off: {', '.join(still_enabled)})"
             )
 
+    def _activity_turn_start(self, turn_id: str | None) -> None:
+        """Record one native Delivery turn start for budget inflight state."""
+
+        if not isinstance(turn_id, str) or not turn_id:
+            return
+        if self.activity is None or self._activity_turn_id == turn_id:
+            return
+        self.activity.emit(
+            "llm_start",
+            call_id=f"{self.thread_id}:{turn_id}",
+            turn_id=turn_id,
+        )
+        self._activity_turn_id = turn_id
+
+    def _activity_turn_end(self, turn_id: str | None, status: str | None) -> None:
+        """Close only the native Delivery turn that was actually started."""
+
+        if not isinstance(turn_id, str) or turn_id != self._activity_turn_id:
+            return
+        if self.activity is not None:
+            self.activity.emit(
+                "llm_end",
+                call_id=f"{self.thread_id}:{turn_id}",
+                turn_id=turn_id,
+                status=status or "completed",
+            )
+        self._activity_turn_id = None
+
     def new_thread(self) -> dict:
         if self.busy or self.process is None or self.process.poll() is not None:
             raise DeliveryRuntimeError("Delivery runtime unavailable or busy")
@@ -329,6 +400,13 @@ class DeliveryRuntime:
             except Exception:
                 from modeling_team.usage_capture import LOG
                 LOG.warning("usage_capture_incomplete")
+        elif method == "turn/started":
+            params = value.get("params") or {}
+            turn = params.get("turn") if isinstance(params, dict) else None
+            turn_id = turn.get("id") if isinstance(turn, dict) else params.get("turnId")
+            if isinstance(turn_id, str):
+                self._turn_id = turn_id
+                self._activity_turn_start(turn_id)
         elif method == "item/tool/call" and "id" in value:
             # Authentication must disappear before any model-directed Host call.
             self._remove_auth()
@@ -367,21 +445,29 @@ class DeliveryRuntime:
                     or (self._turn_id is not None
                         and params.get("turn", {}).get("id") != self._turn_id)):
                 return
+            turn = params.get("turn", {})
+            completed_turn_id = (
+                turn.get("id") if isinstance(turn, dict) else None
+            ) or params.get("turnId") or self._turn_id
+            status = turn.get("status") if isinstance(turn, dict) else None
+            self._activity_turn_end(completed_turn_id, status)
             self.busy = False
             self._remove_auth()
-            status = value.get("params", {}).get("turn", {}).get("status")
             self._observations.append({"event": "turn_completed", "status": status})
         # Agent messages, reasoning, provider errors and tool logs remain private.
 
     def send(self, text: str) -> None:
         if self.busy or not self.thread_id:
             raise DeliveryRuntimeError("Delivery thread is unavailable or busy")
+        if self._budget is not None:
+            self._budget.require("start")
         self.busy = True
         try:
             result = self._rpc("turn/start", {"threadId": self.thread_id, "input": [
                 {"type": "text", "text": text, "text_elements": []},
             ]})
             self._turn_id = result["turn"]["id"]
+            self._activity_turn_start(self._turn_id)
         except Exception:
             self.busy = False
             raise
@@ -404,11 +490,113 @@ class DeliveryRuntime:
         """
         if not self.busy or self._turn_id is None or self.thread_id is None:
             raise DeliveryRuntimeError("Delivery active turn is unavailable", category="rejected")
+        if self._budget is not None:
+            self._budget.require("steer")
         self._rpc("turn/steer", {
             "threadId": self.thread_id,
             "expectedTurnId": self._turn_id,
             "input": [{"type": "text", "text": text, "text_elements": []}],
         })
+
+    def control_budget(self, message: dict) -> dict:
+        """Apply one bounded task-budget control to the native Codex turn.
+
+        The Host process and its monitor remain alive.  A busy native turn gets
+        one steer on its existing turn; an idle runtime gets one control turn.
+        Repeated requests for the same epoch are acknowledged without another
+        model call.
+        """
+
+        if not isinstance(message, dict):
+            raise DeliveryRuntimeError("task-budget control message is invalid", category="rejected")
+        action = message.get("action")
+        epoch = message.get("epoch")
+        if action not in {"pause", "resume"} or epoch is None:
+            raise DeliveryRuntimeError("task-budget control binding is invalid", category="rejected")
+        try:
+            epoch = normalize_control_epoch(epoch)
+        except ValueError as exc:
+            raise DeliveryRuntimeError("task-budget control epoch is invalid", category="rejected") from exc
+        key = f"{action}:{epoch}"
+        if key in self._budget_control_epochs:
+            return {
+                **self._budget_control_receipts.get(key, {
+                    "status": "already_recorded", "action": action, "epoch": epoch, **self.identity
+                }),
+                "deduplicated": True,
+            }
+        if self._budget is not None:
+            try:
+                self._budget.require(
+                    "control", control_id=str(message.get("control_id") or key)
+                )
+            except BudgetError as exc:
+                if exc.code != "control_turn_already_consumed":
+                    raise
+                # A durable grant is consumed even when the prior native RPC
+                # receipt was lost.  Keep this retry from issuing a second
+                # control turn and expose the persisted member outcome.
+                receipt = self._budget.control_receipt(epoch)
+                result = {
+                    "status": (receipt or {}).get("status", "pending"),
+                    "action": action,
+                    "epoch": epoch,
+                    "deduplicated": True,
+                    **self.identity,
+                    **({"receipt": receipt} if receipt else {}),
+                }
+                self._budget_control_epochs.add(key)
+                self._budget_control_receipts[key] = result
+                return result
+        if self.process is None or self.process.poll() is not None or not self.thread_id:
+            if self._budget is not None:
+                self._budget.record_control(epoch, "not_running", action=action)
+            result = {"status": "not_running", "action": action, "epoch": epoch, **self.identity}
+            self._budget_control_epochs.add(key)
+            self._budget_control_receipts[key] = result
+            return result
+        text = message.get("text")
+        if not isinstance(text, str) or not text:
+            text = (
+                "Task budget pause: stop starting new work and wait for the Host control path."
+                if action == "pause"
+                else "Task budget resumed: continue the authorized work on this thread."
+            )
+        control_id = str(message.get("control_id") or key)
+        try:
+            if self._before_budget_control is not None:
+                # The callback reserves the one provider-side control request
+                # only after the durable TaskBudget grant above and immediately
+                # before the native RPC.  A rejected callback therefore leaves
+                # no model request in flight and is reported as pending below.
+                self._before_budget_control(text, control_id)
+            if self.busy and self._turn_id:
+                self._rpc("turn/steer", {
+                    "threadId": self.thread_id,
+                    "expectedTurnId": self._turn_id,
+                    "input": [{"type": "text", "text": text}],
+                })
+            else:
+                self.busy = True
+                result = self._rpc("turn/start", {
+                    "threadId": self.thread_id,
+                    "input": [{"type": "text", "text": text}],
+                })
+                self._turn_id = result["turn"]["id"]
+            self._budget_control_epochs.add(key)
+            result = {"status": "instruction_delivered", "action": action, "epoch": epoch, **self.identity}
+            self._budget_control_receipts[key] = result
+            if self._budget is not None:
+                self._budget.record_control(epoch, "instruction_delivered", action=action)
+            return result
+        except Exception:
+            if self._budget is not None:
+                self._budget.record_control(epoch, "pending", action=action)
+            self._budget_control_epochs.add(key)
+            self._budget_control_receipts[key] = {
+                "status": "pending", "action": action, "epoch": epoch, **self.identity
+            }
+            raise
 
     def poll(self, timeout: float = 0) -> list[dict]:
         value = self._read(timeout)

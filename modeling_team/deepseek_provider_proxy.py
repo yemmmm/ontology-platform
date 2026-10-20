@@ -13,6 +13,7 @@ rules and one error type.
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import json
 import os
@@ -154,6 +155,18 @@ class ProviderCredentialBinding:
     @property
     def canonical_path(self) -> str:
         return str(self.path)
+
+    @property
+    def key_ref(self) -> str:
+        """Opaque reference to this verified file binding, without key bytes.
+
+        This identifies the concrete Host credential binding, rather than a
+        guessed provider account. Reopening that binding keeps the same
+        reference; a changed file identity requires a new binding.
+        """
+        value = [self.contract.env_var, self.st_dev, self.st_ino, self.st_size, self.st_mtime_ns]
+        digest = hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
+        return "credential-binding:" + digest
 
     def metadata_matches(self, metadata: os.stat_result) -> bool:
         return (
@@ -420,6 +433,9 @@ class _SessionHandler(BaseHTTPRequestHandler):
                        if isinstance(_parsed_body.get("reasoning"), dict) else None}
         while True:
             receipt = {**request_receipt, "attempt_index": attempt, "start": utc_now()}
+            if not session.admit_attempt(receipt, request=_parsed_body):
+                self._reject(402)
+                return
             session.record_attempt({**receipt, "event": "attempt_start", "status": "unfinished"})
             try:
                 status, headers, response = session.forward(body)
@@ -565,6 +581,7 @@ class ResponsesProviderSession:
         retry_after_ceiling_seconds: float = RESPONSES_UPSTREAM_RETRY_AFTER_CEILING_SECONDS,
         on_failure: Callable[[str], None] | None = None,
         on_attempt: Callable[[dict], None] | None = None,
+        before_request: Callable[[dict], None] | None = None,
     ) -> None:
         if not isinstance(credential, (bytes, bytearray)) or not credential:
             raise ProviderSessionError("provider session credential is unavailable")
@@ -589,11 +606,13 @@ class ResponsesProviderSession:
         self._consecutive_upstream_failures = 0
         self.on_failure = on_failure
         self.on_attempt = on_attempt
+        self.before_request = before_request
         self._usage_session_id = uuid.uuid4().hex
         self._server: _SessionHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
         self._attempt_clocks: dict[tuple, dict] = {}
+        self._control_inputs: dict[str, str] = {}
         self._counts: dict[str, int] = {
             "requests": 0,
             "rejected": 0,
@@ -625,6 +644,54 @@ class ResponsesProviderSession:
                 self.on_attempt(event)
             except Exception:
                 LOG.warning("usage_capture_incomplete")
+
+    def authorize_control(self, text: str, control_id: str) -> None:
+        """Allow one exact Host control input after durable native admission."""
+        if not text or not control_id:
+            raise ProviderSessionError("provider control binding is invalid")
+        with self._lock:
+            self._control_inputs[text] = control_id
+
+    def admit_attempt(self, receipt: dict, *, request: dict | None = None) -> bool:
+        """Check each real upstream attempt, including automatic retries.
+
+        This is an admission boundary, separate from the advisory numeric
+        observer. A local refusal is retained without inventing token usage or
+        counting it as a provider failure.
+        """
+        if self.before_request is None:
+            return True
+        from .task_budget import BudgetError
+
+        # The shared provider cannot identify a member from model alone.
+        # Match only the exact new Host control input, once, rather than lend
+        # a provider-wide exception to another member or an automatic retry.
+        inputs = (request or {}).get("input")
+        text = inputs if isinstance(inputs, str) else None
+        if isinstance(inputs, list) and inputs and isinstance(inputs[-1], dict):
+            last = inputs[-1]
+            content = last.get("content") if last.get("role") == "user" else None
+            if isinstance(content, str):
+                text = content
+            elif isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict):
+                if content[0].get("type") in {"input_text", "text"}:
+                    text = content[0].get("text")
+        with self._lock:
+            control_id = self._control_inputs.pop(text, None) if isinstance(text, str) else None
+        checked = dict(receipt)
+        if control_id is not None:
+            checked["_budget_control_admitted"] = True
+            checked["_budget_control_id"] = control_id
+        try:
+            self.before_request(checked)
+        except BudgetError:
+            self._count("budget_rejected")
+            self.record_attempt({
+                **receipt, "event": "attempt_end", "end": utc_now(),
+                "status": "not_admitted",
+            })
+            return False
+        return True
 
     def stamp_attempt(self, event: dict) -> dict:
         from .close_statistics import clock_stamp
@@ -902,6 +969,7 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
         retry_after_ceiling_seconds: float = RESPONSES_UPSTREAM_RETRY_AFTER_CEILING_SECONDS,
         on_failure: Callable[[str], None] | None = None,
         on_attempt: Callable[[dict], None] | None = None,
+        before_request: Callable[[dict], None] | None = None,
     ) -> None:
         super().__init__(
             credential,
@@ -918,6 +986,7 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
             retry_after_ceiling_seconds=retry_after_ceiling_seconds,
             on_failure=on_failure,
             on_attempt=on_attempt,
+            before_request=before_request,
         )
 
 

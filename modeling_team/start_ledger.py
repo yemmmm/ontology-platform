@@ -295,6 +295,20 @@ class StartLedger:
             )
         )
 
+    @classmethod
+    def validate_amount_start(cls, baseline_hash, freeze_started_at, gate_binding=None,
+                              *, requirement_id=None, now=None):
+        """Keep the existing start invariants without reading historical count quotas.
+
+        Amount starts retain their own run evidence; they never append to or
+        reinterpret an old count-authorization ledger.
+        """
+        if not isinstance(baseline_hash, str) or not baseline_hash:
+            raise TeamConfigurationError("reservation is invalid")
+        validator = cls(Path("."), requirement_id=requirement_id, now=now)
+        validator._normalize_gate_binding(gate_binding)
+        return validator._validate_freeze_time(freeze_started_at, invalid_message="freeze time is invalid")
+
     def initial_authorization(
         self,
         additional_starts: int = _R2_3_003_ADDITIONAL_STARTS,

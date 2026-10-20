@@ -11,6 +11,54 @@ R4.3-019提供 `python -m modeling_team.usage_report --scope <scope.json> --outp
 收尾将Consumer的`batch_report`快照和实际绑定线程的最终`rollout`一并列入scope，
 输出独立终态用量差异；同线程不重复相加，缺原件保留partial，原语义报告不修改。
 
+## R4.4-002：任务金额预算（Host-only）
+
+对明确采用金额模式的新任务，Host／用户先用结构化配置和真实授权引用创建稳定预算，
+再把同一个 `budget_ref` 绑定到 Delivery、生产、修模和独立验收。金额模式不套用默认三轮
+或轮余额门；轮次和 semantic-start 仍记录作分析，金额只限制资源消耗，不扩大业务目标、
+模型、写入或验收授权。Delivery／生产 Agent 只读预算投影，不能创建、追加或改价；历史
+次数授权继续按 `authorize-budget --additional-starts` 处理。
+
+```bash
+python -m modeling_team task-budget create \
+  --ref workspaces/delivery-sessions/<session-id>/cost-budget \
+  --config workspaces/host-authorizations/task-budget.json
+python -m modeling_team task-budget add \
+  --ref workspaces/delivery-sessions/<session-id>/cost-budget \
+  --config workspaces/host-authorizations/task-budget-add.json
+python -m modeling_team task-budget show \
+  --ref workspaces/delivery-sessions/<session-id>/cost-budget --audience host
+```
+
+`create`／`add` 只接收 Host 提供的 JSON/YAML 对象，并要求其中有真实
+`authorization_reference`（也可用 `--authorization-reference` 显式传入）；`show` 是只读查询，
+不会刷新计量、发送暂停消息或启动模型。`--budget-ref` 可由受信 Host 传给 `run` 或
+`checkpoint resume`，由运行时复用同一预算；该参数不是模型可选择的权限来源。
+
+创建配置示例（金额和单价仅为虚构示例，不是调用授权或供应商报价）：
+
+```json
+{
+  "task_ref": "original-business-objective",
+  "authorization_reference": "actual-user-authorization",
+  "amount": "10",
+  "currency": "CNY",
+  "allowed_operations": ["read", "supervise", "production", "repair", "evaluation"],
+  "prices": [{
+    "provider": "openai-codex",
+    "actual_model": "gpt-6.1-sol",
+    "cached_input_per_million": "0.2",
+    "uncached_input_per_million": "2",
+    "output_per_million": "8"
+  }]
+}
+```
+
+在原 Delivery 配置中设置 `resource_authorization.mode: amount` 及同级 `budget_ref`；
+后续 run／operation 继承该引用。价表须覆盖全部获准实际模型；`add` 配置使用明确的
+`authorization_reference`、唯一 `authorization_id` 与 `delta_amount`。足额追加后仍需
+`continue_authorized: true` 的明确继续授权；不足、缺数及其他暂停原因不会因此清除。
+
 ## R4.3-031：显式生产 DSH 运行时
 
 生产入口可显式选择 `runtime: dsh`；默认及原 Codex Profile 保持。首条配置复用026的

@@ -15,6 +15,33 @@ python -m modeling_team.usage_report \
 文件权限0600、目录0700。相同 scope 与冻结字节可重复得到完全相同的两份报告。
 输入变动时另选目录；原件和旧报告不会被覆盖。
 
+## R4.4-002 任务金额预算（Host入口）
+
+金额预算是任务资源授权和近实时估价投影，不能替代本页的用量原件、账单核对、应用完整性
+或独立语义验收。新授权必须由 Host／用户写入稳定 `budget_ref`、显式
+`resource_authorization.mode=amount`、真实 `authorization_reference`、任务范围和冻结价表；
+Delivery、生产 Agent、Consumer／Judge 只能读取获准投影，不能创建、追加、改价或借余额扩大
+业务目标、模型绑定、写入权限或验收范围。历史 `authorize-budget --additional-starts`
+继续是次数授权，不能把旧次数余额猜测转换成金额。
+
+Host CLI提供以下入口；命令只读配置／预算文件或更新 Host-owned 预算，不启动模型：
+
+```sh
+python -m modeling_team task-budget create \
+  --ref workspaces/delivery-sessions/<session>/cost-budget \
+  --config workspaces/host-authorizations/task-budget.json
+python -m modeling_team task-budget add \
+  --ref workspaces/delivery-sessions/<session>/cost-budget \
+  --config workspaces/host-authorizations/task-budget-add.json
+python -m modeling_team task-budget show \
+  --ref workspaces/delivery-sessions/<session>/cost-budget --audience host
+```
+
+`create`／`add` 的结构化配置须包含真实用户授权引用；价表和金额由 Host冻结并由预算核心
+校验。`show --audience host`返回完整获准投影，`delivery`只返回流程所需的额度、计量和控制
+状态。预算估价采用三类归一化 token 桶和 Decimal 累计，缺测／暂估／在途／范围外调用仍
+单独标记；它不代表供应商账单，也不改变本页离线报告的 `PARTIAL`／`UNKNOWN` 边界。
+
 ## 最小 scope
 
 路径相对 scope 文件目录解析，`path` 必须在声明的 `root` 内。工具不递归扫描目录；

@@ -35,6 +35,7 @@ from .checkpoint_recovery import (
 )
 from .checkpoints import CheckpointError
 from .competency_questions import CQContractError, cq_published_handoff_path, reload_frozen_pool
+from .task_budget import budget_for
 from .host_ops import (
     DEFAULT_PLATFORM_BASE_URL,
     HOST_CREDENTIAL_ENV,
@@ -1470,6 +1471,7 @@ def start_evaluation(
     service_tier: str = "unset",
     repository_root: Path | None = None,
     launcher: Callable[..., Any] | None = None,
+    budget_ref: str | None = None,
 ) -> dict[str, Any]:
     """Launch the existing ``cq-acceptance`` or ``public-feedback`` CLI."""
 
@@ -1485,6 +1487,15 @@ def start_evaluation(
     _safe_ref(run_id, "run_id")
     freeze_id = _safe_ref(freeze_id, "freeze_id")
     run_root, _runs_root = resolve_run_root(run_id, repository_root=repository_root)
+    from .task_budget import bind_budget, budget_for
+    from .host_ops import _launch_budget
+    original_budget = budget_for(run_root)
+    if original_budget is not None:
+        if budget_ref and Path(budget_ref).resolve() != Path(original_budget.ref).resolve():
+            raise HostOpError("budget_binding_conflict", "evaluation inherits the original task budget",
+                retryable=True, next_action="retain the production task budget")
+        budget_ref = str(original_budget.ref)
+    budget = _launch_budget(budget_ref, operation="evaluation")
     timeout = _validate_timeout(session_timeout)
     _validate_service_tier(service_tier)
     validate_evaluation_runtime(runtime, model_profile, service_tier, mode=mode, repository_root=repository_root)
@@ -1585,8 +1596,8 @@ def start_evaluation(
         argv.extend(["--model-profile", model_profile])
     if timeout is not None:
         argv.extend(["--session-timeout", str(timeout)])
-    argv.extend(["--owner-root" if mode == "cq-acceptance" else "--statistics-root",
-                 str(_delivery_dir(repository_root) / (operation_id + ".owner"))])
+    owner_root = _delivery_dir(repository_root) / (operation_id + ".owner")
+    argv.extend(["--owner-root" if mode == "cq-acceptance" else "--statistics-root", str(owner_root)])
     request = _evaluation_request(
         run_root=run_root,
         mode=mode,
@@ -1606,6 +1617,10 @@ def start_evaluation(
             "session_timeout": timeout,
         }
     )
+    if budget is not None:
+        bind_budget(owner_root, budget.ref, "evaluation:" + operation_id,
+                    kind="evaluation", operation_id=operation_id, run_id=run_id)
+        request["budget_ref"] = str(budget.ref)
     result = _launch_operation(
         operation_id=operation_id,
         kind="evaluation",
@@ -1678,6 +1693,8 @@ def get_evaluation_status(
     result = {
         "operation_id": operation_id,
         "kind": "evaluation",
+        **({"task_budget": budget_for(owner_path.parent).show(audience="delivery")}
+           if budget_for(owner_path.parent) is not None else {}),
         "close_statistics": read_close_statistics(owner_path.parent),
         "run_id": record["request"].get("run_id"),
         "mode": record["request"].get("mode"),
@@ -2135,6 +2152,7 @@ def _recorded_process_commands(argv: list[Any]) -> tuple[list[str], ...]:
 
 def relay_evaluation_message(*, operation_id: str, action: str, text: str,
                              request_id: str | None = None,
+                             budget_control: dict | None = None,
                              repository_root: Path | None = None) -> dict[str, Any]:
     """Relay sourced controls to the operation's original owner/current role."""
     import uuid
@@ -2155,7 +2173,7 @@ def relay_evaluation_message(*, operation_id: str, action: str, text: str,
     if owner.get("owner_pid") != record.get("pid"):
         raise HostOpError("evaluation_owner_mismatch", "owner identity differs", obj=operation_id,
                           retryable=False, next_action="preserve the operation evidence")
-    message = {"request_id": request_id, "action": action, "text": text}
+    message = {**(budget_control or {}), "request_id": request_id, "action": action, "text": text}
     ledger = owner_root / ("request-" + request_id + ".json")
     if ledger.exists():
         previous = json.loads(ledger.read_text())

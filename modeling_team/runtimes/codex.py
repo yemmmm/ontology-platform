@@ -105,6 +105,13 @@ from .acceptance_inputs import (
     _v3_acceptance_first_turn_text,
     _v3_judge_lossless_transport as _v3_judge_lossless_transport,
 )
+from .budget import (
+    binding_with_key_ref,
+    normalize_control_epoch,
+    runtime_budget,
+    valid_key_ref,
+)
+from ..task_budget import BudgetError
 
 
 # Verified native 0.160.0 turn/start limit across all text input elements.
@@ -856,6 +863,9 @@ class _Agent:
     # provider-session failure cannot affect such a role.
     provider_id: str | None = None
     activity: Any = None
+    activity_turn_id: str | None = None
+    budget: Any = None
+    usage_path: Path | None = None
 
 
 def _v3_child_teardown_evidence(
@@ -1029,6 +1039,12 @@ class _CodexChildResource:
         thread = threading.Thread(target=watch, name="acceptance-child-watchdog", daemon=True)
         self._watchdog_thread = thread
         thread.start()
+
+    @property
+    def budget(self):
+        """Expose the Host-side member budget without exposing native state."""
+
+        return getattr(self._child_agent, "budget", None)
 
     def start_stdout_pump(self, adapter: CodexRuntimeAdapter, agent: _Agent) -> None:
         """Start the lifecycle-owned Examiner App Server stdout pump.
@@ -1419,6 +1435,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         use_bwrap: bool = True,
         process_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
         acceptance_child_factory: Callable[[dict[str, Any]], Any] | None = None,
+        budget=None,
+        budget_owner_prefix=None,
     ):
         self.root, self.use_bwrap, self.process_factory = (
             repository_root,
@@ -1437,6 +1455,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         if resolved is None and (Path(codex_binary).is_absolute() or "/" in codex_binary):
             resolved = codex_binary
         self.codex_binary = resolved or codex_binary
+        self._budget_source = budget
+        self._budget_owner_prefix = budget_owner_prefix or "codex"
         self._acceptance_child_factory = acceptance_child_factory
         self._acceptance_children: dict[str, Any] = {}
         self.agents: dict[str, _Agent] = {}
@@ -1487,6 +1507,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._cleanup_errors: dict[str, dict[str, str]] = {}
         self._formal_cleanup_aggregate: dict[str, Any] | None = None
         self._provider_stop_status: dict[str, dict[str, bool | int]] = {}
+        self._budget_control_epochs: set[str] = set()
+        self._budget_control_receipts: dict[str, dict[str, Any]] = {}
 
     def _validated_model_override(
         self,
@@ -2025,6 +2047,33 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         NumericReceiptWriter(root / "evidence" / "provider-attempts.jsonl",
             {"run_id": self._run_id, "session_id": self._usage_receipt_session})(event)
 
+    def _request_budget(self):
+        from .budget import resolve_budget
+        root = getattr(self, "_statistics_parent", None) or getattr(self, "_run_root", None)
+        explicit = getattr(self, "_budget_source", None)
+        return resolve_budget(root, explicit) if root is not None else explicit
+
+    def _before_provider_request(self, receipt: dict) -> None:
+        budget = self._request_budget()
+        if budget is None or receipt.get("_budget_control_admitted") is True:
+            return
+        budget.require_available(binding={
+            "provider": receipt["provider"],
+            "actual_model": receipt.get("requested_model"),
+        })
+
+    def _provider_credential_key_ref(self, provider_id: str | None) -> str | None:
+        """Read the manager's opaque Host credential alias when available."""
+
+        if not provider_id or self._provider_sessions is None:
+            return None
+        accessor = getattr(self._provider_sessions, "credential_ref_for", None)
+        if not callable(accessor):
+            # Legacy focused fakes do not expose credential identity; retaining
+            # their unaliased binding keeps those fixtures compatible.
+            return None
+        return valid_key_ref(accessor(provider_id))
+
     def _ensure_standalone_provider_sessions(self) -> None:
         """Open the sessions a standalone acceptance child needs, if any.
 
@@ -2047,6 +2096,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             preflight_profile_credentials(profile),
             on_failure=self._on_provider_session_failure,
             on_attempt=self._record_provider_attempt,
+            **({"before_request": self._before_provider_request}
+               if self._request_budget() is not None else {}),
         )
         sessions.start()
         self._provider_sessions = sessions
@@ -2664,8 +2715,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                                         "itself is the only valid final action."
                                     )
                             active_turn_id = getattr(agent, "active_turn_id", None)
+                            budget = getattr(agent, "budget", None)
                             if isinstance(active_turn_id, str) and active_turn_id:
                                 try:
+                                    if budget is not None:
+                                        budget.require("steer")
                                     self._rpc(
                                         agent,
                                         "turn/steer",
@@ -2675,7 +2729,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                                             "input": [{"type": "text", "text": input_text}],
                                         },
                                     )
-                                except Exception:
+                                except Exception as exc:
+                                    if getattr(exc, "code", None) or type(exc).__name__ == "BudgetError":
+                                        raise
+                                    if budget is not None:
+                                        budget.require("start")
                                     self._rpc(
                                         agent,
                                         "turn/start",
@@ -2685,6 +2743,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                                         },
                                     )
                             else:
+                                if budget is not None:
+                                    budget.require("start")
                                 self._rpc(
                                     agent,
                                     "turn/start",
@@ -2694,7 +2754,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                                     },
                                 )
                             resource._continuation_reason = "sent"
-                        except Exception:
+                        except Exception as exc:
+                            if getattr(exc, "code", None) or type(exc).__name__ == "BudgetError":
+                                raise
                             resource._continuation_reason = "rpc-failed"
                 process = getattr(resource, "process", None)
                 poll = getattr(process, "poll", None)
@@ -3460,9 +3522,36 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         env = _minimal_codex_process_env(home, deepseek_key)
         from ..close_statistics import ActivityRecorder, CAPTURE_DIRECTORY, register_statistics_link
         statistics_parent = getattr(self, "_statistics_parent", None) or self._run_root or self.root / "workspaces/usage-receipts" / self._usage_receipt_session
+        child_budget_binding = binding_with_key_ref(
+            child_model_override,
+            self._provider_credential_key_ref(
+                child_model_override.provider_id
+                if isinstance(child_model_override, RoleModelBinding)
+                else None
+            ),
+        )
         statistics_root = statistics_parent / "evidence/agent-statistics" / uuid4().hex
+        child_budget = runtime_budget(
+            statistics_parent,
+            f"{self._budget_owner_prefix}:acceptance:{spec['child_handle_digest']}",
+            binding=child_budget_binding,
+            runtime="codex",
+            explicit=self._budget_source,
+            run_id=self._run_id,
+            role=spec.get("v3_role", kind),
+            process_instance=str(spec["child_handle_digest"]),
+        )
+        child_budget.register_source(
+            statistics_root / CAPTURE_DIRECTORY / "codex-usage.jsonl", "capture"
+        )
+        if self._provider_sessions is not None:
+            child_budget.register_source(
+                statistics_parent / "evidence/provider-attempts.jsonl", "capture", shared=True,
+                capture_session_id=self._usage_receipt_session,
+            )
         child_activity = ActivityRecorder(statistics_root, {
             "runtime": "codex", "agent_id": str(spec["child_handle_digest"]),
+            "process_instance": str(spec["child_handle_digest"]),
             "role": spec.get("v3_role", kind), "phase": "evaluation",
             "run_id": getattr(v3_packet, "payload", {}).get("run_id") or self._run_id,
             "batch_id": getattr(v3_packet, "batch_id", None),
@@ -3471,11 +3560,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "requested_effort": child_model_override.requested_effort,
                 "effective_effort": child_model_override.effective_effort}
                if isinstance(child_model_override, RoleModelBinding) else {}),
+            **({"key_ref": child_budget.binding["key_ref"]}
+               if child_budget.binding.get("key_ref") else {}),
         }, usage_sources=[{"path": str(statistics_root / CAPTURE_DIRECTORY / "codex-usage.jsonl"), "kind": "capture"},
                           *([{"path": str(statistics_parent / "evidence/provider-attempts.jsonl"),
                               "kind": "capture", "shared": True,
                               "capture_session_id": self._usage_receipt_session}] if self._provider_sessions is not None else [])],
-            fresh_session=True)
+            fresh_session=True,
+            budget=child_budget.budget,
+            budget_owner_id=child_budget.owner_id,
+            budget_binding=child_budget.binding,
+            budget_runtime="codex")
         register_statistics_link(statistics_parent, statistics_root, "acceptance-child-launch")
         if proxy is not None:
             proxy.activity = child_activity
@@ -3545,6 +3640,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             platform_tools=frozenset(spec.get("allowed_read_tools", ())) if kind == "platform" else frozenset(),
             activity=child_activity,
         )
+        child_agent.process_instance = str(spec["child_handle_digest"])
+        child_agent.budget = child_budget
         # Formal external-route children ride the loopback provider proxy
         # (barrier is a marker only); formal ``openai-codex`` children carry the
         # staged ChatGPT login cache, which the barrier unlinks before any
@@ -3631,6 +3728,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "for report_ref when useful; report fields retain the original validation."
             )}]
             startup_stage = "turn-start"
+            child_budget = getattr(child_agent, "budget", None)
+            if child_budget is not None:
+                child_budget.require("start")
             turn_result = self._rpc(child_agent, "turn/start", {"threadId": thread_id, "input": first_turn_input})
             resource.thread_id = thread_id
             resource.first_turn_input = first_turn_input
@@ -4013,6 +4113,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._provider_stop_status.clear()
             self.agents.clear()
             self._acceptance_children.clear()
+            self._budget_control_epochs.clear()
+            self._budget_control_receipts.clear()
             self._run_root = run.root
             self._run_id = run.run_id
             self._active_run = run
@@ -4069,6 +4171,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     credential_bindings,
                     on_failure=self._on_provider_session_failure,
                     on_attempt=self._record_provider_attempt,
+                    **({"before_request": self._before_provider_request}
+                       if self._request_budget() is not None else {}),
                 )
                 sessions.start()
             except Exception as exc:
@@ -4124,6 +4228,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         identities: list[AgentRuntimeIdentity] = []
         scope = getattr(run, "scope", {})
         scope_mode = scope.get("mode") if isinstance(scope, dict) else getattr(scope, "mode", None)
+        from ..close_statistics import ActivityRecorder, CAPTURE_DIRECTORY
         for profile_agent in agents:
             package = profile_agent.package
             base = run.root / "runtime" / profile_agent.agent_id
@@ -4158,20 +4263,57 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     and scope_mode == "create"
                 ),
             )
+            agent.process_instance = uuid4().hex
+            agent.usage_path = (
+                run.root / CAPTURE_DIRECTORY
+                / f"codex-usage-{agent.agent_id}-{agent.process_instance}.jsonl"
+            )
             self.agents[agent.agent_id] = agent
-            from ..close_statistics import ActivityRecorder, CAPTURE_DIRECTORY
             binding = self._validated_model_override(package, formal=self._coordination_enabled)
+            agent_budget_binding = binding_with_key_ref(
+                binding,
+                self._provider_credential_key_ref(
+                    binding.provider_id if isinstance(binding, RoleModelBinding) else None
+                ),
+            )
+            agent.budget = runtime_budget(
+                run.root,
+                f"{self._budget_owner_prefix}:{run.run_id}:{agent.agent_id}:{agent.process_instance}",
+                binding=agent_budget_binding,
+                runtime="codex",
+                explicit=self._budget_source,
+                run_id=run.run_id,
+                agent_id=agent.agent_id,
+                role=package.role,
+                process_instance=agent.process_instance,
+            )
+            agent.budget.register_source(
+                agent.usage_path, "capture"
+            )
+            if self._provider_sessions is not None:
+                agent.budget.register_source(
+                    run.root / "evidence/provider-attempts.jsonl", "capture", shared=True,
+                    capture_session_id=self._usage_receipt_session,
+                )
             agent.activity = ActivityRecorder(run.root, {
                 "runtime": "codex", "agent_id": agent.agent_id, "role": package.role,
+                "process_instance": agent.process_instance,
                 "phase": "production",
                 "run_id": run.run_id,
                 **({"provider": binding.provider_id, "requested_model": binding.model,
                     "requested_effort": binding.requested_effort,
                     "effective_effort": binding.effective_effort} if isinstance(binding, RoleModelBinding) else {}),
-            }, usage_sources=[{"path": str(run.root / CAPTURE_DIRECTORY / "codex-usage.jsonl"), "kind": "capture"},
+                **({"key_ref": agent_budget_binding["key_ref"]}
+                   if agent_budget_binding.get("key_ref") else {}),
+            }, usage_sources=[{"path": str(agent.usage_path), "kind": "capture"},
                               *([{"path": str(run.root / "evidence/provider-attempts.jsonl"),
                                   "kind": "capture", "shared": True,
-                                  "capture_session_id": self._usage_receipt_session}] if self._provider_sessions is not None else [])], fresh_session=True)
+                                  "capture_session_id": self._usage_receipt_session}] if self._provider_sessions is not None else [])],
+                fresh_session=True,
+                budget=agent.budget.budget,
+                budget_owner_id=agent.budget.owner_id,
+                budget_binding=agent.budget.binding,
+                budget_runtime="codex")
             read_proxy = getattr(run, "modeling_read_proxy", None)
             if read_proxy is not None and package.role == "modeling":
                 read_proxy.activity = agent.activity
@@ -6593,6 +6735,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 task_text + "\n\nFrozen roster: " + ", ".join(roster),
             ]
         )
+        budget = getattr(agent, "budget", None)
+        if budget is not None:
+            budget.require("start")
         agent.first_turn_input = injected + [{"type": "text", "text": prompt}]
         result = self._rpc(
             agent,
@@ -6615,6 +6760,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             agent.last_started_turn_id = turn_id
             agent.turn_provider_error = None
             agent.state = "running"
+        self._activity_turn_start(agent, turn_id)
         self._reset_activity_clock(agent)
 
     @staticmethod
@@ -6773,6 +6919,24 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def send_message(
         self, agent_id: str, delivery: RuntimeDelivery
     ) -> RuntimeDispatchReceipt:
+        if delivery.kind == "budget-control":
+            self.receive_messages()
+            try:
+                control = json.loads(delivery.text)
+            except (TypeError, ValueError) as exc:
+                raise CodexRuntimeError("task-budget control payload is invalid") from exc
+            if not isinstance(control, dict) or control.get("source") != "task_budget":
+                raise CodexRuntimeError("task-budget control payload is invalid")
+            control.setdefault("recipient_id", agent_id)
+            result = self.control_budget(control)
+            member = next(
+                (row for row in result.get("members", []) if row.get("agent_id") == agent_id),
+                {},
+            )
+            return RuntimeDispatchReceipt(
+                member.get("mode", "start"),
+                member.get("turn_id"),
+            )
         # A turn/start notification may be queued before an outer message arrives. Pump it
         # first so turn/steer uses the App Server's active turn identity, not a stale reply.
         self.receive_messages()
@@ -6785,6 +6949,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             # goes through ``recover_provider_wait`` only.
             raise CodexRuntimeError("provider wait is active; use an explicit provider recovery")
         if agent.active_turn_id:
+            budget = getattr(agent, "budget", None)
+            if budget is not None:
+                budget.require("steer")
             try:
                 result = self._rpc(
                     agent,
@@ -6815,6 +6982,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         # The server explicitly rejected the first request and supplies its
                         # active turn. One retry preserves the text without duplicating it.
                         agent.active_turn_id = active
+                        if budget is not None:
+                            budget.require("steer")
                         result = self._rpc(
                             agent,
                             "turn/steer",
@@ -6831,6 +7000,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     states = {item.agent_id: item.state for item in self.get_agent_states()}
                     if states.get(agent_id) == "running":
                         raise
+        budget = getattr(agent, "budget", None)
+        if budget is not None:
+            budget.require("start")
         result = self._rpc(
             agent,
             "turn/start",
@@ -6840,6 +7012,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             },
         )
         agent.active_turn_id, agent.state = self._turn_id(result), "running"
+        self._activity_turn_start(agent, agent.active_turn_id)
         # A freshly started turn is the activity origin for the inactivity watchdog.
         self._reset_activity_clock(agent)
         return RuntimeDispatchReceipt("start", agent.active_turn_id)
@@ -6878,6 +7051,37 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ):
             return None
         return item_id
+
+    @staticmethod
+    def _activity_turn_start(agent: _Agent, turn_id: str | None) -> None:
+        """Record one native turn start for close-statistics inflight state."""
+
+        if not isinstance(turn_id, str) or not turn_id:
+            return
+        activity = getattr(agent, "activity", None)
+        if activity is None or getattr(agent, "activity_turn_id", None) == turn_id:
+            return
+        call_id = f"{agent.thread_id}:{turn_id}"
+        activity.emit("llm_start", call_id=call_id, turn_id=turn_id)
+        agent.activity_turn_id = turn_id
+
+    @staticmethod
+    def _activity_turn_end(agent: _Agent, turn_id: str | None, status: str | None) -> None:
+        """Close only the matching native turn; leave missing terminals open."""
+
+        if not isinstance(turn_id, str) or not turn_id:
+            return
+        if getattr(agent, "activity_turn_id", None) != turn_id:
+            return
+        activity = getattr(agent, "activity", None)
+        if activity is not None:
+            activity.emit(
+                "llm_end",
+                call_id=f"{agent.thread_id}:{turn_id}",
+                turn_id=turn_id,
+                status=status or "completed",
+            )
+        agent.activity_turn_id = None
 
     def _notification(self, agent: _Agent, value: dict[str, Any]) -> None:
         self._capture_usage(agent, value)
@@ -6941,6 +7145,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     # A new turn owns the clock: a pause from a prior turn is
                     # stale and must not leak into this turn.
                     agent.active_sleep_item_ids.clear()
+                    self._activity_turn_start(agent, started_id)
             if method in {"turn/completed", "turn/finished"}:
                 turn = params.get("turn")
                 completed_turn_id = (
@@ -6987,6 +7192,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     return
                 if isinstance(completed_turn_id, str):
                     agent.last_completed_turn_id = completed_turn_id
+                turn_status = turn.get("status") if isinstance(turn, dict) else None
+                self._activity_turn_end(agent, completed_turn_id, turn_status)
                 agent.active_turn_id, agent.state = None, "idle"
                 # The turn ended without the sleep completion: the pause never
                 # outlives its turn.
@@ -7132,7 +7339,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             from ..usage_capture import NumericReceiptWriter
             params = value.get("params") or {}
             if params.get("threadId") == agent.thread_id:
-                NumericReceiptWriter(activity.path.parent / "codex-usage.jsonl", activity.context)({
+                budget = getattr(agent, "budget", None)
+                NumericReceiptWriter(
+                    getattr(agent, "usage_path", None)
+                    or activity.path.parent / "codex-usage.jsonl",
+                    activity.context,
+                    budget=budget.budget if budget is not None else None,
+                    budget_owner_id=budget.owner_id if budget is not None else None,
+                    budget_binding=budget.binding if budget is not None else None,
+                    budget_kind="capture",
+                )({
                     "event": "thread_usage", "thread_id": agent.thread_id,
                     "turn_id": params.get("turnId"),
                     "total": (params.get("tokenUsage") or {}).get("total") or {},
@@ -7881,6 +8097,165 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def resume(self) -> None:
         return None
+
+    def control_budget(self, message: dict) -> dict[str, Any]:
+        """Deliver one bounded budget pause/resume through the native Codex turn."""
+
+        if not isinstance(message, dict) or message.get("action") not in {"pause", "resume"}:
+            raise CodexRuntimeError("task-budget control binding is invalid")
+        action = message["action"]
+        epoch = message.get("epoch")
+        if epoch is None:
+            raise CodexRuntimeError("task-budget control epoch is invalid")
+        try:
+            epoch = normalize_control_epoch(epoch)
+        except ValueError as exc:
+            raise CodexRuntimeError("task-budget control epoch is invalid") from exc
+        target_agent_id = (
+            message.get("target_agent_id")
+            or message.get("agent_id")
+            or message.get("recipient_id")
+        )
+        control_key = (
+            f"{action}:{epoch}:{target_agent_id}"
+            if target_agent_id is not None
+            else f"{action}:{epoch}"
+        )
+        if control_key in self._budget_control_epochs:
+            return {
+                **getattr(self, "_budget_control_receipts", {}).get(control_key, {
+                    "status": "already_recorded", "action": action, "epoch": epoch
+                }),
+                "deduplicated": True,
+            }
+        control_id = str(message.get("control_id") or control_key)
+        text = message.get("text")
+        if not isinstance(text, str) or not text:
+            text = (
+                "Task budget pause: stop starting new work and wait for Host control."
+                if action == "pause"
+                else "Task budget resumed: continue the authorized work on this thread."
+            )
+        # Acceptance children are deliberately kept out of ``self.agents`` so
+        # the production lifecycle cleanup cannot mistake an evaluation child
+        # for a roster member.  Their owner still routes a bounded budget
+        # control through this adapter using the native child agent id.
+        agents = list(self.agents.values())
+        for resource in self._acceptance_children.values():
+            child = getattr(resource, "_child_agent", None)
+            if child is not None and child not in agents:
+                agents.append(child)
+        if target_agent_id is not None:
+            agents = [agent for agent in agents if agent.agent_id == target_agent_id]
+            if not agents:
+                raise CodexRuntimeError("task-budget control target is unavailable")
+        statuses = []
+        for agent in agents:
+            budget = getattr(agent, "budget", None)
+            member_control_id = f"{control_id}:{agent.agent_id}"
+            if budget is not None:
+                try:
+                    budget.require(
+                        "control", control_id=member_control_id
+                    )
+                except BudgetError as exc:
+                    if exc.code != "control_turn_already_consumed":
+                        raise
+                    # The core's grant is durable, but the native RPC receipt
+                    # may have been lost across a restart.  Never spend a
+                    # second control turn; report the durable member receipt
+                    # when it exists and otherwise keep the state pending.
+                    receipt = budget.control_receipt(epoch)
+                    statuses.append({
+                        "agent_id": agent.agent_id,
+                        "status": (receipt or {}).get("status", "pending"),
+                        "deduplicated": True,
+                        **({"receipt": receipt} if receipt else {}),
+                    })
+                    continue
+            if agent.process is None or agent.process.poll() is not None or not agent.thread_id:
+                if budget is not None:
+                    budget.record_control(epoch, "not_running", action=action)
+                statuses.append({"agent_id": agent.agent_id, "status": "not_running"})
+                continue
+            member_text = json.dumps({
+                **message, "text": text, "recipient_id": agent.agent_id,
+                "control_id": member_control_id,
+            }, ensure_ascii=False)
+            try:
+                if self._provider_sessions is not None:
+                    provider_id = getattr(agent, "provider_id", None)
+                    if not provider_id and budget is not None:
+                        budget_binding = getattr(budget, "binding", None)
+                        if isinstance(budget_binding, Mapping):
+                            provider_id = (
+                                budget_binding.get("provider")
+                                or budget_binding.get("provider_id")
+                            )
+                        else:
+                            provider_id = (
+                                getattr(budget_binding, "provider_id", None)
+                                or getattr(budget_binding, "provider", None)
+                            )
+                    agent_binding = getattr(agent, "binding", None)
+                    if not provider_id and isinstance(agent_binding, Mapping):
+                        provider_id = (
+                            agent_binding.get("provider")
+                            or agent_binding.get("provider_id")
+                        )
+                    elif not provider_id:
+                        provider_id = (
+                            getattr(agent_binding, "provider_id", None)
+                            or getattr(agent_binding, "provider", None)
+                        )
+                    authorize_control = getattr(
+                        self._provider_sessions, "authorize_control", None
+                    )
+                    if provider_id and callable(authorize_control):
+                        authorize_control(provider_id, member_text, member_control_id)
+                if agent.active_turn_id:
+                    dispatch_mode = "steer"
+                    result = self._rpc(
+                        agent,
+                        "turn/steer",
+                        {
+                            "threadId": agent.thread_id,
+                            "expectedTurnId": agent.active_turn_id,
+                            "input": [{"type": "text", "text": member_text}],
+                        },
+                    )
+                    agent.active_turn_id = self._turn_id(result) or agent.active_turn_id
+                else:
+                    dispatch_mode = "start"
+                    result = self._rpc(
+                        agent,
+                        "turn/start",
+                        {"threadId": agent.thread_id, "input": [{"type": "text", "text": member_text}]},
+                    )
+                    agent.active_turn_id = self._turn_id(result)
+                    agent.state = "running"
+                    self._activity_turn_start(agent, agent.active_turn_id)
+                if budget is not None:
+                    budget.record_control(epoch, "instruction_delivered", action=action)
+                statuses.append({
+                    "agent_id": agent.agent_id,
+                    "status": "instruction_delivered",
+                    "mode": dispatch_mode,
+                    "turn_id": agent.active_turn_id,
+                })
+            except Exception:
+                if budget is not None:
+                    budget.record_control(epoch, "pending", action=action)
+                self._budget_control_epochs.add(control_key)
+                self._budget_control_receipts[control_key] = {
+                    "status": "pending", "action": action, "epoch": epoch,
+                    "members": statuses,
+                }
+                raise
+        self._budget_control_epochs.add(control_key)
+        result = {"status": "instruction_delivered", "action": action, "epoch": epoch, "members": statuses}
+        self._budget_control_receipts[control_key] = result
+        return result
 
     def _record_cleanup_error(self, identity: str, reason_code: str) -> None:
         """Retain only a fixed, safe cleanup failure projection."""

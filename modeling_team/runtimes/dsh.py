@@ -15,7 +15,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .base import (
     AgentRuntimeIdentity,
@@ -36,6 +36,13 @@ from ..deepseek_provider_proxy import (
 from ..messages_provider_proxy import MessagesProviderSession
 from ..usage_capture import NumericReceiptWriter
 from ..close_statistics import ActivityRecorder, clock_ref
+from .budget import (
+    binding_with_key_ref,
+    normalize_control_epoch,
+    runtime_budget,
+    valid_key_ref,
+)
+from ..task_budget import BudgetError
 from ..model_routing import validate_runtime_model_profile
 
 
@@ -81,6 +88,7 @@ class _DshAgent:
     recovering: bool = False
     activity: Any = None
     usage_context: dict = field(default_factory=dict)
+    budget: Any = None
 
 
 class DshRuntimeAdapter(RuntimeAdapter):
@@ -93,11 +101,15 @@ class DshRuntimeAdapter(RuntimeAdapter):
         harness_root: Path | None = None,
         process_factory=subprocess.Popen,
         provider_factory=MessagesProviderSession,
+        budget=None,
+        budget_owner_prefix=None,
     ):
         self.root = Path(repository_root)
         self.harness_root = harness_root or Path("/home/yangxiang/deepseek-harness")
         self.process_factory = process_factory
         self.provider_factory = provider_factory
+        self._budget_source = budget
+        self._budget_owner_prefix = budget_owner_prefix or "dsh"
         self.agents: dict[str, _DshAgent] = {}
         self._lock = threading.RLock()
         self._messages = queue.SimpleQueue()
@@ -110,6 +122,8 @@ class DshRuntimeAdapter(RuntimeAdapter):
         self._cleanup = {}
         self._control_epoch = 0
         self._build = None
+        self._budget_control_epochs: set[str] = set()
+        self._budget_control_receipts: dict[str, dict] = {}
 
     def _record(self, name, value):
         if self._run is None:
@@ -120,12 +134,89 @@ class DshRuntimeAdapter(RuntimeAdapter):
         with self._lock, path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(value, ensure_ascii=False, default=str) + "\n")
 
+    def _before_provider_request(self, receipt):
+        """Admit each real Messages request for its registered DSH member."""
+
+        budgets = [
+            agent.budget
+            for agent in self.agents.values()
+            if getattr(agent, "budget", None) is not None
+            and getattr(agent.budget, "budget", None) is not None
+        ]
+        if not budgets:
+            return
+        session_id = receipt.get("runtime_session_id")
+        matches = [
+            agent for agent in self.agents.values()
+            if session_id and agent.session_id == session_id
+        ]
+        if not matches and session_id is None and len(budgets) == 1:
+            matches = [
+                agent for agent in self.agents.values()
+                if getattr(agent, "budget", None) is not None
+                and getattr(agent.budget, "budget", None) is not None
+            ]
+        if len(matches) != 1:
+            raise BudgetError(
+                "budget_member_identity_missing",
+                {"runtime_session_id": session_id, "provider": receipt.get("provider")},
+            )
+        matches[0].budget.require("send")
+
+    def _record_budget_control(self, budget, epoch, status, **metadata):
+        """Keep SIGSTOP/SIGCONT effective when the budget ledger is unreadable."""
+
+        try:
+            budget.record_control(epoch, status, **metadata)
+        except Exception:
+            self._record(
+                "budget-control",
+                {
+                    "owner_id": getattr(budget, "owner_id", None),
+                    "epoch": epoch,
+                    "status": "unavailable",
+                    "requested_status": status,
+                    "action": metadata.get("action"),
+                },
+            )
+
     def _register_usage(self, agent, binding, **context):
+        provider_bindings = getattr(self._run, "provider_credential_bindings", None)
+        credential_binding = (
+            provider_bindings.get(binding.provider_id)
+            if isinstance(provider_bindings, Mapping)
+            else None
+        )
+        key_ref = valid_key_ref(getattr(credential_binding, "key_ref", None))
+        budget_binding = binding_with_key_ref(binding, key_ref)
+        if agent.budget is None and self._run is not None:
+            budget_root = getattr(self, "_statistics_parent", None) or self._run.root
+            agent.budget = runtime_budget(
+                budget_root,
+                f"{self._budget_owner_prefix}:{context.get('run_id', self._run.run_id)}:{agent.agent_id}:{agent.instance}",
+                binding=budget_binding,
+                runtime="dsh",
+                explicit=self._budget_source,
+                **context,
+                role=agent.package.role,
+                process_instance=agent.instance,
+            )
+            agent.budget.register_source(
+                self._run.root / "evidence/dsh-provider.jsonl",
+                "dsh_capture",
+                shared=True,
+            )
+            agent.budget.register_source(
+                self._run.root / "evidence" / f"dsh-native-{agent.agent_id}.jsonl",
+                "dsh_native",
+            )
         agent.usage_context = {
             "role": agent.package.role, "agent_id": agent.agent_id, "process_instance": agent.instance,
             "provider": binding.provider_id, "requested_model": binding.model,
             "requested_effort": binding.requested_effort,
-            "effective_effort": binding.effective_effort, **context,
+            "effective_effort": binding.effective_effort,
+            **({"key_ref": key_ref} if key_ref is not None else {}),
+            **context,
         }
         if agent.activity:
             agent.activity.context.update(agent.usage_context)
@@ -160,12 +251,15 @@ class DshRuntimeAdapter(RuntimeAdapter):
         self._wait_events = queue.SimpleQueue()
         self._failures = queue.SimpleQueue()
         self._build = freeze_build(self.harness_root)
+        self._budget_control_epochs.clear()
+        self._budget_control_receipts.clear()
         provider_id = next(iter(run.team_model_profile.provider_ids()))
         reader = read_glm_credential if provider_id == "glm-messages" else read_deepseek_credential
         credential = bytearray(reader(run.provider_credential_bindings[provider_id]))
         self._provider = self.provider_factory(
             credential, **({"provider_id": provider_id} if provider_id == "glm-messages" else {}),
-            on_attempt=NumericReceiptWriter(run.root / "evidence" / "dsh-provider.jsonl")
+            on_attempt=NumericReceiptWriter(run.root / "evidence" / "dsh-provider.jsonl"),
+            before_request=self._before_provider_request,
         )
         credential[:] = b"\0" * len(credential)
         try:
@@ -181,15 +275,40 @@ class DshRuntimeAdapter(RuntimeAdapter):
                     run.root / "runtime" / configured.agent_id,
                     f"{run.run_id}-{configured.agent_id}-{uuid.uuid4().hex[:12]}",
                 )
+                binding = run.team_model_profile.binding_for(
+                    agent.package.package_id, semantic_role=agent.package.role
+                )
+                credential_bindings = getattr(run, "provider_credential_bindings", None)
+                credential_binding = (
+                    credential_bindings.get(binding.provider_id)
+                    if isinstance(credential_bindings, Mapping)
+                    else None
+                )
+                budget_binding = binding_with_key_ref(
+                    binding, getattr(credential_binding, "key_ref", None)
+                )
+                agent.budget = runtime_budget(
+                    run.root,
+                    f"{self._budget_owner_prefix}:{run.run_id}:{agent.agent_id}:{agent.instance}",
+                    binding=budget_binding,
+                    runtime="dsh",
+                    explicit=self._budget_source,
+                    run_id=run.run_id,
+                    agent_id=agent.agent_id,
+                    role=agent.package.role,
+                    process_instance=agent.instance,
+                )
+                agent.budget.register_source(
+                    run.root / "evidence/dsh-provider.jsonl",
+                    "dsh_capture",
+                    shared=True,
+                )
                 if retry_load:
                     agent.base /= "load-" + agent.instance
                 agent.projection = DispatchProjection(agent.session_id)
                 self.agents[agent.agent_id] = agent
                 self._stage(agent)
                 self._launch(agent)
-                binding = run.team_model_profile.binding_for(
-                    agent.package.package_id, semantic_role=agent.package.role
-                )
                 self._register_usage(agent, binding, run_id=run.run_id, phase="production")
                 result = self._rpc(
                     agent,
@@ -543,7 +662,14 @@ class DshRuntimeAdapter(RuntimeAdapter):
             **agent.usage_context,
             **({"provider": binding.provider_id, "requested_model": binding.model,
                 "requested_effort": binding.requested_effort, "effective_effort": binding.effective_effort} if binding else {}),
-        }, usage_sources=[{"path": str(self._run.root / "evidence/dsh-provider.jsonl"), "kind": "dsh_capture"}])
+        }, usage_sources=[
+            {"path": str(self._run.root / "evidence/dsh-provider.jsonl"), "kind": "dsh_capture", "shared": True},
+            {"path": str(self._run.root / "evidence" / f"dsh-native-{agent.agent_id}.jsonl"), "kind": "dsh_native"},
+        ],
+            budget=agent.budget.budget if agent.budget is not None else None,
+            budget_owner_id=agent.budget.owner_id if agent.budget is not None else None,
+            budget_binding=agent.budget.binding if agent.budget is not None else None,
+            budget_runtime="dsh")
         agent.stderr = (agent.base / "stderr.log").open("a", encoding="utf-8")
         try:
             agent.process = self.process_factory(
@@ -605,6 +731,20 @@ class DshRuntimeAdapter(RuntimeAdapter):
                 if value.get("method") != "host/activity":
                     self._record(
                         "wire",
+                        {
+                            "agent_id": agent.agent_id,
+                            "session_id": agent.session_id,
+                            "process_instance": agent.instance,
+                            "frame": value,
+                        },
+                    )
+                if value.get("method") == "session.event":
+                    # Keep the original numeric DSH session frame in a
+                    # per-member Host source.  TaskBudget consumes it through
+                    # native_numeric_event; the native namespace never sees
+                    # this evidence path.
+                    self._record(
+                        f"native-{agent.agent_id}",
                         {
                             "agent_id": agent.agent_id,
                             "session_id": agent.session_id,
@@ -797,6 +937,8 @@ class DshRuntimeAdapter(RuntimeAdapter):
                 )
             if agent.wait is not None and delivery.kind != "provider-recovery":
                 raise DshRuntimeError("provider wait pending; recover the original wait_id first")
+            if agent.budget is not None:
+                agent.budget.require("send")
             agent.dispatching += 1
             if public_key:
                 agent.public_dispatches[public_key] = (delivery, dispatch_id)
@@ -1234,6 +1376,72 @@ class DshRuntimeAdapter(RuntimeAdapter):
                 },
             )
             return groups
+
+    def control_budget(self, message):
+        """Apply a task-budget process control while retaining Host ownership."""
+
+        if not isinstance(message, dict) or message.get("action") not in {"pause", "resume"}:
+            raise DshRuntimeError("task-budget control binding is invalid", category="rejected")
+        action = message["action"]
+        epoch = message.get("epoch")
+        if epoch is None:
+            raise DshRuntimeError("task-budget control epoch is invalid", category="rejected")
+        try:
+            epoch = normalize_control_epoch(epoch)
+        except ValueError as exc:
+            raise DshRuntimeError("task-budget control epoch is invalid", category="rejected") from exc
+        key = f"{message['action']}:{epoch}"
+        if key in self._budget_control_epochs:
+            return {
+                **self._budget_control_receipts.get(key, {
+                    "status": "already_recorded",
+                    "action": message["action"],
+                    "epoch": epoch,
+                }),
+                "deduplicated": True,
+            }
+        budgets = [
+            budget
+            for agent in self.agents.values()
+            if (budget := getattr(agent, "budget", None)) is not None
+        ]
+        if action == "resume" and budgets:
+            budget_core = budgets[0].budget
+            show = getattr(budget_core, "show", None)
+            if callable(show):
+                try:
+                    state = show("delivery")
+                except Exception:
+                    # Native process control remains available for Host
+                    # reconciliation when the shared ledger is corrupt.
+                    state = None
+                if state is not None and (
+                    not state.get("admission_open") or state.get("pause_reasons")
+                ):
+                    for budget in budgets:
+                        self._record_budget_control(
+                            budget,
+                            epoch, "pending", action=action,
+                            pause_reasons=state.get("pause_reasons", []),
+                        )
+                    evidence = {
+                        "status": "pending", "action": action, "epoch": epoch,
+                        "pause_reasons": state.get("pause_reasons", []),
+                    }
+                    self._budget_control_receipts[key] = evidence
+                    return evidence
+        try:
+            groups = self.pause() if action == "pause" else self.resume()
+        except Exception:
+            for budget in budgets:
+                self._record_budget_control(budget, epoch, "pending", action=action)
+            raise
+        for budget in budgets:
+            self._record_budget_control(budget, epoch, "effective", action=action, groups=groups)
+        result = {"status": "effective", "action": action, "epoch": epoch, "groups": groups}
+        self._budget_control_epochs.add(key)
+        self._budget_control_receipts[key] = result
+        return result
 
     def probe_role_visibility(self, run):
         results = {}

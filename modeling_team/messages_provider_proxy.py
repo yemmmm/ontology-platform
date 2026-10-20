@@ -95,11 +95,6 @@ class _MessagesHandler(BaseHTTPRequestHandler):
             for key, value in self.headers.items()
             if key.lower() in {"anthropic-version", "anthropic-beta", "x-request-id"}
         }
-        connection = http.client.HTTPSConnection(
-            session.upstream_host,
-            timeout=session.connect_timeout,
-            context=ssl.create_default_context(),
-        )
         response = None
         started = False
         status = None
@@ -124,6 +119,18 @@ class _MessagesHandler(BaseHTTPRequestHandler):
             "provider_id": session.provider_id,
             "usage_session_id": session._usage_session_id,
         }
+        if not session.admit_attempt(receipt):
+            self.send_response(402)
+            self.send_header("Connection", "close")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self.close_connection = True
+            return
+        connection = http.client.HTTPSConnection(
+            session.upstream_host,
+            timeout=session.connect_timeout,
+            context=ssl.create_default_context(),
+        )
         session.record_attempt(receipt)
         outcome = "transport_error"
         headers_at = provider_request_id = None

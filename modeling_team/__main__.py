@@ -2563,7 +2563,14 @@ def _cq_execute_batch(
     artifacts = run_root if artifact_root is None else Path(artifact_root)
     if getattr(args, "_retention_enabled", False) and getattr(args, "_retained_owner", None) is None:
         from .evaluation_owner import EvaluationOwner
-        args._retained_owner = EvaluationOwner(getattr(args, "owner_root", None) or artifacts / "control" / ("evaluation-" + batch_id))
+        from .task_budget import bind_budget, budget_for
+        owner_root = getattr(args, "owner_root", None) or artifacts / "control" / ("evaluation-" + batch_id)
+        inherited_budget = budget_for(owner_root) or budget_for(artifacts) or budget_for(run_root)
+        if inherited_budget is not None:
+            bind_budget(owner_root, inherited_budget.ref,
+                        "evaluation:" + Path(owner_root).name.removesuffix(".owner"),
+                        kind="evaluation", run_id=run_root.name)
+        args._retained_owner = EvaluationOwner(owner_root)
     read_key = os.environ.get(_CQ_PLATFORM_READ_KEY_ENV)
     if not read_key:
         raise TeamConfigurationError(
@@ -3412,6 +3419,12 @@ def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
     output_root = run_root / "early-feedback" / uuid4().hex
     output_root.mkdir(parents=True, mode=0o700)
     args._statistics_parent = getattr(args, "statistics_root", None) or output_root
+    from .task_budget import budget_for
+    from .evaluation_owner import EvaluationOwner
+    budget_owner = None
+    if budget_for(args._statistics_parent) is not None:
+        budget_owner = EvaluationOwner(Path(args._statistics_parent))
+        args._retained_owner = budget_owner
     record = {"run_id": run_root.name, "checkpoint_id": args.checkpoint_id,
               "freeze_id": args.freeze_id, "question_ids": list(args.question_id),
               "purpose": "public-nonblind-production-feedback", "status": "not-executed",
@@ -3523,6 +3536,8 @@ def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
         record["examiner_first_failure"] = _cq_first_examiner_failure(reports, None)
         record["cleanup"] = _cq_cleanup_acceptance_resources(
             forwarder, child_teardowns)
+        if budget_owner is not None:
+            budget_owner.close()
         from .close_statistics import publish_close_statistics, register_statistics_link
         statistics_root = getattr(args, "statistics_root", None) or output_root
         register_statistics_link(run_root, statistics_root, "public-feedback-operation-ledger")
@@ -3655,6 +3670,13 @@ def _run_checkpoint_resume_acceptance(
 
     runs_root = root / "workspaces" / "modeling-runs"
     source_root = runs_root / args.run_id
+    from .task_budget import TaskBudget, bind_budget, budget_for
+    original_budget = budget_for(source_root)
+    explicit_ref = getattr(args, "budget_ref", None)
+    if original_budget is not None and explicit_ref and Path(explicit_ref).resolve() != original_budget.ref:
+        print("checkpoint failed: budget_binding_conflict", file=sys.stderr)
+        return 2
+    task_budget = original_budget or (TaskBudget(explicit_ref) if explicit_ref else None)
     if not source_root.is_dir():
         print(
             f"checkpoint failed: run root for {args.run_id!r} does not exist "
@@ -3740,6 +3762,14 @@ def _run_checkpoint_resume_acceptance(
         # source run and checkpoint (§7; also what later continuations and
         # manual cleanup check).
         write_acceptance_origin(plan, output_root)
+        if task_budget is not None:
+            owner_root = getattr(args, "owner_root", None) or output_root / "control" / ("evaluation-" + plan.batch_id)
+            args.owner_root = owner_root
+            budget_owner_id = "evaluation:" + Path(owner_root).name.removesuffix(".owner")
+            bind_budget(output_root, task_budget.ref, budget_owner_id,
+                        kind="evaluation", run_id=plan.new_run_id)
+            bind_budget(owner_root, task_budget.ref, budget_owner_id,
+                        kind="evaluation", run_id=plan.new_run_id)
         source_run_id = str(plan.origin.get("source_run_id"))
         record = {
             "schema_version": ACCEPTANCE_CONTINUATION_SCHEMA,
@@ -3763,6 +3793,8 @@ def _run_checkpoint_resume_acceptance(
             "prep_seconds": plan.inspection["prep_timing"]["prep_seconds"],
         }
         if plan.complete_report is not None:
+            if task_budget is not None:
+                task_budget.record_control(budget_owner_id, task_budget.show()["epoch"], "not_started")
             # M34: a complete usable PASS report exists -> verify and close
             # only.  No Examiner session, no Judge session, no model call.
             write_acceptance_continuation_record(
@@ -3889,6 +3921,88 @@ def _run_checkpoint_resume_acceptance(
             acceptance_lock.release()
 
 
+def _read_task_budget_config(
+    path: Path, *, authorization_reference: str | None = None
+) -> dict[str, object]:
+    """Read one Host-owned amount-budget config without starting a run.
+
+    The budget core owns semantic and persistence validation. The CLI only
+    enforces that write commands receive a structured Host document and a
+    real user authorization reference; it never derives one from a run,
+    session, or natural-language input.
+    """
+
+    try:
+        raw = sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise TeamConfigurationError(f"task budget config is not readable: {path}") from exc
+    try:
+        value = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        raise TeamConfigurationError("task budget config is invalid YAML/JSON") from exc
+    if not isinstance(value, dict):
+        raise TeamConfigurationError("task budget config must be a structured object")
+    config = dict(value)
+
+    if authorization_reference is not None:
+        if not isinstance(authorization_reference, str) or not authorization_reference.strip():
+            raise TeamConfigurationError("task budget authorization reference is invalid")
+        configured_reference = config.get("authorization_reference") or config.get("authorization_id")
+        if configured_reference is not None and configured_reference != authorization_reference:
+            raise TeamConfigurationError(
+                "task budget authorization reference conflicts with the Host config"
+            )
+        config["authorization_reference"] = authorization_reference
+    reference = config.get("authorization_reference") or config.get("authorization_id")
+    if not isinstance(reference, str) or not reference.strip():
+        raise TeamConfigurationError(
+            "task budget config requires a real user authorization_reference or authorization_id"
+        )
+    if "mode" in config and config["mode"] != "amount":
+        raise TeamConfigurationError("task budget config mode must be amount")
+    config.setdefault("mode", "amount")
+    return config
+
+
+def _jsonable_task_budget_result(value: object) -> object:
+    """Project a core result for the CLI without making the core a serializer."""
+
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        return value.to_dict()
+    if hasattr(value, "as_dict") and callable(value.as_dict):
+        return value.as_dict()
+    if hasattr(value, "show") and callable(value.show):
+        return value.show(audience="host")
+    return value
+
+
+def _run_task_budget(args: argparse.Namespace) -> int:
+    """Dispatch the Host-only task budget CLI to the shared budget core."""
+
+    # Keep this import lazy so legacy commands remain usable while the R4.4-002
+    # core is unavailable; no model process is started by this command.
+    try:
+        from .task_budget import TaskBudget
+    except ImportError as exc:
+        raise TeamConfigurationError(
+            "task budget core is unavailable; amount authorization cannot be written"
+        ) from exc
+
+    budget = TaskBudget(args.ref)
+    if args.task_budget_action == "show":
+        result = budget.show(audience=args.audience)
+    else:
+        config = _read_task_budget_config(
+            args.config, authorization_reference=getattr(args, "authorization_reference", None)
+        )
+        if args.task_budget_action == "create":
+            result = budget.create(args.ref, config)
+        else:
+            result = budget.add(config)
+    print(json.dumps(_jsonable_task_budget_result(result), ensure_ascii=False, default=str))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="R2.3-001 foreground Team Runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -3906,6 +4020,34 @@ def main() -> int:
     board.add_argument("--limit", type=int, default=25)
     board.add_argument("--with-statistics", action="store_true")
     board.add_argument("--json", action="store_true")
+    task_budget_parser = subparsers.add_parser(
+        "task-budget", help="Host-only monetary task budget authorization and read-only projection"
+    )
+    task_budget_subparsers = task_budget_parser.add_subparsers(
+        dest="task_budget_action", required=True
+    )
+    for action in ("create", "add"):
+        budget_action = task_budget_subparsers.add_parser(
+            action,
+            help=(
+                "create a new amount budget" if action == "create"
+                else "append a user-authorized amount to an existing budget"
+            ),
+        )
+        budget_action.add_argument("--ref", required=True, help="stable Host-owned budget reference")
+        budget_action.add_argument(
+            "--config", required=True, type=Path,
+            help="Host-owned JSON/YAML object; '-' reads one object from stdin",
+        )
+        budget_action.add_argument(
+            "--authorization-reference",
+            help="real user authorization reference; may instead be present in --config",
+        )
+    budget_show = task_budget_subparsers.add_parser(
+        "show", help="read the existing budget projection without writing or starting a model"
+    )
+    budget_show.add_argument("--ref", required=True, help="stable Host-owned budget reference")
+    budget_show.add_argument("--audience", choices=["host", "delivery"], default="host")
     incremental = subparsers.add_parser("incremental", help="Trusted Host incremental modeling on an existing Project")
     incremental.add_argument("incremental_action", choices=["start"])
     incremental.add_argument("--request", required=True, type=Path)
@@ -3938,6 +4080,10 @@ def main() -> int:
     run.add_argument("--model-profile")
     run.add_argument("--run-id", required=True)
     run.add_argument("--scope", required=True, type=Path)
+    run.add_argument(
+        "--budget-ref", type=Path,
+        help="trusted Host task-budget reference for an explicit amount-mode run",
+    )
     run.add_argument("--base-url", default="http://127.0.0.1:8001")
     run.add_argument("--freeze-started-at")
     run.add_argument(
@@ -4093,6 +4239,10 @@ def main() -> int:
         help="host-recorded authorization reference for the ledger record; "
         "it never becomes an in-code start-count hard gate",
     )
+    checkpoint_resume.add_argument(
+        "--budget-ref", type=Path,
+        help="trusted Host task-budget reference for an explicit amount-mode production resume",
+    )
     checkpoint_resume.add_argument("--base-url", default="http://127.0.0.1:8001")
     checkpoint_resume.add_argument(
         "--freeze-started-at",
@@ -4111,6 +4261,12 @@ def main() -> int:
         "--fork-reason", help="Explicitly restore saved data into a new Project; record why",
     )
     args = parser.parse_args()
+    if args.command == "task-budget":
+        try:
+            return _run_task_budget(args)
+        except (OSError, ValueError, TeamConfigurationError) as exc:
+            print(json.dumps({"error": getattr(exc, "code", "task_budget_failed"), "detail": str(exc)}, ensure_ascii=False))
+            return 2
     if args.command == "work-board":
         from .host_ops import get_team_work_board
         from .work_board import render_board
@@ -4469,6 +4625,7 @@ def main() -> int:
                 repository_root=root,
                 adapter=adapter,
                 scope_factory=resume_scope_factory,
+                **({"budget_ref": args.budget_ref} if getattr(args, "budget_ref", None) is not None else {}),
                 freeze_started_at=args.freeze_started_at,
                 canonical_base_url=args.base_url,
                 canonical_admin_key=os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY"),
@@ -4517,6 +4674,7 @@ def main() -> int:
                 repository_root=root,
                 adapter=adapter,
                 scope_factory=scope_factory,
+                **({"budget_ref": args.budget_ref} if getattr(args, "budget_ref", None) is not None else {}),
                 freeze_started_at=args.freeze_started_at,
                 canonical_base_url=args.base_url,
                 canonical_admin_key=os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY"),

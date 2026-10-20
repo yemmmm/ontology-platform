@@ -86,12 +86,53 @@ def numeric_usage(raw: dict) -> tuple[dict, list[str]]:
 
 
 class NumericReceiptWriter:
-    """One concrete append-only writer for Delivery usage and proxy attempts."""
+    """One concrete append-only writer for Delivery usage and proxy attempts.
 
-    def __init__(self, path: Path, context: dict | None = None):
+    ``budget`` is an optional Host-side registration hook.  The writer never
+    receives or serializes the budget object in a receipt and capture failures
+    remain advisory; runtime admission is performed by the runtime boundary
+    immediately before a model request.
+    """
+
+    def __init__(
+        self,
+        path: Path,
+        context: dict | None = None,
+        *,
+        budget: Any | None = None,
+        budget_owner_id: str | None = None,
+        budget_binding: Any | None = None,
+        budget_kind: str = "capture",
+    ):
         self.path = Path(path)
         self.context = identity(context)
         self._lock = threading.Lock()
+        self.budget = budget
+        self.budget_owner_id = budget_owner_id
+        if budget is not None and budget_owner_id:
+            try:
+                from .runtimes.budget import (
+                    binding_projection,
+                    ensure_source_file,
+                    source_identity,
+                )
+
+                source_id = source_identity(budget_owner_id, self.path, budget_kind)
+                if source_id not in (budget.show("host").get("sources") or {}):
+                    ensure_source_file(self.path)
+                budget.register_source(
+                    source_id,
+                    str(self.path.resolve()),
+                    budget_kind,
+                    binding=binding_projection(budget_binding),
+                    owner_id=budget_owner_id,
+                    runtime=self.context.get("runtime"),
+                )
+            except Exception:
+                # Source registration is repeated by the runtime gate, where a
+                # failure can safely block a new request.  The numeric writer
+                # itself must retain its existing advisory capture contract.
+                LOG.warning("usage_capture_budget_source_unavailable")
 
     def __call__(self, event: dict[str, Any]) -> None:
         # Only these two numeric contracts can be persisted. Never store a
@@ -131,6 +172,10 @@ class NumericReceiptWriter:
             "completed",
             "stream_error",
             "client_disconnected",
+            # A Host admission denial is a local fact: no upstream attempt
+            # started and no usage is implied.  Preserve the fixed status so
+            # the budget ledger can exclude it from provider settlement.
+            "not_admitted",
         ):
             safe["status"] = None
         if event.get("event") == "response_usage":
