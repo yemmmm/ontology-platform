@@ -1,0 +1,959 @@
+{
+  "collected_at": "2026-10-20T01:21:00.287231+00:00",
+  "scope": "remaining third authorized round; complete request_ref real adoption and original independent 1+3 non-blind regression",
+  "run_id": "minimal-chain-20261020-dsh-glm-low-r3",
+  "session_id": "minimal-chain-20261020-request-ref-live",
+  "code_commit": "2c657312d1429547a78d6293453ab1e7c41e98da",
+  "runtime": "dsh",
+  "model": "glm-5.3-flash",
+  "effort": "low",
+  "authorization": {
+    "total": 3,
+    "consumed": 3,
+    "remaining": 0,
+    "fresh_semantic_starts": 3,
+    "current_round": 3,
+    "current_semantic_start": {
+      "baseline_hash": "7c40a4a05bfe84de22dd0c8e5fa46ba89e5cded5938c4c124373d8bc81327205",
+      "recorded_at": "2026-10-20T01:04:37.586733+00:00"
+    },
+    "substantive_remodeling": false
+  },
+  "request_submissions": [
+    {
+      "name": "mcp__runner_capability__modeling_submit_model_changes",
+      "arguments": {
+        "modeling_id": "modeling",
+        "request_ref": {
+          "material_id": "material-a8178b4441db4156bd6440b8a1bdba60",
+          "path": "batch1-classes-request.json"
+        }
+      },
+      "seq": 39,
+      "time": 1792458336823,
+      "result": {
+        "status": "not_written",
+        "errors": [
+          {
+            "actual": null,
+            "change_id": null,
+            "code": "scope_binding_required",
+            "expected": null,
+            "item_id": null,
+            "message": "Wait for the existing confirmed scope/topology before model writes",
+            "path": "",
+            "platform_ref": null,
+            "retryable": true
+          }
+        ],
+        "batches": [],
+        "submission_digest": null,
+        "submission_ref": null
+      }
+    },
+    {
+      "name": "mcp__runner_capability__modeling_submit_model_changes",
+      "arguments": {
+        "modeling_id": "modeling",
+        "request_ref": {
+          "material_id": "material-a8178b4441db4156bd6440b8a1bdba60",
+          "path": "batch1-classes-request.json"
+        }
+      },
+      "seq": 65,
+      "time": 1792458382043,
+      "result": {
+        "status": "not_written",
+        "errors": [
+          {
+            "actual": null,
+            "change_id": null,
+            "code": "cq_freeze_pending",
+            "expected": null,
+            "item_id": null,
+            "message": "The approved public competency-question projection is not frozen",
+            "path": "",
+            "platform_ref": null,
+            "retryable": true
+          }
+        ],
+        "batches": [],
+        "submission_digest": null,
+        "submission_ref": null
+      }
+    },
+    {
+      "name": "mcp__runner_capability__modeling_submit_model_changes",
+      "arguments": {
+        "modeling_id": "modeling",
+        "request_ref": {
+          "material_id": "material-a8178b4441db4156bd6440b8a1bdba60",
+          "path": "batch1-classes-request.json"
+        }
+      },
+      "seq": 95,
+      "time": 1792458433808,
+      "result": {
+        "status": "not_written",
+        "errors": [
+          {
+            "actual": null,
+            "change_id": null,
+            "code": "cq_freeze_pending",
+            "expected": null,
+            "item_id": null,
+            "message": "The approved public competency-question projection is not frozen",
+            "path": "",
+            "platform_ref": null,
+            "retryable": true
+          }
+        ],
+        "batches": [],
+        "submission_digest": null,
+        "submission_ref": null
+      }
+    },
+    {
+      "name": "mcp__runner_capability__modeling_submit_model_changes",
+      "arguments": {
+        "modeling_id": "modeling",
+        "request_ref": {
+          "material_id": "material-a8178b4441db4156bd6440b8a1bdba60",
+          "path": "batch1-classes-request.json"
+        }
+      },
+      "seq": 114,
+      "time": 1792458455685,
+      "result": {
+        "status": "completed",
+        "errors": [],
+        "batches": [
+          {
+            "attempt_id": "e90e35d4-50b3-456b-a782-e6cd528a11bd",
+            "attempt_status": "applied",
+            "batch_id": "a35d94ae-f69c-4862-abe0-df5e6ee4a145",
+            "batch_index": 0,
+            "change_ids": [
+              "define-service-site-class",
+              "define-installed-asset-class"
+            ],
+            "errors": [],
+            "intent_ordinal": 1,
+            "model_revision_after": 1,
+            "model_revision_before": 0,
+            "ontology_id": "cf0661bb-9a53-40bd-a543-9ae7d2b8a1ba",
+            "receipt_ref": "evidence/platform-responses/07bf2188df71ffe693b9566c3abcf88612a9ebdbcaf4f6549dbfaec35e28153c-603f060e1e142765905fbb06aed928a31aef00c9fb2b724ba490b08e6f21dd97.json",
+            "resource_bindings": [
+              {
+                "change_id": "define-service-site-class",
+                "existing_resource_ref": {
+                  "artifact_ref": "evidence/platform-responses/07bf2188df71ffe693b9566c3abcf88612a9ebdbcaf4f6549dbfaec35e28153c-603f060e1e142765905fbb06aed928a31aef00c9fb2b724ba490b08e6f21dd97.json",
+                  "path": "/structuredContent/data/items/1"
+                },
+                "item_id": "define-service-site-class",
+                "resource_id": "ebf8193f-f170-59ac-8aa4-a0736db67215",
+                "resource_iri": "http://ontology-platform.local/semantic/class/ebf8193f-f170-59ac-8aa4-a0736db67215",
+                "resource_kind": "class"
+              },
+              {
+                "change_id": "define-installed-asset-class",
+                "existing_resource_ref": {
+                  "artifact_ref": "evidence/platform-responses/07bf2188df71ffe693b9566c3abcf88612a9ebdbcaf4f6549dbfaec35e28153c-603f060e1e142765905fbb06aed928a31aef00c9fb2b724ba490b08e6f21dd97.json",
+                  "path": "/structuredContent/data/items/0"
+                },
+                "item_id": "define-installed-asset-class",
+                "resource_id": "cc812d0b-d3f5-590a-889c-f3964e79b957",
+                "resource_iri": "http://ontology-platform.local/semantic/class/cc812d0b-d3f5-590a-889c-f3964e79b957",
+                "resource_kind": "class"
+              }
+            ],
+            "retrieval_indexes": [
+              {
+                "job_id": "33d09476-a234-4d41-a242-74c75fb30f49",
+                "model_revision": 1,
+                "ontology_id": "cf0661bb-9a53-40bd-a543-9ae7d2b8a1ba",
+                "projection_version": "semantic-retrieval-v2",
+                "stale_manifest_ids": [],
+                "status": "current",
+                "write_applied": true
+              }
+            ],
+            "write_state": "applied"
+          }
+        ],
+        "submission_digest": "6c255ad557eb3f370c65b646e35cc588e46b76465b0f9d94992427673314e7bf",
+        "submission_ref": "value-semantics/submission-intents/submission-6c255ad557eb3f370c65b646e35cc588e46b76465b0f9d94992427673314e7bf.json"
+      }
+    },
+    {
+      "name": "mcp__runner_capability__modeling_submit_model_changes",
+      "arguments": {
+        "modeling_id": "modeling",
+        "request_ref": {
+          "material_id": "material-53023d43e8e94593b43c56b0a4e78248",
+          "path": "batch2-relation-request.json"
+        }
+      },
+      "seq": 129,
+      "time": 1792458489860,
+      "result": {
+        "status": "not_written",
+        "errors": [
+          {
+            "actual": null,
+            "change_id": "define-installed-at-relation",
+            "code": "unsupported_change_field",
+            "expected": null,
+            "item_id": null,
+            "message": "fields contain unsupported field(s): aliases; supported for create_relation_type: description, name, scope_policy, semantic_definition, source_class_id, status, symmetric, target_class_id, transitive",
+            "path": "/changes/0/fields",
+            "platform_ref": null,
+            "retryable": true
+          }
+        ],
+        "batches": [],
+        "submission_digest": "b6c6d7b1de161d507910952a70c9905ff8626b489a89f7b80e7dc4be065690c4",
+        "submission_ref": "value-semantics/submission-intents/submission-b6c6d7b1de161d507910952a70c9905ff8626b489a89f7b80e7dc4be065690c4.json"
+      }
+    },
+    {
+      "name": "mcp__runner_capability__modeling_submit_model_changes",
+      "arguments": {
+        "modeling_id": "modeling",
+        "request_ref": {
+          "material_id": "material-89e2467b45b2472d91c9bc77248fb2d4",
+          "path": "batch2-relation-request-r2.json"
+        }
+      },
+      "seq": 144,
+      "time": 1792458522003,
+      "result": {
+        "status": "completed",
+        "errors": [],
+        "batches": [
+          {
+            "attempt_id": "cc7f0c06-cdea-4da6-99a5-89f87c826245",
+            "attempt_status": "applied",
+            "batch_id": "3c4e24c7-ed30-4b99-9062-c97ed785f7f4",
+            "batch_index": 0,
+            "change_ids": [
+              "define-installed-at-relation"
+            ],
+            "errors": [],
+            "intent_ordinal": 2,
+            "model_revision_after": 2,
+            "model_revision_before": 1,
+            "ontology_id": "cf0661bb-9a53-40bd-a543-9ae7d2b8a1ba",
+            "receipt_ref": "evidence/platform-responses/985c8d543531563a19f35d67383f9e19570df7f07815a93ec7539673813998bb-d6da2bd9c1de95235a9ea3ab43e95ace4b9c5bd65616c8f4a780e9929adab7f0.json",
+            "resource_bindings": [
+              {
+                "change_id": "define-installed-at-relation",
+                "existing_resource_ref": {
+                  "artifact_ref": "evidence/platform-responses/985c8d543531563a19f35d67383f9e19570df7f07815a93ec7539673813998bb-d6da2bd9c1de95235a9ea3ab43e95ace4b9c5bd65616c8f4a780e9929adab7f0.json",
+                  "path": "/structuredContent/data/items/0"
+                },
+                "item_id": "define-installed-at-relation",
+                "resource_id": "109edadc-c288-5dcd-b990-dde84542f3f9",
+                "resource_iri": "http://ontology-platform.local/semantic/relation-type/109edadc-c288-5dcd-b990-dde84542f3f9",
+                "resource_kind": "relation_type"
+              }
+            ],
+            "retrieval_indexes": [
+              {
+                "job_id": "de94c867-aacd-4b42-950c-7cc2ad5f2087",
+                "model_revision": 2,
+                "ontology_id": "cf0661bb-9a53-40bd-a543-9ae7d2b8a1ba",
+                "projection_version": "semantic-retrieval-v2",
+                "stale_manifest_ids": [],
+                "status": "current",
+                "write_applied": true
+              }
+            ],
+            "write_state": "applied"
+          }
+        ],
+        "submission_digest": "a9ea44487cbf739756770fa3c862898365e84cc1c53d7e5f724d91fd7c576669",
+        "submission_ref": "value-semantics/submission-intents/submission-a9ea44487cbf739756770fa3c862898365e84cc1c53d7e5f724d91fd7c576669.json"
+      }
+    }
+  ],
+  "request_materials": [
+    {
+      "material_id": "material-53023d43e8e94593b43c56b0a4e78248",
+      "manifest": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/handoff-materials/material-53023d43e8e94593b43c56b0a4e78248/manifest.json",
+      "member": "batch2-relation-request.json",
+      "bytes": 2302,
+      "sha256": "44d5e20946ec0c025c228232b2ebc9fce52773fc45a5e4a09d8d0b79a3a23347",
+      "manifest_digest_matches": true,
+      "parsed_request_matches_inputs": [
+        "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-b6c6d7b1de161d507910952a70c9905ff8626b489a89f7b80e7dc4be065690c4-inputs.json"
+      ],
+      "publisher_id": "modeling",
+      "recipient_id": "runner"
+    },
+    {
+      "material_id": "material-89e2467b45b2472d91c9bc77248fb2d4",
+      "manifest": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/handoff-materials/material-89e2467b45b2472d91c9bc77248fb2d4/manifest.json",
+      "member": "batch2-relation-request-r2.json",
+      "bytes": 2376,
+      "sha256": "55e783c782ef2b8854fd73fb02af7334aeea57cce6a648d21e6dff5171fa1962",
+      "manifest_digest_matches": true,
+      "parsed_request_matches_inputs": [
+        "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-a9ea44487cbf739756770fa3c862898365e84cc1c53d7e5f724d91fd7c576669-inputs.json"
+      ],
+      "publisher_id": "modeling",
+      "recipient_id": "runner"
+    },
+    {
+      "material_id": "material-a8178b4441db4156bd6440b8a1bdba60",
+      "manifest": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/handoff-materials/material-a8178b4441db4156bd6440b8a1bdba60/manifest.json",
+      "member": "batch1-classes-request.json",
+      "bytes": 2665,
+      "sha256": "a0a26c5348997d43e9990ac3cd87d1556b2b5b8e44b1d612540dbf0caff836ed",
+      "manifest_digest_matches": true,
+      "parsed_request_matches_inputs": [
+        "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-6c255ad557eb3f370c65b646e35cc588e46b76465b0f9d94992427673314e7bf-inputs.json"
+      ],
+      "publisher_id": "modeling",
+      "recipient_id": "runner"
+    }
+  ],
+  "self_checks": [
+    {
+      "name": "mcp__runner_capability__modeling_inspect_associations",
+      "arguments": {
+        "modeling_id": "modeling"
+      },
+      "seq": 155,
+      "time": 1792458576818,
+      "result": {
+        "candidates": [],
+        "checked_count": 3,
+        "connected_resource_iris": [
+          "http://ontology-platform.local/semantic/class/cc812d0b-d3f5-590a-889c-f3964e79b957",
+          "http://ontology-platform.local/semantic/class/ebf8193f-f170-59ac-8aa4-a0736db67215",
+          "http://ontology-platform.local/semantic/relation-type/109edadc-c288-5dcd-b990-dde84542f3f9"
+        ],
+        "coverage": "complete",
+        "final_read_ref": "evidence/platform-responses/7a765e6274396ba42d9144fad41a268e1485e30e229d7923e3ea7bfbdbdecc02-cffc95fe4b0b80ada4aaa2b208a974d473351c58c380486f2de845418976d359.json",
+        "issues": [],
+        "ontology_ids": [
+          "cf0661bb-9a53-40bd-a543-9ae7d2b8a1ba"
+        ],
+        "project_id": "20a8e82f-bcf8-443a-a806-269997b46b79",
+        "read_refs": [
+          "evidence/platform-responses/7a765e6274396ba42d9144fad41a268e1485e30e229d7923e3ea7bfbdbdecc02-cffc95fe4b0b80ada4aaa2b208a974d473351c58c380486f2de845418976d359.json"
+        ],
+        "schema_version": "r4-0-024-association-scan/v1",
+        "semantic_verdict": "not_evaluated",
+        "snapshot": [
+          [
+            "cf0661bb-9a53-40bd-a543-9ae7d2b8a1ba",
+            2
+          ]
+        ],
+        "statement_count": 26,
+        "status": "COMPLETE",
+        "unresolved_references": []
+      }
+    },
+    {
+      "name": "mcp__runner_capability__modeling_finish_changes",
+      "arguments": {
+        "modeling_id": "modeling"
+      },
+      "seq": 160,
+      "time": 1792458596987,
+      "result": {
+        "closed": true,
+        "errors": [],
+        "leases": [],
+        "session_id": "8cbb01ce-bc9d-4b45-b6f0-21a6035426b5"
+      }
+    }
+  ],
+  "transport_counts": [
+    {
+      "agent": "modeling",
+      "category": "runtime_input_pending",
+      "status": "rejected",
+      "count": 6
+    },
+    {
+      "agent": "coordinator",
+      "category": "missing_modeling_handoff",
+      "status": "rejected",
+      "count": 1
+    },
+    {
+      "agent": "modeling",
+      "category": "terminal_report_accepted",
+      "status": "accepted",
+      "count": 1
+    },
+    {
+      "agent": "coordinator",
+      "category": "runtime_input_pending",
+      "status": "rejected",
+      "count": 1
+    },
+    {
+      "agent": "coordinator",
+      "category": "terminal_report_accepted",
+      "status": "accepted",
+      "count": 1
+    }
+  ],
+  "reports": [
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "file_sha256": "5a87feace852690fe7d6b8f4123aef606136996788af40a87c8cf6f226009301",
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r3",
+      "batch_id": "cq-batch-0001",
+      "freeze_digest": "sha256:1f2dd49e591a350a54c91878edeec230f9927c80e760b0751d226fae773059d1",
+      "model_binding_digest": "sha256:f03c2b46ebd6ffb8082b7495469d7a1f312fd1c2a974c121888667dd4bbdd14f",
+      "full_pass": true,
+      "executed_question_ids": [
+        "mic-concepts"
+      ],
+      "unexecuted_question_ids": [],
+      "blind_status": {
+        "blind_status": "non-blind-regression",
+        "exposed_question_ids": [
+          "mic-concepts"
+        ],
+        "exposure_evidence_digest": "sha256:6ffec16ee6f58ff32ea052ba66ede08d75f9a2caca65cc617f8c9db210ee9727",
+        "exposure_record_count": 1
+      },
+      "coverage_gaps": {
+        "cross_slice_projection_gap": false,
+        "empty_public_set": false,
+        "model_state_drift": [],
+        "notes": [
+          "public non-blind regression coverage; hidden acceptance is separate"
+        ],
+        "slices_without_public_question": []
+      },
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-concepts": "stable"
+        },
+        "replayed_responses": 1,
+        "unavailable": []
+      },
+      "verdicts": [
+        {
+          "question_id": "mic-concepts",
+          "verdict": "pass",
+          "failure_layer": null
+        }
+      ],
+      "examiner_statuses": [
+        {
+          "question_id": "mic-concepts",
+          "status": "completed",
+          "failure_layer": null
+        }
+      ]
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "file_sha256": "3dfc1ff2847758d463d75fc4c377afd7210ee3aaa15add449005e676ac1c9dee",
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r3",
+      "batch_id": "cq-batch-0001",
+      "freeze_digest": "sha256:1f2dd49e591a350a54c91878edeec230f9927c80e760b0751d226fae773059d1",
+      "model_binding_digest": "sha256:f03c2b46ebd6ffb8082b7495469d7a1f312fd1c2a974c121888667dd4bbdd14f",
+      "full_pass": true,
+      "executed_question_ids": [
+        "mic-direction",
+        "mic-ownership",
+        "mic-unknowns"
+      ],
+      "unexecuted_question_ids": [],
+      "blind_status": {
+        "blind_status": "non-blind-regression",
+        "exposed_question_ids": [
+          "mic-concepts"
+        ],
+        "exposure_evidence_digest": "sha256:6ffec16ee6f58ff32ea052ba66ede08d75f9a2caca65cc617f8c9db210ee9727",
+        "exposure_record_count": 1
+      },
+      "coverage_gaps": {
+        "cross_slice_projection_gap": false,
+        "empty_hidden_set": false,
+        "model_state_drift": [],
+        "notes": [
+          "coverage gaps are recorded per scope"
+        ],
+        "slices_without_hidden_question": []
+      },
+      "evidence_recheck": {
+        "drift": [],
+        "question_status": {
+          "mic-direction": "stable",
+          "mic-ownership": "stable",
+          "mic-unknowns": "stable"
+        },
+        "replayed_responses": 4,
+        "unavailable": []
+      },
+      "verdicts": [
+        {
+          "question_id": "mic-direction",
+          "verdict": "pass",
+          "failure_layer": null
+        },
+        {
+          "question_id": "mic-ownership",
+          "verdict": "pass",
+          "failure_layer": null
+        },
+        {
+          "question_id": "mic-unknowns",
+          "verdict": "pass",
+          "failure_layer": null
+        }
+      ],
+      "examiner_statuses": [
+        {
+          "question_id": "mic-direction",
+          "status": "completed",
+          "failure_layer": null
+        },
+        {
+          "question_id": "mic-ownership",
+          "status": "completed",
+          "failure_layer": null
+        },
+        {
+          "question_id": "mic-unknowns",
+          "status": "completed",
+          "failure_layer": null
+        }
+      ]
+    }
+  ],
+  "cq_acceptance_complete": [
+    {
+      "acceptance_attempt_id": "attempt-0001",
+      "acceptance_phase": "acceptance_complete",
+      "batch_id": "cq-batch-0001",
+      "cq_verdict": "pass",
+      "freeze_digest": "sha256:1f2dd49e591a350a54c91878edeec230f9927c80e760b0751d226fae773059d1",
+      "freeze_id": "cq-batch-0001",
+      "recorded_at": "2026-10-20T01:18:04.567836+00:00",
+      "report_digest": "sha256:3dfc1ff2847758d463d75fc4c377afd7210ee3aaa15add449005e676ac1c9dee",
+      "report_directory": "acceptance-v3/reports/cq-batch-0001/attempt-0001"
+    }
+  ],
+  "closure_and_standby_receipts": [
+    {
+      "ack_type": "cq-acceptance-complete",
+      "action": "cq_acceptance_complete",
+      "content_digest": "sha256:7779381a472eb14705cf0b4ab70926281a8d0867b1e858ceb3773cc9e15f0f53",
+      "outcome": "accepted",
+      "recorded_at": "2026-10-20T01:18:04.569652+00:00",
+      "request_id": "reqref-20261020-acceptance-close-0001"
+    },
+    {
+      "ack_type": "standby",
+      "action": "standby",
+      "content_digest": "sha256:d84795c4582387f8c5ad1a3bb2475ee7ef715a993eb3be54d76e033837450286",
+      "outcome": "accepted",
+      "recorded_at": "2026-10-20T01:18:47.757285+00:00",
+      "request_id": "delivery-a04aa2bd1812123395696984525f5829"
+    }
+  ],
+  "run_state": "READ_ONLY_WAIT",
+  "platform_binding": {
+    "ontology_ids": [
+      "cf0661bb-9a53-40bd-a543-9ae7d2b8a1ba"
+    ],
+    "project_id": "20a8e82f-bcf8-443a-a806-269997b46b79"
+  },
+  "delivery_activity": "read_only_wait",
+  "phase_thread_history": [
+    {
+      "event": "delivery_phase_thread",
+      "attempt_id": "b231f740b0a64e0aacd7278c51c8524d",
+      "phase": "production",
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r3",
+      "input_id": "6449d9ef032044bf9249e8940987f568",
+      "requested_input_id": "6449d9ef032044bf9249e8940987f568",
+      "from_identity": {
+        "runtime": "dsh",
+        "process_instance": "160b70fb93f644b5bf864bddc818e92d",
+        "runtime_session_id": "delivery-6fc1e1a2a47d4be3afcece122e74fd2f",
+        "activity_id": null
+      },
+      "status": "switched",
+      "reason": "生产边界条件已满足：cq_freeze 已接受(reqref-20261020-cq-freeze-0001)，冻结通知指令已接受并交付(reqref-20261020-freeze-notice)，生产可继续",
+      "request_ids": [
+        "reqref-20261020-cq-freeze-0001",
+        "reqref-20261020-freeze-notice"
+      ],
+      "started_at": "2026-10-20T01:08:27.984611+00:00",
+      "to_identity": {
+        "runtime": "dsh",
+        "process_instance": "160b70fb93f644b5bf864bddc818e92d",
+        "runtime_session_id": "delivery-07d7684127644f4b840bf313792f4a3e",
+        "activity_id": null
+      },
+      "ended_at": "2026-10-20T01:08:27.999735+00:00"
+    },
+    {
+      "event": "delivery_phase_thread",
+      "attempt_id": "fd10010175bf473da5ffd0c169bc4d19",
+      "phase": "acceptance",
+      "run_id": "minimal-chain-20261020-dsh-glm-low-r3",
+      "input_id": "a880b15ecbb84e0287f0cb25fb8d2549",
+      "requested_input_id": "a880b15ecbb84e0287f0cb25fb8d2549",
+      "from_identity": {
+        "runtime": "dsh",
+        "process_instance": "160b70fb93f644b5bf864bddc818e92d",
+        "runtime_session_id": "delivery-07d7684127644f4b840bf313792f4a3e",
+        "activity_id": null
+      },
+      "status": "switched",
+      "reason": "验收评估运行中（Examiner working），无阻塞；按当前 phase_thread_handoff 携带验收边界。",
+      "request_ids": [
+        "reqref-20261020-cq-handoff-0002"
+      ],
+      "started_at": "2026-10-20T01:15:38.154410+00:00",
+      "to_identity": {
+        "runtime": "dsh",
+        "process_instance": "160b70fb93f644b5bf864bddc818e92d",
+        "runtime_session_id": "delivery-faa9ec845b204731a95445ddeb30eb7d",
+        "activity_id": null
+      },
+      "ended_at": "2026-10-20T01:15:38.161386+00:00"
+    }
+  ],
+  "usage": {
+    "cutoff": "2026-10-20T01:19:58.527128+00:00",
+    "roles": {
+      "delivery": {
+        "responses": 71,
+        "uncached_input_tokens": 614817,
+        "cached_input_tokens": 5389376,
+        "output_tokens": 34965,
+        "native_total_tokens": 6039158,
+        "cache_write_missing_responses": 71,
+        "native_reported_input_tokens": 6004193
+      },
+      "coordinator": {
+        "responses": 37,
+        "uncached_input_tokens": 58382,
+        "cached_input_tokens": 892864,
+        "output_tokens": 14020,
+        "native_total_tokens": 965266,
+        "cache_write_missing_responses": 37,
+        "native_reported_input_tokens": 951246
+      },
+      "modeling": {
+        "responses": 49,
+        "uncached_input_tokens": 123519,
+        "cached_input_tokens": 1912256,
+        "output_tokens": 14317,
+        "native_total_tokens": 2050092,
+        "cache_write_missing_responses": 49,
+        "native_reported_input_tokens": 2035775
+      },
+      "competency-question": {
+        "responses": 13,
+        "uncached_input_tokens": 41902,
+        "cached_input_tokens": 115136,
+        "output_tokens": 4528,
+        "native_total_tokens": 161566,
+        "cache_write_missing_responses": 13,
+        "native_reported_input_tokens": 157038
+      },
+      "platform-examiner": {
+        "responses": 22,
+        "uncached_input_tokens": 149654,
+        "cached_input_tokens": 198400,
+        "output_tokens": 6805,
+        "native_total_tokens": 354859,
+        "cache_write_missing_responses": 22,
+        "native_reported_input_tokens": 348054
+      },
+      "acceptance": {
+        "responses": 14,
+        "uncached_input_tokens": 92146,
+        "cached_input_tokens": 366528,
+        "output_tokens": 3532,
+        "native_total_tokens": 462206,
+        "cache_write_missing_responses": 14,
+        "native_reported_input_tokens": 458674
+      }
+    },
+    "total": {
+      "responses": 206,
+      "uncached_input_tokens": 1080420,
+      "cached_input_tokens": 8874560,
+      "output_tokens": 78167,
+      "native_total_tokens": 10033147,
+      "cache_write_missing_responses": 206,
+      "native_reported_input_tokens": 9954980
+    },
+    "threads": {
+      "delivery-6fc1e1a2a47d4be3afcece122e74fd2f": {
+        "role": "delivery",
+        "responses": 23,
+        "input": 2049019,
+        "output": 9750,
+        "total": 2058769
+      },
+      "delivery-07d7684127644f4b840bf313792f4a3e": {
+        "role": "delivery",
+        "responses": 34,
+        "input": 2784082,
+        "output": 17590,
+        "total": 2801672
+      },
+      "delivery-faa9ec845b204731a95445ddeb30eb7d": {
+        "role": "delivery",
+        "responses": 14,
+        "input": 1171092,
+        "output": 7625,
+        "total": 1178717
+      },
+      "minimal-chain-20261020-dsh-glm-low-r3-coordinator-ab2ac488b920": {
+        "role": "coordinator",
+        "responses": 37,
+        "input": 951246,
+        "output": 14020,
+        "total": 965266
+      },
+      "minimal-chain-20261020-dsh-glm-low-r3-modeling-d6d24787d82a": {
+        "role": "modeling",
+        "responses": 49,
+        "input": 2035775,
+        "output": 14317,
+        "total": 2050092
+      },
+      "minimal-chain-20261020-dsh-glm-low-r3-competency-question-40a34495dba7": {
+        "role": "competency-question",
+        "responses": 13,
+        "input": 157038,
+        "output": 4528,
+        "total": 161566
+      },
+      "acceptance-090cad80c0db403ab11ab081a2b5372f": {
+        "role": "platform-examiner",
+        "responses": 4,
+        "input": 51365,
+        "output": 926,
+        "total": 52291
+      },
+      "acceptance-ec4f8e9a6fb64fe4a2c3ddcc7d296d9a": {
+        "role": "platform-examiner",
+        "responses": 4,
+        "input": 60550,
+        "output": 1007,
+        "total": 61557
+      },
+      "acceptance-3d23f5a80b424308a638d1b8f0d7675e": {
+        "role": "platform-examiner",
+        "responses": 7,
+        "input": 117682,
+        "output": 2187,
+        "total": 119869
+      },
+      "acceptance-79637305301b4616b91c723dafaf0ab9": {
+        "role": "acceptance",
+        "responses": 9,
+        "input": 367170,
+        "output": 2390,
+        "total": 369560
+      },
+      "acceptance-f7b6b16ade09483ba038b2222b863a98": {
+        "role": "acceptance",
+        "responses": 5,
+        "input": 91504,
+        "output": 1142,
+        "total": 92646
+      },
+      "acceptance-116347f4110f44ef93e3bab00ce295fc": {
+        "role": "platform-examiner",
+        "responses": 7,
+        "input": 118457,
+        "output": 2685,
+        "total": 121142
+      }
+    },
+    "conflicts": [],
+    "host": {
+      "path": "/home/yangxiang/.codex/sessions/2026/10/20/rollout-2026-10-20T09-00-32-01a156d2-fbe4-7070-985a-e5b5ef3cc4a8.jsonl",
+      "cutoff": "2026-10-20T01:20:23.786Z",
+      "usage": {
+        "input_tokens": 7500786,
+        "cached_input_tokens": 7320704,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 16435,
+        "reasoning_output_tokens": 2677,
+        "total_tokens": 7517221
+      },
+      "scope": "current user continue, context recovery, preparation, supervision and evidence work before cutoff; later documentation/final tail excluded"
+    },
+    "known_followup_lower_bound": 17550368,
+    "allocation_known_lower_bound_including_previous_two_rounds": 73510166,
+    "previous_two_rounds_basis": "docs/delivery/evidence/2026-10-20-dsh-glm-low-retrospective.json",
+    "limitations": [
+      "Current GLM Messages SSE auxiliary usage observer is disabled by existing user decision; only retained native numeric events are summarized. All thread prefixes are included; absent values remain unknown.",
+      "Native token counts are not complete provider billing; missing cache-write/reasoning/provider internal work remain unknown.",
+      "Current Codex Host and compatibility engineering are separate from the GLM runtime chain.",
+      "Host later documentation/final tail and prior post-acceptance engineering are excluded from this lower bound; no net billing or causal claim."
+    ]
+  },
+  "credential_cleanup": {
+    "admin_key_id": "1bc76ea0-9205-43e0-a736-523bab0bb5aa",
+    "admin_revoked": true,
+    "read_keys": [
+      {
+        "key_id": "703c2a5f-ca74-47c0-815b-bf20f7bb29f4",
+        "revoked": true
+      }
+    ],
+    "recorded_at": "2026-10-20T01:19:58.123507+00:00",
+    "mode": "completion cleanup; retained read-only Team/Delivery/evaluation processes unchanged"
+  },
+  "limitations": [
+    "Independent bounded L1 non-blind regression only; not broader business, L2, stable prevention or autonomous Delivery proof.",
+    "Runtime status still displays cq_acceptance_closure=1 after accepted closure and standby; retained raw accepted receipts take precedence. No new platform fix in this verification.",
+    "Source request unsupported relation aliases was corrected by Modeling; reference transport does not repair source semantic/schema errors."
+  ],
+  "source_prefixes": [
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/evidence/dsh-wire.jsonl",
+      "bytes": 1680450,
+      "sha256": "6120f75719c18f5d3a0f96f34bf2eace10933b6e9d2bf09863de2c9214b2b9c6"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/handoff-materials/material-53023d43e8e94593b43c56b0a4e78248/manifest.json",
+      "bytes": 455,
+      "sha256": "84c106cec2ea4528073171d56c9551f3a06ef1c81115b7ac9a500ccf2e88b518"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/handoff-materials/material-53023d43e8e94593b43c56b0a4e78248/files/batch2-relation-request.json",
+      "bytes": 2302,
+      "sha256": "44d5e20946ec0c025c228232b2ebc9fce52773fc45a5e4a09d8d0b79a3a23347"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-6c255ad557eb3f370c65b646e35cc588e46b76465b0f9d94992427673314e7bf-inputs.json",
+      "bytes": 2491,
+      "sha256": "636a01025aeb42488f43d92203b2314666ad8a1aa3d0307b89b3ac8e2e736aec"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-a9ea44487cbf739756770fa3c862898365e84cc1c53d7e5f724d91fd7c576669-inputs.json",
+      "bytes": 2207,
+      "sha256": "e2741b52157ba3b3f3021e435e95cc7f39fee0ce84366f761be5aceb552fb2e7"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-b6c6d7b1de161d507910952a70c9905ff8626b489a89f7b80e7dc4be065690c4-inputs.json",
+      "bytes": 2133,
+      "sha256": "4b4f839409439335e074316e2f13cd3f9552b4590065cd60382729e17bbeb94a"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/handoff-materials/material-89e2467b45b2472d91c9bc77248fb2d4/manifest.json",
+      "bytes": 461,
+      "sha256": "6831f64757eda4e1236afa09a048eb84535b4506e575135ebcad50c1f5c023bf"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/handoff-materials/material-89e2467b45b2472d91c9bc77248fb2d4/files/batch2-relation-request-r2.json",
+      "bytes": 2376,
+      "sha256": "55e783c782ef2b8854fd73fb02af7334aeea57cce6a648d21e6dff5171fa1962"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-6c255ad557eb3f370c65b646e35cc588e46b76465b0f9d94992427673314e7bf-inputs.json",
+      "bytes": 2491,
+      "sha256": "636a01025aeb42488f43d92203b2314666ad8a1aa3d0307b89b3ac8e2e736aec"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-a9ea44487cbf739756770fa3c862898365e84cc1c53d7e5f724d91fd7c576669-inputs.json",
+      "bytes": 2207,
+      "sha256": "e2741b52157ba3b3f3021e435e95cc7f39fee0ce84366f761be5aceb552fb2e7"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-b6c6d7b1de161d507910952a70c9905ff8626b489a89f7b80e7dc4be065690c4-inputs.json",
+      "bytes": 2133,
+      "sha256": "4b4f839409439335e074316e2f13cd3f9552b4590065cd60382729e17bbeb94a"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/handoff-materials/material-a8178b4441db4156bd6440b8a1bdba60/manifest.json",
+      "bytes": 453,
+      "sha256": "0fdf0b8cc909a05f2098b3fe37b28e60ee6b9639d4462d6530ea430f7a6f88ed"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/handoff-materials/material-a8178b4441db4156bd6440b8a1bdba60/files/batch1-classes-request.json",
+      "bytes": 2665,
+      "sha256": "a0a26c5348997d43e9990ac3cd87d1556b2b5b8e44b1d612540dbf0caff836ed"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-6c255ad557eb3f370c65b646e35cc588e46b76465b0f9d94992427673314e7bf-inputs.json",
+      "bytes": 2491,
+      "sha256": "636a01025aeb42488f43d92203b2314666ad8a1aa3d0307b89b3ac8e2e736aec"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-a9ea44487cbf739756770fa3c862898365e84cc1c53d7e5f724d91fd7c576669-inputs.json",
+      "bytes": 2207,
+      "sha256": "e2741b52157ba3b3f3021e435e95cc7f39fee0ce84366f761be5aceb552fb2e7"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/value-semantics/submission-intents/submission-b6c6d7b1de161d507910952a70c9905ff8626b489a89f7b80e7dc4be065690c4-inputs.json",
+      "bytes": 2133,
+      "sha256": "4b4f839409439335e074316e2f13cd3f9552b4590065cd60382729e17bbeb94a"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json",
+      "bytes": 44423,
+      "sha256": "5a87feace852690fe7d6b8f4123aef606136996788af40a87c8cf6f226009301"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json",
+      "bytes": 121585,
+      "sha256": "3dfc1ff2847758d463d75fc4c377afd7210ee3aaa15add449005e676ac1c9dee"
+    },
+    {
+      "path": "workspaces/minimal-chain-20261020-request-ref-live/native-usage-snapshot.json",
+      "bytes": 78853,
+      "sha256": "2a4b1e530f87e076e3c0b61511537c296b058380f8a1eeee4f4e54163b39e581"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/evidence/team-transport-events.jsonl",
+      "bytes": 1768,
+      "sha256": "34cfddad3cf1b570af123cb5681d6d323bd9ee9d88e40ed2b9b46aad2e370219"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/evidence/outer-input-receipts.jsonl",
+      "bytes": 3241,
+      "sha256": "a8563ef9fdff6f80413892efd338b67b5531ac8250d33d188a0e457fc07aff94"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/evidence/cq-acceptance-complete.jsonl",
+      "bytes": 473,
+      "sha256": "43c40bf712d5ca3814a52cce8c5c31f805e4aa7dbd12d6fc0356847103ee21f6"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/evidence/semantic-start.jsonl",
+      "bytes": 137,
+      "sha256": "cf048aecf90918af7b902ed6479d8cac0a56ccd764c0f37c1dd854046fd34e77"
+    },
+    {
+      "path": "workspaces/modeling-runs/minimal-chain-20261020-dsh-glm-low-r3/state.json",
+      "bytes": 3680,
+      "sha256": "15f10b2d4548b594a9272ad86d3002daf51f20189bc6ebe5d29dfc7fa95da306"
+    },
+    {
+      "path": "workspaces/delivery-sessions/minimal-chain-20261020-request-ref-live/session.json",
+      "bytes": 6900,
+      "sha256": "af1e308ad943f8fb80aa7c5ea8bae23d2d2fae02bfe81477d49b11e12835ddc5"
+    },
+    {
+      "path": "workspaces/minimal-chain-20261020-request-ref-live/bootstrap-cleanup.json",
+      "bytes": 348,
+      "sha256": "efb28f2f7c27e06468f39c8e2ab2cf6dbdfbb0860e8531f811192f558e8f027a"
+    }
+  ]
+}

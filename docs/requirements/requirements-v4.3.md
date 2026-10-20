@@ -3993,3 +3993,19 @@ GitNexus相关新入口索引不全，采用调用点及贯通回归，不称完
 [本次实施追加](../delivery/modeling-retrospectives/2026-10-20-first-round-failures-comparison.md#用户确认后的引用输入修复)。
 未启动Provider或新建模、不消费余额；仅Team代码／合同／文档变化，无产品服务重启，
 新Team进程加载生效。025整体部分验证、030降耗及OPT-20261019-DSH-05整体待调整保持。
+
+## 2026-10-20 完整请求引用真实验证（原授权第3轮）
+
+用户在2c65731接口修复后要求“请继续”，沿原三轮授权最后一轮执行新r3，保持DSH
+`glm-5.3-flash / low`、原最小链业务及公开1／隐藏3题。三轮现全耗、余0，未验收后修模。
+完整请求经Modeling→Runner不可变材料实际提交，六次均request_ref；三份原件摘要与
+实际inputs.request一致，两批原子application revision0→2，治理读回／资源封口及独立
+非盲全分母4/4通过，同冻结／模型绑定、读回复核无漂移，验收闭环与standby已accepted。
+
+025引用输入子项**真实采用成立且本次有界L1通过**；025整体部分验证、030与原05
+稳定预防／净收益仍未通过或待调整。一次不支持aliases的原件自行修正后应用；三次上游
+等待未重抄正文。排队终态多次拒绝、验收内联报告字段漂移仍有成本，不由成功覆盖。
+本次DSH全链10,033,147 token，含已归属Host的继续验证下界17,550,368；原三轮累计
+下界73,510,166，缺测尾部另列，10M全任务子目标仍未通过。没有新平台实现或产品重启。
+详见[真实验证记录](../delivery/records/2026-10-20-request-ref-live-verification.md)及
+[数值证据](../delivery/evidence/2026-10-20-request-ref-live-verification.json)。
