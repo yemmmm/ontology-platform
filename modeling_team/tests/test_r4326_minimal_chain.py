@@ -67,7 +67,7 @@ def test_pair_loads_current_direct_route_without_protocol_or_checkpoint_experime
     })
     assert config.task.parameters["unified_semantic_graph"] is True
     assert config.task.parameters["acceptance_target"] == "cq_semantic"
-    assert not config.task.parameters.get("modeling_checkpoints")
+    assert config.task.parameters["modeling_checkpoints"] is True
     business = [s for s in config.task.role_sources if s.classification == "business-source"]
     assert len(business) == 1
     assert business[0].path == SCENARIO / "modeling-input/scenario.md"
@@ -77,10 +77,9 @@ def test_pair_loads_current_direct_route_without_protocol_or_checkpoint_experime
         "sha256": hashlib.sha256(business[0].path.read_bytes()).hexdigest(),
     }]
     for agent in config.profile.agents:
-        assert agent.package.package_id.startswith("minimal-chain-")
-        assert not agent.package.references  # No implicit full manuals behind compact sources.
+        assert agent.package.package_id == agent.package.role
     modeling = next(a.package for a in config.profile.agents if a.agent_id == "modeling")
-    assert [s.parent.name for s in modeling.required_skills] == ["minimal-chain-modeling"]
+    assert [s.parent.name for s in modeling.required_skills] == ["ontology-modeling"]
 
 
 def test_compact_candidate_and_map_shapes_match_the_existing_contracts():
@@ -157,7 +156,7 @@ def test_private_seeds_can_form_separate_current_cq_review_drafts():
         }
 
 
-def test_runner_stages_exact_private_sources_and_freezes_compact_packages(tmp_path):
+def test_runner_stages_exact_private_sources_and_freezes_general_packages(tmp_path):
     run_id = "r4326-contract-" + uuid4().hex[:10]
     run_root = ROOT / "workspaces/modeling-runs" / run_id
     adapter = CapturingAdapter()
@@ -173,7 +172,10 @@ def test_runner_stages_exact_private_sources_and_freezes_compact_packages(tmp_pa
         )
         assert not (run.root / "sources/protocol").exists()
         manifest = read(run.root / "source-manifest.json")["sources"]
-        assert len(manifest) == len(run.configuration.task.role_sources)
+        roles = {agent.package.role for agent in run.configuration.profile.agents}
+        assert len(manifest) == sum(
+            bool(source.roles & roles) for source in run.configuration.task.role_sources
+        )
         for agent in run.configuration.profile.agents:
             role = agent.package.role
             expected = {s.relative_path.as_posix() for s in run.configuration.task.role_sources
@@ -207,7 +209,7 @@ def test_runner_stages_exact_private_sources_and_freezes_compact_packages(tmp_pa
         rmtree(run_root, ignore_errors=True)
 
 
-def test_glm_profile_binds_compact_packages_by_role_and_runtime_uses_canonical_keys(tmp_path):
+def test_glm_profile_binds_general_packages_by_role_and_runtime_uses_canonical_keys(tmp_path):
     run_id = "r4326-glm-profile-" + uuid4().hex[:10]
     run_root = ROOT / "workspaces/modeling-runs" / run_id
     credential = tmp_path / "glm.env"
@@ -229,9 +231,9 @@ def test_glm_profile_binds_compact_packages_by_role_and_runtime_uses_canonical_k
         )
         assert run.team_model_profile is not None
         assert [agent.package.package_id for agent in run.configuration.profile.agents] == [
-            "minimal-chain-coordinator",
-            "minimal-chain-modeling",
-            "minimal-chain-competency-question",
+            "coordinator",
+            "modeling",
+            "competency-question",
         ]
         runtime_agents = runner._runtime_profile_agents()
         assert [agent.package.package_id for agent in runtime_agents] == [
@@ -299,7 +301,7 @@ def test_unified_direct_path_does_not_require_legacy_stage3_slot(tmp_path):
     try:
         runner.prepare(run_id=run_id, profile_path=PROFILE, task_path=TASK, scope={"mode": "create"})
         assert runner._unified_graph is True
-        assert not any(
+        assert any(
             source.path.name == "r3-0-009-unified-graph-contract.json"
             for source in runner.run.configuration.task.role_sources
         )

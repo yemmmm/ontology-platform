@@ -187,7 +187,7 @@ def test_current_packages_actually_load_existing_model_awareness_and_explicit_pl
     from modeling_team.tests.test_r4326_minimal_chain import PROFILE, TASK, ROOT
     compact = load_multi_slice_team_configuration(PROFILE, TASK, root=ROOT)
     package = next(agent.package for agent in compact.profile.agents if agent.package.role == 'modeling')
-    assert package.required_skills[0].parent.name == 'minimal-chain-modeling'
+    assert package.required_skills[0].parent.name == 'ontology-modeling'
     assert 'Existing-model awareness' in package.required_skills[0].read_text()
     staged = _UnifiedRunner(tmp_path)
     staged.prepare()

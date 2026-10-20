@@ -123,7 +123,9 @@
           "fields": {
             "name": "Business Object",
             "semantic_definition": {
+              "semantic_role": "object",
               "business_meaning": "A declared kind of business object.",
+              "applicability": "The approved scope of this business definition; no runtime instance is asserted.",
               "unknowns": [
                 "No concrete instances are supplied."
               ]
@@ -140,6 +142,7 @@
       "not_applicable",
       "conflicting_meanings"
     ],
+    "semantic_role_guidance": "Place the confirmed business role inside fields.semantic_definition.semantic_role, never as fields.semantic_role. Resource kinds such as concept/class/instance do not replace object/behavior/rule/business_role/process/data_mapping/interface_mapping; confirmed additional meanings remain allowed. Missing declaration, explicit business unknown and multiple roles are distinct. Move a misplaced declaration into the supported field instead of deleting semantic content to pass validation; verify the actual declaration in the existing governed stage self-check.",
     "unsupported_field_guidance": "Do not add exclusions to semantic_definition; preserve an approved exclusion in supported business_meaning/applicability text. Change identity keys belong outside fields.",
     "relation_request_template": {
       "schema_version": "r4-3-025-model-changes/v1",

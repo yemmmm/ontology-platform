@@ -1,5 +1,10 @@
 # Semantic handoff and returned execution results
 
+Current unified Tasks use R4.3-024/025: Modeling submits the supported complete candidate
+or fields-only request directly and uses actual applied receipts, governed reads and the
+existing association self-check. Protocol ownership and saved-plan/slot checks below
+describe legacy workflows only; mounting this reference does not reinstate those gates.
+
 Use this reference to decide what Modeling supplies and what execution results it needs back. The selected
 Task controls stages, schemas and approvals. This table does not assign platform operations to
 Modeling or introduce a universal execution sequence.

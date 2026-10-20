@@ -2,43 +2,55 @@
 schema_version: 2
 task_id: r4-3-026-minimal-installation-chain
 objective: >-
-  Model the complete artificial installation-location chain in
-  minimal-installation-chain-source-v1: two distinct concepts and one directed relationship,
-  with only the supplied meanings and explicit unknowns. This is a new independent Task,
-  not the checkpoint-recovery experiment or the industrial-service scenario. Do not infer
-  cardinality, named instances, ownership, customers, models, faults, work orders, lifecycle,
-  metrics or SQL/API mappings. Agent-chosen technical representation and Ontology topology
-  do not add business concepts. Use the paired minimal-installation-chain Profile and its
-  compact contracts. CQ uses its private task-specific question seeds, adapts them to actual
-  approved slices and submits them for normal review and a fresh public/hidden freeze;
-  counts are advisory. Do not import any historical pool or answer. After Host confirms the
-  freeze, Coordinator dispatches this Task identity and confirmed topology to Modeling.
-  Retain actual approved slice IDs verbatim across dispatch, modeling and CQ; do not normalize
-  their spelling. Modeling publishes a complete immutable semantic delivery using registered
-  unified candidate kinds or supported fields-only concept/relationship definitions, and submits explicit changes
-  through R4.3-024/025. The program owns execution fields and atomic application; no
-  Protocol translation approval or model dry-run prerequisite. Trust bound successful
-  receipts; reconcile uncertain writes before retry. Perform actual governed business reads
-  on the current revision, association self-check and resource closure before handoff.
-  Final Consumer/Judge acceptance is independent and read-only. Report only this bounded
-  scope, exact evidence, unknowns and the first blocker. Host records elapsed time to apply,
-  first effective answer and independent acceptance, semantic/technical/wait time and
-  R4.3-019 usage coverage; missing values remain unknown. No fixed performance or token
-  budget is supplied. Do not checkpoint-stop/resume as an experiment, start another task,
-  change an old verdict or consume a modeling round without user authorization.
+  Model the complete bounded business scope in the mounted approved business sources.
+  Preserve supplied meanings, semantic level, relationship direction and explicit unknowns;
+  do not invent facts or expand the authorized scope. Use the selected general role packages,
+  Skills and shared representation/execution contracts. CQ may use its role-private question
+  seeds as proposed coverage, never as business truth or a preapproved answer pool. Review
+  and freeze the current complete public/hidden pool before formal semantic modeling.
+  Independent Consumer/Judge acceptance covers only the approved business scope. Report
+  actual evidence, remaining gaps, first blocker, elapsed time and usage through the existing
+  workflow; this Task grants no new modeling round or checkpoint experiment.
 role_sources:
   - path: docs/evaluation-scenarios/minimal-installation-chain/modeling-input/scenario.md
     classification: business-source
     roles: [coordinator, modeling, competency-question]
-  - path: modeling_team/references/r4-3-026-minimal-chain-contract.json
+  - path: modeling_team/references/r4-0-007-scenario-map-contract.json
     classification: coordination
-    roles: [coordinator, modeling]
+    roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/r3-0-008b-staged-decisions-contract.json
+    classification: coordination
+    roles: [coordinator, protocol]
+  - path: modeling_team/references/r3-0-009-unified-graph-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/r4-3-025-direct-modeling-contract.json
     classification: coordination
-    roles: [coordinator, modeling]
+    roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/r4-0-012-modeling-contract.json
+    classification: coordination
+    roles: [modeling]
+  - path: modeling_team/references/r4-0-011-api-mapping-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/r4-0-010-relational-mapping-contract.json
+    classification: coordination
+    roles: [modeling, protocol]
+  - path: modeling_team/references/r4-0-024-model-check-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/platform-neutral-candidate-authoring.json
+    classification: protocol
+    roles: [modeling, protocol]
+  - path: modeling_team/references/modeling-batch-item-contract.json
+    classification: protocol
+    roles: [protocol, modeling]
   - path: modeling_team/references/r3-0-011-competency-question-contract.json
     classification: coordination
     roles: [competency-question]
+  - path: modeling_team/references/acceptance-stage-handoff-contract.json
+    classification: protocol
+    roles: [protocol]
   - path: docs/evaluation-scenarios/minimal-installation-chain/cq-private/question-seeds.json
     classification: consumer-question
     roles: [competency-question]
@@ -63,3 +75,4 @@ parameters:
   unified_semantic_graph: true
   competency_question_acceptance: true
   acceptance_target: cq_semantic
+  modeling_checkpoints: true

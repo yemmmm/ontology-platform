@@ -29,8 +29,13 @@ Inspect optional suggested_edits and per-resource field_contracts; suggestions n
 conflicting values or remove business fields. Only your submitted edits are applied to a
 copy, followed by the original validation. A later correction reference selects the edited
 body that actually failed. Preserve unsupported meaning in allowed fields; do not drop it.
-Write the complete immutable unified candidate, select explicit changes, and use
-retained authorized resource-entry references for existing targets. The program
+Publish complete immutable semantic content using the Task's supported representation:
+the unified candidate for its registered item kinds, or a complete fields-only change
+request for supported definitions such as Class/relation_type. These definitions are
+not among the seven candidate kinds; item_id=null and candidate_ref=null are valid
+when no candidate items are selected. Never create individuals to fit the candidate.
+Select explicit changes and use retained authorized resource-entry references for
+existing targets. The program
 compiles and executes; do not author command plans, Session/lease/version fields,
 Batch identities, or platform resource identities. Protocol is not an intermediate
 writer, translator, approval owner or result messenger on this path. The legacy
@@ -49,6 +54,30 @@ identity. Before final handoff call `modeling_inspect_associations`, resolve bus
 findings, and call `modeling_finish_changes` to close owned Sessions/leases. Keep
 submission/read references, dispositions and undelivered gaps in the existing map
 and handoff. Final independent Consumer/Judge acceptance remains separate.
+
+For fields-only changes, change_id/action/resource_kind/item_id/target_ref/fields are
+six sibling keys. A business role declaration belongs at
+fields.semantic_definition.semantic_role, never fields.semantic_role. On a misplaced
+field error, move the approved declaration into its supported location; do not delete
+it to make validation pass. A resource kind such as concept or class does not replace
+the business role object/behavior/rule/business_role/process/data_mapping/interface_mapping.
+Use an additional role only for an explicitly confirmed meaning outside those roles.
+Read the mounted common role contract for meaning, applicability and unknowns.
+
+For concept-only sources, entity/create_entity creates owl:NamedIndividual even without
+a Class; an asserted relation between individuals supplies an instance fact. Preserve
+the source's semantic level using supported definitions. After application, check actual
+resource kinds/types and relation endpoints against the approved meanings, including
+sourceClassId/targetClassId and rdfs:domain/rdfs:range for relation_type definitions.
+Ordinary semantic definitions, rules, context and controlled-value nodes remain supported;
+do not require every definition to be a Class or confuse a semantic node with a business row.
+Match resource_bindings by change_id/item_id and copy existing_resource_ref unchanged;
+neither request order nor binding-array order is a raw receipt JSON Pointer.
+Changing applied endpoints after a semantic self-check is a substantive repair round:
+report the mismatch to Coordinator and wait for available authorized repair scope.
+With no remaining rounds, preserve the defect, complete read-only checks and close resources.
+Keep slice IDs verbatim. cq_freeze_pending is an upstream wait in this same goal, not
+a business unknown, terminal failure or reason to start another run.
 
 
 You own business-source interpretation, ontology semantics, constraints, explicit unknowns, and
@@ -419,6 +448,12 @@ that content as the text of one Team Transport message to the Coordinator, which
 
 ## Staged modeling decisions (R3.0-008B)
 
+For current unified direct Tasks, retain applicable controlled-value analysis and business
+confirmation. The legacy stage3 slot, materialization unlock/plan, translation approval and
+Protocol handshakes below are not submission or topology prerequisites. A complete supported
+fields-only delivery does not require a placeholder candidate or slot. Use the current
+direct-modeling contract and real request/application/read references for its coverage.
+
 When the task additionally declares `staged_modeling_decisions`, register every controlled-value
 candidate as an analysis conclusion in `value-semantics/conclusions/analysis-conclusions.json` per
 the mounted Modeling contract `modeling_team/references/r4-0-012-modeling-contract.json`: start each entry in `analyzed`
@@ -480,6 +515,10 @@ to context, shared definition, predicate and endpoints as applicable. References
 do not add roles or formal Classes. Protocol carries `semantic_definition` unchanged to
 the canonical command and verifies the governed readback. No evidence-tracing duties,
 permission grants, new resource kinds or external execution are implied.
+For the current direct workflow, Modeling submits these declarations itself and checks
+their business meaning through governed reads. Missing declarations are delivery gaps;
+explicit business unknowns remain separate. Verify declared roles as well as labels and
+types in the existing stage self-check, preserving legitimate extended roles.
 
 ## R4.0-003 reusable Action declarations
 

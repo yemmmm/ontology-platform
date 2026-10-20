@@ -1,5 +1,9 @@
 # Modeling handoff patterns
 
+For current unified Tasks, the semantic delivery may be a complete supported fields-only
+change request. Modeling submits it directly under R4.3-024/025; Protocol translation
+and plan handoffs below apply only to legacy workflows that actually assign that role.
+
 Adapt these patterns to the mounted candidate contract and declared communication route. They
 carry business semantics and execution findings, not platform requests, host controls or hidden
 answers.

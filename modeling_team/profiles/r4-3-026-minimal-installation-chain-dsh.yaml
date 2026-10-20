@@ -3,11 +3,11 @@ profile_id: r4-3-026-minimal-installation-chain-dsh
 runtime: dsh
 agents:
   - agent_id: coordinator
-    package: minimal-chain-coordinator
+    package: coordinator
   - agent_id: modeling
-    package: minimal-chain-modeling
+    package: modeling
   - agent_id: competency-question
-    package: minimal-chain-competency-question
+    package: competency-question
 communication:
   - from: coordinator
     to: [modeling]

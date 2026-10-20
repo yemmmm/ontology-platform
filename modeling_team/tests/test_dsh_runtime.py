@@ -1,5 +1,6 @@
 """Real pinned DSH/bwrap loading and process control, with no external model calls."""
 
+import hashlib
 import shutil
 import tempfile
 from pathlib import Path
@@ -112,6 +113,21 @@ def test_real_isolated_roster_loads_exact_tools_and_freezes_all_processes(local_
     assert all(identity.runtime == "dsh" for identity in identities)
     visibility = adapter.probe_role_visibility(run)
     assert set(visibility) == {"coordinator", "modeling", "competency-question"}
+    for configured in run.configuration.profile.agents:
+        actor = adapter.agents[configured.agent_id]
+        package = configured.package
+        assert package.package_id == package.role
+        manifest = actor.material_manifest
+        loaded = {entry["source"]: entry["sha256"] for entry in manifest.values()}
+        instruction = package.instructions_path.relative_to(ROOT).as_posix()
+        assert loaded[instruction] == hashlib.sha256(package.instructions_path.read_bytes()).hexdigest()
+        for skill in package.required_skills:
+            assert loaded[f"/skills/{skill.parent.name}/SKILL.md"] == hashlib.sha256(
+                skill.read_bytes()
+            ).hexdigest()
+        assert not any("minimal-chain-modeling" in name for name in loaded)
+        if configured.agent_id != "competency-question":
+            assert not any("cq-private" in name for name in loaded)
     for actor in ("coordinator", "modeling"):
         tools = {tool["name"] for server, tool in adapter.agents[actor].expected_tools if server == "team_transport"}
         assert {"update_work_card", "get_work_board", "resolve_work_request"} <= tools

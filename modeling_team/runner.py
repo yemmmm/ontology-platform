@@ -5480,7 +5480,7 @@ class TeamRunner:
     def _check_staged_decision_gates(self) -> bool:
         """R3.0-008B staged checks; returns whether the topology check may run.
 
-        Ordering (design section 3): the stage 3 minimal slot is a
+        Legacy ordering (design section 3): the stage 3 minimal slot is a
         prerequisite of the R3.0-002 topology decision, so an invalid slot
         skips the topology check for this tick WITHOUT latching
         ``_multi_slice_gate_opened`` and WITHOUT re-closing the shared gate
@@ -5521,11 +5521,10 @@ class TeamRunner:
         # direct Modeling submits use the confirmed scope/topology and their
         # candidate/intent/receipt contracts instead; a missing legacy slot
         # must not prevent the topology gate from checking that binding.
-        legacy_stage3_required = not self._unified_graph or any(
-            source.path.name == "r3-0-009-unified-graph-contract.json"
-            for source in self.run.configuration.task.role_sources
-        )
-        if legacy_stage3_required:
+        # A mounted representation reference supplies syntax, not an execution
+        # policy selector. Unified Tasks retain this read contract without
+        # reinstating retired stage-3/Protocol prerequisites.
+        if not self._unified_graph:
             approvals = self._load_staged_approvals(run_root)
             slot_issue = staged_stage3_issue(run_root, approvals, unified=self._unified_graph)
             if slot_issue is not None:
