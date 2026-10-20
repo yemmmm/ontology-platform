@@ -192,16 +192,32 @@ Frontend code uses TypeScript, React, and ES modules. Use `PascalCase` for compo
 
 ## Testing Guidelines
 
-Backend dev dependencies include `pytest`; place tests under `backend/tests/` with names like `test_metadata.py` or `test_graph_validation.py`, then run `cd backend && uv run pytest`. Prefer service-level tests for validation rules.
+Use layered testing for requirement development across `backend/`, `frontend/`, and `modeling_team/`:
 
-Changes to executable code under `backend/` must include new or updated tests when behavior changes
-and must be verified with `cd backend && uv run pytest` before the work is considered complete.
-Do not report a backend change as complete while tests are failing.
+- **Development iterations:** run the requirement cases, reproduced failures, and directly related tests.
+- **Delivery verification:** run regression tests for affected modules and critical calling paths based on
+  the actual change. Preserve relevant authorization, idempotency, and real loading/runtime contract checks.
+- **Full regression:** run the affected components' full suites once for shared-core code changes,
+  unclear impact boundaries, or before code merge/release. Full regression is not a default requirement
+  for every edit or ordinary local commit.
+
+Reuse passing results while the relevant code, dependencies, configuration, and runtime environment
+remain unchanged. Final edits must be covered by the appropriate tests; repeat or broaden checks only
+for new changes, failures, or unresolved evidence gaps. Report the tested scope and limitations.
+Full regression does not replace required independent semantic acceptance.
+
+Backend dev dependencies include `pytest`; place tests under `backend/tests/` with names like
+`test_metadata.py` or `test_graph_validation.py`. Prefer service-level tests for validation rules.
+Behavior changes under `backend/` must include new or updated tests. Run
+`cd backend && uv run pytest <test-paths>` for the affected scope; use `cd backend && uv run pytest`
+when the full-regression conditions above apply. Do not report a backend change as complete while
+required tests are failing.
 If the test command cannot be run because an external dependency is unavailable, document the exact
 blocker and the narrower checks that were run.
 
-For UI changes, run `cd frontend && npm run build` and `cd frontend && npx playwright test`, then
-document any manual browser checks that were necessary.
+For UI changes, run `cd frontend && npm run build` and affected Playwright tests with
+`cd frontend && npx playwright test <test-paths>`. Use `cd frontend && npx playwright test` when the
+full-regression conditions above apply. Document any manual browser checks that were necessary.
 
 Documentation-only and instruction-only changes require relevant link, format, and contract checks;
 they do not require backend/frontend suites or a service restart. Run changed skill validators when
