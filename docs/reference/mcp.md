@@ -363,6 +363,16 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 | `read_platform_record` | batch／session／ontology_batches 的 ID 与精确 project／ontology scope | 既有只读读回；返回记录与读取次数，无 apply/delete |
 | `reconcile_write_state` | 本次 run、project／ontology scope | 既有写者证据与 Batch／Attempt／资源／回执对账；不补做隐藏根因查询 |
 
+`start_evaluation(mode="cq-acceptance")`沿同run／freeze的已发布交接检查已知旧attempt：
+`evaluation_handoff_stale`返回当前`model_handoff`、`acceptance_attempt_id`和`freeze_id`，
+改用该绑定及新operation ID即可；当前所选公开／隐藏组已有报告时返回可恢复的
+`cq_handoff_immutable`及`retry_of`，通过原`complete_cq_handoff`分配只读重验attempt。
+两种明确的启动前拒绝不创建进程／operation记录，Delivery也撤回本次新增的owner登记；
+未知启动结果继续保留绑定。初次handoff不覆盖，重验使用实际新文件，启动记录的
+`request_binding.acceptance_attempt_id`保留所选attempt；公开／隐藏组分别检查。
+若发布竞态仍由CLI拒绝，`get_evaluation_status.error`保留该类型化冲突及纠正动作，
+模型侧简明状态不再丢掉它，也不展开可能含私有验收内容的stderr。
+
 R4.3-033 为 `start_evaluation` 和
 `resume_from_checkpoint(mode="acceptance")` 增加可选 `runtime: codex | dsh`，省略为
 `codex`，不从生产或 Delivery 推断；CLI 对应 `--runtime`，覆盖正式 CQ、公开早期反馈

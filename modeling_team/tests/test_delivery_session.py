@@ -76,6 +76,30 @@ def test_missing_evaluation_parameters_are_named_and_correctable(tmp_path, monke
     assert len(calls) == 1 and host.operation_ids == {"evaluation-1"}
 
 
+@pytest.mark.parametrize("code", ["evaluation_handoff_stale", "cq_handoff_immutable",
+                                  "delivery_launch_failed"])
+def test_evaluation_validation_releases_only_known_unlaunched_owner(tmp_path, monkeypatch, code):
+    module = importlib.import_module("modeling_team.delivery")
+    host = session(tmp_path)
+    host.allowed_operations.add("evaluation")
+    host.run_ids.add("bound-run")
+
+    def start(**kwargs):
+        raise HostOpError(code, "retained failure", retryable=True,
+            passthrough={"model_handoff": "current-handoff.json", "acceptance_attempt_id": "attempt-0002"})
+
+    monkeypatch.setattr(module.host_ops_mcp, "start_evaluation", start)
+    result = host.call_tool("start_evaluation", {
+        "run_id": "bound-run", "operation_id": "evaluation-1", "mode": "cq-acceptance",
+        "freeze_id": "freeze-1", "model_handoff": "old-handoff.json"})
+    assert result["error"]["code"] == code
+    assert result["error"]["model_handoff"] == "current-handoff.json"
+    assert result["error"]["acceptance_attempt_id"] == "attempt-0002"
+    assert host.operation_ids == ({"evaluation-1"} if code == "delivery_launch_failed" else set())
+    stored = json.loads((host.session_root / "session.json").read_text())
+    assert stored["operation_ids"] == (["evaluation-1"] if code == "delivery_launch_failed" else [])
+
+
 def test_business_input_retains_original_text_and_explicit_model_inheritance(tmp_path):
     host = session(tmp_path)
     text = '第一行\n第二行  原始空格'

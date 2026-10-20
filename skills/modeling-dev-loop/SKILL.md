@@ -59,8 +59,13 @@ R4.3-030 首批 F1＋F2 复用同一监督循环：Delivery用本地`yield_deliv
 原件、待送队列及unknown保留；旧v1只读转换，旧分页偏移不能沿用到新投影。
 bootstrap仅确认本身，不能清空历史pending或确认conversation消息。恢复保留原用户消息、
 未决问题及yield决定；长正文和大量未决项显式分页／有界补读，不用引用代替必要变化正文。
-F3阶段换线程仍默认关闭且未实施，F4两种机械连续动作另行分项推进；本批不新增模型／
-建模调用授权。工程机制、真实模型交回等待、实际token降耗及独立语义验收分别记录。
+F3阶段换线程已实现，默认关闭；按本轮已有`phase_thread_boundaries`选择production／
+acceptance边界。阶段申请／yield不等于切换：到达配置边界时，在现有周期检查中核对一次
+`phase_thread_history.status=switched`及新原生线程身份；未生效则定向核对
+`core.phase_thread_handoff`的deferred／blocker及当前在途状态，不反复重发交接。
+已清理的语义开始前失败run缺账本可保留原错误而不阻断其他run，未知写入与未决请求
+仍须核对。F4两种机械连续动作另行分项推进；工程机制、真实采用、token效果和独立
+语义验收分别记录，不因此新增模型／建模调用授权。
 
 CQ 待审时，Delivery 通过现有 session 私有 journal 的 `request_host_action` 提交窄的
 `kind="cq_review"` 请求；`bindings` 只携带当前待办的 `review_id`、`content_version`、
@@ -108,6 +113,11 @@ Coordinator 负责生产侧语义定位：使用 scenario-map、共享决定、�
    首次 start 若为 production checkpoint resume 也适用。后续恢复与只读验收记录实际耗时和
    阻塞，不从最初授权时点反复套用此期限或请求新授权；写入安全和 start 余额仍须核对。
    首次超时即报告耗时来源并缩短通路，不能继续扩展预检。
+
+已有数据库连接耗尽、内存压力或启动超时证据时，下一次获准启动前只做一次有界资源
+核对：当前可用内存／swap、数据库连接余量及已知历史待命owner。沿已有run／operation
+绑定确认归属；仅在明确stop授权内释放历史进程和对应临时凭据，保留模型、报告和证据。
+不能因资源检查重建全量审计、任意终止旧团队，或以清理完成代替故障步骤恢复与阶段切换。
 
 ## 建模轮次计数与验收后修模
 

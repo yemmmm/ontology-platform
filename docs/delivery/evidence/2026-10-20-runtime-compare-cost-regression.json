@@ -1,0 +1,330 @@
+{
+  "minimal-chain-20261020-codex-glm-low": {
+    "run_id": "minimal-chain-20261020-codex-glm-low-r1",
+    "semantic_start": "2026-10-20T05:58:46.235907+00:00",
+    "production_handoff": "2026-10-20T06:16:17.114477+00:00",
+    "acceptance_pass": "2026-10-20T06:20:20.286377+00:00",
+    "start_to_handoff_seconds": 1050.87857,
+    "handoff_to_pass_seconds": 243.1719,
+    "start_to_pass_seconds": 1294.05047,
+    "delivery_input": 4816287,
+    "delivery_output": 9124,
+    "delivery_total": 4825411,
+    "runtime_chain_total": 8034568,
+    "host_total_if_bound": 6365189,
+    "yield_records": 12,
+    "explicit_boundary_requests": [
+      {
+        "at": "2026-10-20T06:11:27.264130+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "req-freeze-0001",
+            "req-freeze-notify-0001"
+          ],
+          "run_id": "minimal-chain-20261020-codex-glm-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T06:17:09.725639+00:00",
+        "boundary": {
+          "phase": "acceptance",
+          "request_ids": [
+            "host-cq-handoff-r1-attempt3"
+          ],
+          "run_id": "minimal-chain-20261020-codex-glm-low-r1"
+        }
+      }
+    ],
+    "actual_switches": 2,
+    "blocking_evidence": [],
+    "source_refs": [
+      "workspaces/minimal-chain-20261020-codex-glm-low/authorization.json",
+      "workspaces/delivery-sessions/minimal-chain-20261020-codex-glm-low/session-events.jsonl",
+      "workspaces/modeling-runs/minimal-chain-20261020-codex-glm-low-r1/evidence/cq-handoff-complete.jsonl",
+      "workspaces/modeling-runs/minimal-chain-20261020-codex-glm-low-r1/evidence/cq-acceptance-complete.jsonl"
+    ]
+  },
+  "minimal-chain-20261020-compare-codex-low": {
+    "run_id": "minimal-chain-20261020-compare-codex-low-r1",
+    "semantic_start": "2026-10-20T07:09:50.711240+00:00",
+    "production_handoff": "2026-10-20T07:39:49.296567+00:00",
+    "acceptance_pass": "2026-10-20T08:01:15.101189+00:00",
+    "start_to_handoff_seconds": 1798.585327,
+    "handoff_to_pass_seconds": 1285.804622,
+    "start_to_pass_seconds": 3084.389949,
+    "delivery_input": 9603694,
+    "delivery_output": 31686,
+    "delivery_total": 9635380,
+    "runtime_chain_total": 15015722,
+    "host_total_if_bound": 27437981,
+    "yield_records": 19,
+    "explicit_boundary_requests": [
+      {
+        "at": "2026-10-20T07:31:57.503538+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "cmp-codex-1020-freeze-notify-0001"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:32:59.911967+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "cmp-codex-1020-freeze-notify-0001"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:34:14.812963+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "cmp-codex-1020-freeze-notify-0001"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:35:31.005324+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "cmp-codex-1020-freeze-notify-0001"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:36:51.749037+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "cmp-codex-1020-freeze-notify-0001"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:37:34.457381+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "cmp-codex-1020-freeze-notify-0001"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:38:34.456738+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "cmp-codex-1020-freeze-notify-0001"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:39:19.856187+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "cmp-codex-1020-freeze-notify-0001"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:50:42.275697+00:00",
+        "boundary": {
+          "phase": "acceptance",
+          "request_ids": [
+            "cmp-codex-1020-handoff-0003"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:51:34.125374+00:00",
+        "boundary": {
+          "phase": "acceptance",
+          "request_ids": [
+            "cmp-codex-1020-handoff-0003"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:55:20.679212+00:00",
+        "boundary": {
+          "phase": "acceptance",
+          "request_ids": [
+            "cmp-codex-1020-handoff-0003"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:55:57.878393+00:00",
+        "boundary": {
+          "phase": "acceptance",
+          "request_ids": [
+            "cmp-codex-1020-handoff-0003"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:56:41.810247+00:00",
+        "boundary": {
+          "phase": "acceptance",
+          "request_ids": [
+            "cmp-codex-1020-handoff-0003"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T07:59:31.204850+00:00",
+        "boundary": {
+          "phase": "acceptance",
+          "request_ids": [
+            "cmp-codex-1020-handoff-0003"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      },
+      {
+        "at": "2026-10-20T08:00:40.730368+00:00",
+        "boundary": {
+          "phase": "acceptance",
+          "request_ids": [
+            "cmp-codex-1020-handoff-0003"
+          ],
+          "run_id": "minimal-chain-20261020-compare-codex-low-r1"
+        }
+      }
+    ],
+    "actual_switches": 1,
+    "blocking_evidence": [],
+    "source_refs": [
+      "workspaces/minimal-chain-20261020-compare-codex-low/authorization.json",
+      "workspaces/delivery-sessions/minimal-chain-20261020-compare-codex-low/session-events.jsonl",
+      "workspaces/modeling-runs/minimal-chain-20261020-compare-codex-low-r1/evidence/cq-handoff-complete.jsonl",
+      "workspaces/modeling-runs/minimal-chain-20261020-compare-codex-low-r1/evidence/cq-acceptance-complete.jsonl"
+    ]
+  },
+  "minimal-chain-20261020-compare-dsh-low": {
+    "run_id": "minimal-chain-20261020-compare-dsh-low-r1retry",
+    "semantic_start": "2026-10-20T07:14:57.355904+00:00",
+    "production_handoff": "2026-10-20T07:39:23.547400+00:00",
+    "acceptance_pass": "2026-10-20T08:06:11.786581+00:00",
+    "start_to_handoff_seconds": 1466.191496,
+    "handoff_to_pass_seconds": 1608.239181,
+    "start_to_pass_seconds": 3074.430677,
+    "delivery_input": 41762617,
+    "delivery_output": 47336,
+    "delivery_total": 41809953,
+    "runtime_chain_total": 54219473,
+    "host_total_if_bound": null,
+    "yield_records": 64,
+    "explicit_boundary_requests": [
+      {
+        "at": "2026-10-20T07:28:23.997871+00:00",
+        "boundary": {
+          "phase": "production",
+          "request_ids": [
+            "cmp-dsh-1020-cq-freeze",
+            "cmp-dsh-1020-freeze-notify"
+          ],
+          "run_id": "minimal-chain-20261020-compare-dsh-low-r1retry"
+        }
+      },
+      {
+        "at": "2026-10-20T07:44:12.133508+00:00",
+        "boundary": {
+          "phase": "acceptance",
+          "request_ids": [
+            "cmp-dsh-1020-cq-handoff-retry"
+          ],
+          "run_id": "minimal-chain-20261020-compare-dsh-low-r1retry"
+        }
+      }
+    ],
+    "actual_switches": 0,
+    "blocking_evidence": [
+      {
+        "yield_at": "2026-10-20T07:28:23.997871+00:00",
+        "blocked_runs": [
+          {
+            "run_id": "minimal-chain-20261020-compare-dsh-low-r1",
+            "request_ok": false,
+            "error": {
+              "code": "artifact_unavailable",
+              "next_action": "check the bound path and retry",
+              "object": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261020-compare-dsh-low-r1/control/host-requests.jsonl",
+              "reason": "[Errno 2] No such file or directory: '/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261020-compare-dsh-low-r1/control/host-requests.jsonl'",
+              "retryable": true
+            }
+          }
+        ]
+      },
+      {
+        "yield_at": "2026-10-20T07:44:12.133508+00:00",
+        "blocked_runs": [
+          {
+            "run_id": "minimal-chain-20261020-compare-dsh-low-r1",
+            "request_ok": false,
+            "error": {
+              "code": "artifact_unavailable",
+              "next_action": "check the bound path and retry",
+              "object": "/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261020-compare-dsh-low-r1/control/host-requests.jsonl",
+              "reason": "[Errno 2] No such file or directory: '/home/yangxiang/ontology-platform/workspaces/modeling-runs/minimal-chain-20261020-compare-dsh-low-r1/control/host-requests.jsonl'",
+              "retryable": true
+            }
+          }
+        ]
+      }
+    ],
+    "source_refs": [
+      "workspaces/minimal-chain-20261020-compare-dsh-low/authorization.json",
+      "workspaces/delivery-sessions/minimal-chain-20261020-compare-dsh-low/session-events.jsonl",
+      "workspaces/modeling-runs/minimal-chain-20261020-compare-dsh-low-r1retry/evidence/cq-handoff-complete.jsonl",
+      "workspaces/modeling-runs/minimal-chain-20261020-compare-dsh-low-r1retry/evidence/cq-acceptance-complete.jsonl"
+    ]
+  },
+  "dsh_delivery_native": {
+    "responses": 130,
+    "same_native_session": "delivery-5d47deed6ec94c3abb93da9fc59f5d30",
+    "input_mean": 321250.9,
+    "input_max": 615793,
+    "first_input": 26858,
+    "yield_only_responses": 66,
+    "yield_only_input": 21206802,
+    "no_tool_responses": 21,
+    "no_tool_input": 7807451,
+    "input_before_production_handoff": 15205307,
+    "input_after_production_handoff": 26557310,
+    "active_status_query_tools": 4,
+    "count_definition": "unique retained DSH native assistant/message steps, tool/call joined by native session/turn/step; yield-only includes two rejected registrations, not all removable work"
+  },
+  "identical_delivery_code": {
+    "before_commit": "5135bff",
+    "current_start_commit": "54fe708",
+    "git_blob_sha": "e8d3b7170f9a16dea540b2cb1b916d65d96216de",
+    "scope": "modeling_team/delivery.py and Delivery Skill have zero diff between these commits; production baseline did change"
+  },
+  "classification": {
+    "F3": "located platform-contract: maybe_switch_phase_thread globally requires every bound run request ledger to be readable; presemantic CLEANED run has no ledger and permanently blocks both explicit requests",
+    "timing": "wall time, not active semantic work; concurrent current runs are not added",
+    "codex_production_switch": "8 explicit production handoffs, no production switch; artifact evidence does not retain every maybe_switch guard state, so exact transient busy/input/decision gate is only partially located",
+    "prior_tool_failures": "Codex platform-forward-failed root cause remains unproven; independent Consumers recovered and retained evidence replay was stable",
+    "scope": "metadata-only retrospective; no model/agent/evaluation invocation or source evidence edits"
+  }
+}

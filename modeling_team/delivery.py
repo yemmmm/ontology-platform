@@ -2157,13 +2157,13 @@ class DeliverySession:
                 continue
         return scopes
 
-    def _discard_prelaunch_repair_owner(
+    def _discard_prelaunch_owner(
         self, name: str, arguments: dict, exc: BaseException, *, newly_registered: bool
     ) -> None:
-        """Release only an owner proven to have failed before repair launch.
+        """Release only an owner proven to have failed before launch.
 
         Delivery registers an intended operation before invoking the Host so a
-        lost launch receipt remains observable.  A narrow set of typed repair
+        lost launch receipt remains observable. A narrow set of typed
         validation errors is the exception: those paths run before
         ``.delivery-ops/<id>.json`` can be created and must not leave a phantom
         owner that traps the stop loop.
@@ -2171,9 +2171,10 @@ class DeliverySession:
 
         if (
             not newly_registered
-            or name != "start_repair"
             or not isinstance(exc, HostOpError)
-            or exc.code not in _REPAIR_PRELAUNCH_ERROR_CODES
+            or not ((name == "start_repair" and exc.code in _REPAIR_PRELAUNCH_ERROR_CODES)
+                    or (name == "start_evaluation" and exc.code in {
+                        "evaluation_handoff_stale", "cq_handoff_immutable"}))
         ):
             return
         operation_id = arguments.get("operation_id")
@@ -2583,18 +2584,18 @@ class DeliverySession:
                     self.reconciled_runs.add(args['run_id'])
             return {"ok": True, "data": data}
         except HostOpError as exc:
-            self._discard_prelaunch_repair_owner(
+            self._discard_prelaunch_owner(
                 name, arguments, exc, newly_registered=newly_registered_operation
             )
             return {"ok": False, "error": exc.as_envelope()}
         except (ValueError, TypeError, KeyError, OSError) as exc:
-            self._discard_prelaunch_repair_owner(
+            self._discard_prelaunch_owner(
                 name, arguments, exc, newly_registered=newly_registered_operation
             )
             return {"ok": False, "error": {"code": "delivery_contract", "message": str(exc)}}
         except Exception as exc:
             # Schema failures can contain the supplied instance. Keep them private.
-            self._discard_prelaunch_repair_owner(
+            self._discard_prelaunch_owner(
                 name, arguments, exc, newly_registered=newly_registered_operation
             )
             self._append("tool-errors.jsonl", {"tool": name, "error_type": type(exc).__name__})
@@ -2829,6 +2830,37 @@ class DeliverySession:
             "evidence": self._journal_reference(offset, length),
             "note": "End this turn now. All bindings remain under program observation; this is not turn completion."}}
 
+    def _phase_thread_run_blocker(self) -> dict | None:
+        """Keep unsafe state in scope without requiring a ledger before startup."""
+        for run_id, run in self._last_current.get("runs", {}).items():
+            requests = run.get("requests", {})
+            status = run.get("status", {})
+            data = status.get("data", {})
+            if status.get("ok") is not True:
+                return {"run_id": run_id, "code": "run_status_unavailable"}
+            if data.get("write_phase") in {"unknown", "writing", "applying"}:
+                return {"run_id": run_id, "code": "write_phase_unsettled"}
+            if requests.get("ok") is not True:
+                # A failed startup never created this ledger. Cleanup and the
+                # absence of semantic starts are observed facts, not an empty
+                # fabricated request history. Retain the original error.
+                state = data.get("recorded_state") or {}
+                if (requests.get("error", {}).get("code") == "artifact_unavailable"
+                        and state.get("state") == "CLEANED"
+                        and state.get("has_cleanup_record") is True
+                        and data.get("semantic_progress", {}).get("semantic_start_count") == 0):
+                    continue
+                return {"run_id": run_id,
+                        "code": requests.get("error", {}).get("code", "request_ledger_unavailable")}
+            if requests.get("data", {}).get("coverage", {}).get("complete") is not True:
+                return {"run_id": run_id, "code": "request_coverage_incomplete"}
+            for item in requests.get("data", {}).get("pending", []):
+                result = item.get("result", {})
+                if result.get("ok") is not True or result.get("data", {}).get("outcome") != "rejected":
+                    return {"run_id": run_id, "request_id": item.get("request_id"),
+                            "code": "request_unsettled"}
+        return None
+
     def _phase_thread_handoff(self) -> dict | None:
         """Surface the enabled natural boundary where Delivery must record its handoff."""
         enabled = self.config.get("phase_thread_boundaries", [])
@@ -2883,6 +2915,12 @@ class DeliverySession:
                         "add the actual accepted freeze-notification instruction request_id to "
                         "thread_boundary.request_ids, retain effective decisions in yield_delivery, "
                         "then end this turn; do not select an unrelated instruction")
+                blocker = self._phase_thread_run_blocker()
+                if blocker:
+                    return {"status": "deferred", "phase": phase, "run_id": run_id,
+                        "blocker": blocker,
+                        "next_action": "reconcile the identified run's status, ledger or pending receipt; "
+                            "keep the current thread and do not resend the handoff"}
                 return hint
         return None
 
@@ -2908,17 +2946,8 @@ class DeliverySession:
                 for row in recovery.get("user_messages", [])):
             return False
         current = self._last_current
-        for run in current.get("runs", {}).values():
-            requests = run.get("requests", {})
-            status = run.get("status", {})
-            if (requests.get("ok") is not True or status.get("ok") is not True
-                    or requests.get("data", {}).get("coverage", {}).get("complete") is not True
-                    or status.get("data", {}).get("write_phase") in {"unknown", "writing", "applying"}):
-                return False
-            for item in requests.get("data", {}).get("pending", []):
-                result = item.get("result", {})
-                if result.get("ok") is not True or result.get("data", {}).get("outcome") != "rejected":
-                    return False
+        if self._phase_thread_run_blocker():
+            return False
         run = current.get("runs", {}).get(run_id, {})
         settled = {item["request_id"]: item for item in
                    run.get("requests", {}).get("data", {}).get("settled", [])}

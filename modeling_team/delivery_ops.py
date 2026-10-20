@@ -34,11 +34,13 @@ from .checkpoint_recovery import (
     reconcile_write_tail,
 )
 from .checkpoints import CheckpointError
-from .competency_questions import CQContractError, reload_frozen_pool
+from .competency_questions import CQContractError, cq_published_handoff_path, reload_frozen_pool
 from .host_ops import (
     DEFAULT_PLATFORM_BASE_URL,
     HOST_CREDENTIAL_ENV,
     HostOpError,
+    _evidence_records,
+    _latest,
     default_repository_root,
     resolve_repo_path,
     resolve_run_root,
@@ -1408,6 +1410,50 @@ def validate_evaluation_runtime(runtime, model_profile, service_tier, *, mode, r
             retryable=True, next_action="correct the explicit acceptance runtime and role bindings") from exc
 
 
+def _cq_evaluation_attempt(run_root: Path, handoff_path: Path, freeze: dict | None,
+                           visibility: str) -> dict:
+    """Return the selected attempt, with recoverable feedback for known stale inputs."""
+    try:
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        return {}  # The existing CLI owns full handoff validation.
+    if not isinstance(handoff, dict) or not isinstance(freeze, dict):
+        return {}
+    attempt = handoff.get("acceptance_attempt_id")
+    binding = {"acceptance_attempt_id": attempt} if isinstance(attempt, str) else {}
+    if (not isinstance(attempt, str) or not re.fullmatch(r"attempt-[0-9]{4}", attempt)
+            or handoff.get("freeze_id") != freeze.get("batch_id")
+            or handoff.get("freeze_digest") != freeze.get("snapshot_digest")):
+        return binding
+    latest = _latest([row for row in _evidence_records(run_root, "cq-handoff-complete")
+                      if row.get("freeze_id") == freeze.get("batch_id")
+                      and row.get("freeze_digest") == freeze.get("snapshot_digest")])
+    if latest is None:
+        return binding
+    try:
+        current_path = cq_published_handoff_path(run_root, latest)
+    except ValueError:
+        return binding
+    current = {"model_handoff": str(current_path),
+               "acceptance_attempt_id": latest.get("acceptance_attempt_id"),
+               "freeze_id": latest.get("freeze_id")}
+    if attempt != latest.get("acceptance_attempt_id"):
+        raise HostOpError("evaluation_handoff_stale",
+            "a newer read-only acceptance handoff is already published for this freeze",
+            obj="model_handoff", retryable=True, passthrough=current,
+            next_action="retry start_evaluation with the returned model_handoff and a new operation_id; "
+                "do not allocate another attempt or rebuild the model")
+    group = "public-regression" if visibility == "public" else "reports"
+    report = run_root / "acceptance-v3" / group / freeze["batch_id"] / attempt / "batch-report.json"
+    if report.exists() or report.is_symlink():
+        raise HostOpError("cq_handoff_immutable",
+            "this acceptance attempt already has a published report for the selected group",
+            obj="model_handoff", retryable=True, passthrough={**current, "retry_of": attempt},
+            next_action="call complete_cq_handoff with retry_of and a new request_id; after actual "
+                "acceptance, use its new model_handoff/attempt for all authorized groups; retain old reports")
+    return binding
+
+
 def start_evaluation(
     *,
     run_id: str,
@@ -1514,8 +1560,10 @@ def start_evaluation(
             )
         model_handoff_value = None
     cli_freeze_id = freeze_id
+    attempt_binding = {}
     if mode == "cq-acceptance":
         cli_freeze_id, _freeze, _snapshot_error = _resolve_cq_freeze_snapshot(run_root, freeze_id)
+        attempt_binding = _cq_evaluation_attempt(run_root, model_handoff_value, _freeze, question_visibility)
     argv = [
         sys.executable,
         "-m",
@@ -1552,6 +1600,7 @@ def start_evaluation(
     )
     request.update(
         {
+            **attempt_binding,
             "run_id": run_id,
             "model_handoff": str(model_handoff_value) if model_handoff_value is not None else None,
             "session_timeout": timeout,
@@ -1626,7 +1675,7 @@ def get_evaluation_status(
         owner = None
     stdout_path, stderr_path = _log_paths(operation_id, repository_root)
     log_tails = {"stdout": _log_tail(stdout_path), "stderr": _log_tail(stderr_path)}
-    return {
+    result = {
         "operation_id": operation_id,
         "kind": "evaluation",
         "close_statistics": read_close_statistics(owner_path.parent),
@@ -1653,6 +1702,15 @@ def get_evaluation_status(
         "record_path": record.get("record_path"),
         "note": "a process exit and a new report do not by themselves prove semantic acceptance",
     }
+    # Preserve this typed launch conflict in the model projection, without
+    # exposing arbitrary stderr (which can contain private acceptance content).
+    if (record.get("status") == "exited" and record.get("exit_code") not in (None, 0)
+            and "cq-acceptance failed: cq_handoff_immutable:" in log_tails["stderr"]["text"]):
+        result["error"] = {"code": "cq_handoff_immutable", "retryable": True,
+            "reason": "the selected attempt already carries a published report",
+            "next_action": "use the latest accepted complete_cq_handoff model_handoff/attempt; "
+                "if already published, request read-only reacceptance with retry_of and a new request_id"}
+    return result
 
 
 def _repair_child_env(service_tier: str) -> dict[str, str]:

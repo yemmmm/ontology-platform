@@ -1,4 +1,5 @@
 """Phase handoff preserves the task and uses actual receipts, without a model call."""
+import copy
 import json
 
 import pytest
@@ -237,3 +238,83 @@ def test_changed_receipt_is_visible_without_a_followup_model_query(tmp_path, mon
     raw["runs"]["run"]["status"]["data"]["write_phase"] = "read-only"
     host.record_observation(raw)
     assert ack(host)["request_results"] == []
+
+
+def failed_start_boundary(tmp_path, monkeypatch, phase="acceptance"):
+    host, raw = ready(tmp_path, monkeypatch)
+    host.run_ids.add("failed-start")
+    raw["runs"]["failed-start"] = {
+        "status": {"ok": True, "data": {
+            "recorded_state": {"state": "CLEANED", "has_cleanup_record": True},
+            "semantic_progress": {"semantic_start_count": 0},
+            "write_phase": None,
+        }},
+        "request_ledger": {"ok": False, "error": {"code": "artifact_unavailable"}},
+    }
+    host.config["phase_thread_boundaries"] = [phase]
+    ids = ["handoff"]
+    if phase == "production":
+        rows = [{"request_id": "freeze", "action": "cq_freeze", "content_digest": "f"},
+                {"request_id": "notify", "action": "instruction", "content_digest": "n"}]
+        root = tmp_path / "run"
+        (root / "control/host-requests.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows))
+        (root / "evidence/outer-input-receipts.jsonl").write_text(
+            "".join(json.dumps({**row, "outcome": "accepted"}) + "\n" for row in rows))
+        raw["runs"]["run"]["request_ledger"] = host._observe_request_ledger("run")
+        ids = ["freeze", "notify"]
+    host.record_observation(raw)
+    args = yield_args(ack(host)["input_id"])
+    args["thread_boundary"] = {"phase": phase, "run_id": "run", "request_ids": ids}
+    assert host.call_tool("yield_delivery", args)["ok"]
+    return host, raw
+
+
+@pytest.mark.parametrize("phase", ["production", "acceptance"])
+def test_cleaned_presemantic_failure_without_ledger_allows_phase_switch(
+    tmp_path, monkeypatch, phase,
+):
+    host, raw = failed_start_boundary(tmp_path, monkeypatch, phase)
+    original = copy.deepcopy(raw["runs"]["failed-start"])
+    runtime = PhaseRuntime()
+    assert host.maybe_switch_phase_thread(runtime)
+    assert runtime.switches == 1
+    assert host.run_ids == {"run", "failed-start"}
+    retained = json.loads((host.session_root / "observation.json").read_text())["data"]
+    assert retained["runs"]["failed-start"] == original
+    assert ack(host)["runs"]["failed-start"]["requests"]["error"]["code"] == "artifact_unavailable"
+
+
+@pytest.mark.parametrize("change", ["active", "no_cleanup", "started", "unknown_start",
+                                   "unknown_write", "writing", "applying", "other_error"])
+def test_unqualified_historical_run_still_defers_with_its_identity(
+    tmp_path, monkeypatch, change,
+):
+    host, raw = failed_start_boundary(tmp_path, monkeypatch)
+    old = raw["runs"]["failed-start"]
+    status = old["status"]["data"]
+    if change == "active":
+        status["recorded_state"]["state"] = "RUNNING"
+    elif change == "no_cleanup":
+        status["recorded_state"]["has_cleanup_record"] = False
+    elif change in {"started", "unknown_start"}:
+        status["semantic_progress"]["semantic_start_count"] = 1 if change == "started" else None
+    elif change in {"unknown_write", "writing", "applying"}:
+        status["write_phase"] = "unknown" if change == "unknown_write" else change
+    else:
+        old["request_ledger"]["error"]["code"] = "artifact_identity_mismatch"
+    host.record_observation(raw)
+    packet = ack(host)
+    args = yield_args(packet["input_id"])
+    assert host.call_tool("yield_delivery", args)["ok"]
+    runtime = PhaseRuntime()
+    assert not host.maybe_switch_phase_thread(runtime)
+    hint = packet["core"]["phase_thread_handoff"]
+    assert hint["status"] == "deferred"
+    assert hint["blocker"]["run_id"] == "failed-start"
+    assert hint["blocker"]["code"] == (
+        "write_phase_unsettled" if change in {"unknown_write", "writing", "applying"}
+        else "artifact_identity_mismatch" if change == "other_error" else "artifact_unavailable")
+    assert hint["next_action"]
+    assert runtime.switches == 0
+    assert not host.record_observation(raw)  # The same blocker must not create a wake loop.

@@ -167,7 +167,9 @@ starts acceptance.
 
 The successful `complete_cq_handoff` response includes `model_handoff` (an absolute Host
 path) and `model_handoff_relative`; use one of those returned values directly with
-`start_evaluation`. The canonical file is `<run-root>/acceptance-v3/production-handoff.json`.
+`start_evaluation`. The initial publication is `<run-root>/acceptance-v3/production-handoff.json`;
+read-only reacceptance publishes `acceptance-v3/handoffs/attempt-NNNN.json` instead.
+Use the actual new binding; the initial file remains immutable and is not updated for a retry.
 Do not substitute an isolated role's `/agent/work` path or infer a report directory as the
 model handoff.
 
@@ -507,6 +509,10 @@ request ID to allocate read-only reacceptance. Evaluate and complete using the
 returned model_handoff/attempt, retaining the old reports and full frozen scope.
 An ordinary duplicate handoff remains idempotent; do not rebuild the model for
 an acceptance-only retry.
+`evaluation_handoff_stale` returns the already allocated current model_handoff/attempt;
+use it with a new operation_id. `cq_handoff_immutable` means the selected group already
+published a report: request the new read-only attempt using retry_of, then use that
+actual accepted binding. These are correctable inputs, not model-quality failures.
 Execute all requested final public/hidden groups on that new binding; preserve
 prior passes as history rather than mixing attempts to declare a new full PASS.
 

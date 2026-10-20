@@ -435,6 +435,119 @@ def test_evaluation_status_exposes_only_bound_redacted_log_tails(tmp_path, monke
     assert status["stderr_tail"] == ""
 
 
+def _retry_handoffs(repository_root):
+    root = _run_root(repository_root)
+    frozen = _write_frozen_snapshot(root)
+    records = []
+    paths = []
+    for ordinal in (1, 2):
+        relative = ("acceptance-v3/production-handoff.json" if ordinal == 1 else
+                    "acceptance-v3/handoffs/attempt-0002.json")
+        handoff = {"freeze_id": "cq-batch-0001", "freeze_digest": frozen["snapshot_digest"],
+                   "acceptance_attempt_id": f"attempt-{ordinal:04d}",
+                   "report_directory": f"acceptance-v3/reports/cq-batch-0001/attempt-{ordinal:04d}"}
+        if ordinal == 2:
+            handoff["retry_of"] = "attempt-0001"
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(handoff))
+        paths.append(path)
+        records.append({**handoff, "recorded_at": f"2026-10-20T00:00:0{ordinal}Z",
+                        "model_handoff": str(path),
+                        "model_handoff_relative": path.relative_to(repository_root).as_posix()})
+    (root / "evidence/cq-handoff-complete.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in records))
+    return root, paths
+
+
+@pytest.mark.parametrize("published", [False, True])
+def test_reacceptance_rejects_stale_or_published_attempt_before_launch(tmp_path, published):
+    root, paths = _retry_handoffs(tmp_path)
+    report = root / "acceptance-v3/reports/cq-batch-0001/attempt-0002/batch-report.json"
+    if published:
+        report.parent.mkdir(parents=True)
+        report.write_text('{"status":"runtime-failed"}')
+    launches = []
+    def launcher(argv, **kwargs):
+        launches.append(argv)
+        return _Process()
+    with pytest.raises(host_ops.HostOpError) as raised:
+        delivery_ops.start_evaluation(
+            run_id="delivery-run", operation_id="stale-attempt", mode="cq-acceptance",
+            freeze_id="cq-batch-0001", model_handoff=str(paths[1 if published else 0]),
+            repository_root=tmp_path, launcher=launcher,
+        )
+    error = raised.value.as_envelope()
+    assert error["code"] == ("cq_handoff_immutable" if published else "evaluation_handoff_stale")
+    assert error["retryable"] is True
+    assert error["acceptance_attempt_id"] == "attempt-0002"
+    assert error["model_handoff"] == str(paths[1])
+    assert ("complete_cq_handoff" if published else "model_handoff") in error["next_action"]
+    assert not launches
+    assert not (tmp_path / ".delivery-ops/stale-attempt.json").exists()
+    if published:
+        assert report.read_text() == '{"status":"runtime-failed"}'
+
+
+def test_public_group_can_use_current_attempt_after_hidden_report(tmp_path):
+    root, paths = _retry_handoffs(tmp_path)
+    report = root / "acceptance-v3/reports/cq-batch-0001/attempt-0002/batch-report.json"
+    report.parent.mkdir(parents=True)
+    report.write_text('{}')
+    result = delivery_ops.start_evaluation(
+        run_id="delivery-run", operation_id="public-current", mode="cq-acceptance",
+        freeze_id="cq-batch-0001", model_handoff=str(paths[1]), question_visibility="public",
+        repository_root=tmp_path, launcher=lambda *a, **k: _Process(),
+    )
+    assert result["request"]["acceptance_attempt_id"] == "attempt-0002"
+    assert result["request"]["model_handoff"] == str(paths[1])
+
+
+def test_current_handoff_copy_is_accepted_by_attempt_identity(tmp_path):
+    _root, paths = _retry_handoffs(tmp_path)
+    copy = tmp_path / "handoff-copy.json"
+    copy.write_bytes(paths[1].read_bytes())
+    result = delivery_ops.start_evaluation(
+        run_id="delivery-run", operation_id="copied-current", mode="cq-acceptance",
+        freeze_id="cq-batch-0001", model_handoff=str(copy),
+        repository_root=tmp_path, launcher=lambda *a, **k: _Process(),
+    )
+    assert result["request"]["acceptance_attempt_id"] == "attempt-0002"
+    assert result["request"]["model_handoff"] == str(copy)
+
+
+def test_immutable_cli_conflict_survives_model_projection_without_private_stderr(tmp_path):
+    from modeling_team.tests.test_delivery_decision_input import ack
+    from modeling_team.tests.test_delivery_session import session
+    from modeling_team.tests.test_delivery_wakeups import observation
+
+    _run_root(tmp_path)
+    (tmp_path / "handoff.json").write_text('{}')
+    delivery_ops.start_evaluation(
+        run_id="delivery-run", operation_id="immutable-race", mode="cq-acceptance",
+        freeze_id="freeze-logs", model_handoff="handoff.json",
+        repository_root=tmp_path, launcher=lambda *a, **k: _Process(exit_code=2),
+    )
+    (tmp_path / ".delivery-ops/immutable-race.err.log").write_text(
+        "PRIVATE-QUESTION-BODY\ncq-acceptance failed: cq_handoff_immutable: already published\n")
+    for _ in range(100):
+        status = delivery_ops.get_evaluation_status(operation_id="immutable-race", repository_root=tmp_path)
+        if status["status"] == "exited":
+            break
+        time.sleep(0.01)
+    (tmp_path / "host").mkdir()
+    host = session(tmp_path / "host")
+    raw = observation()
+    raw["operations"] = {"immutable-race": {"ok": True, "data": status}}
+    host.record_observation(raw)
+    packet = ack(host)
+    error = packet["core"]["operations"]["immutable-race"]["error"]
+    assert error["code"] == "cq_handoff_immutable"
+    assert "complete_cq_handoff" in error["next_action"]
+    assert "PRIVATE-QUESTION-BODY" not in json.dumps(packet)
+    assert not host.record_observation(raw)
+
+
 def test_evaluation_status_observes_a_report_published_just_after_process_exit(
     tmp_path: Path,
 ) -> None:
