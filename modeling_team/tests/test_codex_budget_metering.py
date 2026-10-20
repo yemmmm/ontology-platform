@@ -91,11 +91,11 @@ def test_successful_transport_uses_bound_native_metering_without_double_charge(t
 
 
 @pytest.mark.parametrize("status", ["client_disconnected", "stream_error", "transport_error"])
-def test_failed_transport_without_its_own_usage_is_not_hidden_by_native_usage(tmp_path, status):
-    budget, writer, proxy = setup_native(tmp_path)
+def test_failed_transport_without_numeric_basis_stays_paused(tmp_path, status):
+    budget, _, proxy = setup_native(tmp_path)
     proxy_rows(proxy, status=status)
-    snapshot(writer, 100, "2026-10-20T00:00:02+00:00")
-    assert any(r["reason"] == "metering_error" for r in budget.tick(now=LATE)["pause_reasons"])
+    state = budget.tick(now=LATE)
+    assert any(r["reason"] == "metering_error" for r in state["pause_reasons"])
 
 
 @pytest.mark.parametrize("key", ["other-key", None])
@@ -112,13 +112,21 @@ def test_missing_native_numbers_still_pause_successful_transport(tmp_path):
     assert any(r["reason"] == "metering_error" for r in budget.tick(now=LATE)["pause_reasons"])
 
 
-def test_one_native_sample_cannot_cover_multiple_successful_requests(tmp_path):
+def test_unmatched_transport_is_provisional_and_late_native_replaces_it(tmp_path):
     budget, writer, proxy = setup_native(tmp_path)
     proxy_rows(proxy)
     rows = proxy.read_text()
     proxy.write_text(rows + rows.replace('request-a', 'request-b'))
     snapshot(writer, 100, "2026-10-20T00:00:02+00:00")
-    assert any(r["reason"] == "metering_error" for r in budget.tick(now=LATE)["pause_reasons"])
+    first = budget.tick(now=LATE)
+    assert first["provisional_amount"] == "0.00056"
+    assert first["charged_estimate"] == "0.00084"
+    assert not first["coverage"]["issues"]
+    snapshot(writer, 200, "2026-10-20T00:00:03+00:00")
+    final = budget.tick(now=LATE)
+    assert final["provisional_amount"] == "0"
+    assert final["charged_estimate"] == "0.00056"
+    assert not final["coverage"]["issues"]
 
 
 def test_duplicate_native_notification_does_not_hide_missing_usage(tmp_path):
@@ -128,4 +136,54 @@ def test_duplicate_native_notification_does_not_hide_missing_usage(tmp_path):
     proxy.write_text(rows + rows.replace('request-a', 'request-b'))
     snapshot(writer, 100, "2026-10-20T00:00:02+00:00")
     snapshot(writer, 100, "2026-10-20T00:00:03+00:00")
-    assert any(r["reason"] == "metering_error" for r in budget.tick(now=LATE)["pause_reasons"])
+    state = budget.tick(now=LATE)
+    assert state["provisional_amount"] == "0.00056"
+    assert state["charged_estimate"] == "0.00084"
+
+
+def test_host_estimate_covers_exact_ended_attempt_and_real_usage_replaces_it(tmp_path):
+    from modeling_team.task_budget import BudgetError
+    budget, writer, proxy = setup_native(tmp_path)
+    for source_id, source in budget.show()["sources"].items():
+        if not source["metadata"].get("shared"):
+            budget.register_source(source_id, source["path"], source["kind"], source["binding"],
+                                   native_capture_session_id="another-capture")
+    proxy_rows(proxy, status="client_disconnected")
+    snapshot(writer, 100, "2026-10-20T00:00:02+00:00")
+    budget.tick(now=LATE)
+    arguments = dict(
+        proxy_session_id="proxy-a", request_id="request-a", attempt_index=1,
+        usage_estimate={"input_tokens": 200, "output_tokens": 20},
+        evidence_reference="host-private:numeric-comparison", basis="conservative-comparison",
+    )
+    with pytest.raises(BudgetError):
+        budget.record_attempt_estimate(**{**arguments, "proxy_session_id": "wrong-proxy"})
+    state = budget.record_attempt_estimate(**arguments)
+    assert state["charged_estimate"] == "0.00084"
+    assert state["provisional_amount"] == "0.00056"
+    assert not state["coverage"]["issues"]
+    assert budget.record_attempt_estimate(**arguments)["charged_estimate"] == "0.00084"
+    with proxy.open("a") as stream:
+        stream.write(json.dumps({
+            "event": "response_usage", "proxy_session_id": "proxy-a", "request_id": "request-a",
+            "attempt_index": 1, "response_id": "actual-failed-response", "session_id": "capture-a",
+            "provider": "route-a", "key_ref": "key-a", "actual_model": "model-a",
+            "status": "completed", "usage": {"input_tokens": 100, "cached_input_tokens": 0,
+            "output_tokens": 10},
+        }) + "\n")
+    final = budget.tick(now=LATE)
+    assert final["charged_estimate"] == "0.00056"
+    assert final["provisional_amount"] == "0"
+
+
+def test_native_cancellation_gets_explicit_provisional_cost_without_faking_usage(tmp_path):
+    budget, writer, proxy = setup_native(tmp_path)
+    proxy_rows(proxy, status="client_disconnected")
+    rows = proxy.read_text()
+    proxy.write_text(rows + rows.replace('request-a', 'request-b'))
+    snapshot(writer, 100, "2026-10-20T00:00:02+00:00")
+    state = budget.tick(now=LATE)
+    assert state["provisional_amount"] == "0.00056"
+    assert not state["coverage"]["issues"]
+    attempt = next(iter(budget._load_state()["_attempts"].values()))
+    assert attempt["status"] == "client_disconnected" and not attempt["has_usage"]

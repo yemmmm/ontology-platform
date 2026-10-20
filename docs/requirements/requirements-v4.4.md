@@ -195,6 +195,13 @@ Host CLI 的 `task-budget create|add|show`、共享计量内核、任务级预�
 usage，恢复检查仍拒绝放行；未追加金额、未重开生产或执行独立语义验收。工程修复与
 真实托管恢复结论分别保留，见[故障修复记录](../delivery/records/2026-10-20-codex-amount-metering-repair.md)。
 
+用户随后授权最多3次fresh start，且明确仍受原3元总额度限制。三次均已真实启动，
+不再新增启动；共用原budget_ref，不清零费用。后续窄修采用同capture／provider／
+credential alias／model的原生数值覆盖与未匹配传输组暂估，迟到真实值替换暂估；
+无数值依据仍暂停。自动Codex观察改为等待自然turn边界，保留显式用户及预算控制。
+工程验证与第三次运行／独立验收结果分列于
+[续跑修复记录](../delivery/records/2026-10-20-codex-three-starts-repair.md)，不以暂估当作实际账单。
+
 #### 目标、例子与当前基线
 
 用户可以授权“在这个已确认业务目标内，使用指定模型完成建模和独立验收，预算 ¥10”，

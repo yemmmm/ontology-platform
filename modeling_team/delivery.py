@@ -3591,6 +3591,11 @@ class DeliverySession:
                             key: value for key, value in row.items() if key != "payload"})
 
     def _dispatch_observation(self, runtime: DeliveryRuntimeProtocol, payload: dict, *, steer: bool) -> bool:
+        if steer and self.runtime_name == "codex":
+            # Automatic state changes remain queued until the active turn
+            # finishes. Codex steering cancels an in-flight provider response;
+            # explicit user input and budget controls use their own paths.
+            return False
         data = payload.get("observed_state") if payload.get("kind") in {"delivery_start", "delivery_resume"} else payload.get("data")
         data = data or payload
         item = next((item for item in self._pending_decisions

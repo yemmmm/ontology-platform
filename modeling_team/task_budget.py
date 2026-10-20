@@ -1017,6 +1017,8 @@ class TaskBudget:
         # do not fabricate a second per-request receipt or charge it again.
         native_coverage = {}
         native_samples = {}
+        native_usage_max = {}
+        previous_usage = {}
         for row in cumulative:
             if row.get("runtime") != "codex":
                 continue
@@ -1033,34 +1035,78 @@ class TaskBudget:
                 sample = (row.get("runtime_session_id"),
                           tuple(row["usage"].get(field) for field in TOKEN_FIELDS))
                 native_samples.setdefault(selector, set()).add(sample)
+                segment = row.get("binding", {}).get("cumulative_segment", {})
+                stream_key = (source_id, row.get("runtime_session_id"), segment.get("id"))
+                previous = previous_usage.get(stream_key, segment.get("baseline") or {})
+                if stream_key not in previous_usage and segment.get("fresh_zero_baseline"):
+                    previous = {"input_tokens": 0, "output_tokens": 0}
+                maxima = native_usage_max.setdefault(selector, {})
+                for field in ("input_tokens", "output_tokens"):
+                    before, current = previous.get(field), row["usage"].get(field)
+                    if before is not None and current is not None and current >= before:
+                        maxima[field] = max(maxima.get(field, 0), current - before)
+                maxima["evidence_reference"] = f"{source_id}@{ref.get('byte_offset', 0)}"
+                previous_usage[stream_key] = row["usage"]
                 if stamp >= native_coverage.get(selector, {}).get("through", float("-inf")):
                     native_coverage[selector] = {"source": ref, "through": stamp, "additive": False}
-        transport_counts = {}
-        for attempt in state.get("_attempts", {}).values():
-            source = state.get("sources", {}).get((attempt.get("source") or {}).get("source_id"), {})
-            metadata = source.get("metadata", {})
-            if (attempt.get("status") == "completed" and metadata.get("shared") is True
-                    and metadata.get("runtime") == "codex"):
-                selector = (attempt.get("session_id"), attempt.get("provider"), attempt.get("key_ref"),
-                            attempt.get("actual_model") or attempt.get("requested_model"))
-                transport_counts[selector] = transport_counts.get(selector, 0) + 1
-        # Attempts without usage are first pending, then a metering error after
-        # the fixed settlement grace period.  Normal in-flight calls stay so.
-        now_stamp = _timestamp(now) if now is not None else _now().timestamp()
-        for attempt in state.get("_attempts", {}).values():
+        transport_groups = {}
+        for attempt_key, attempt in state.get("_attempts", {}).items():
             attempt.pop("native_coverage", None)
             source = state.get("sources", {}).get((attempt.get("source") or {}).get("source_id"), {})
             metadata = source.get("metadata", {})
-            selector = (attempt.get("session_id"), attempt.get("provider"), attempt.get("key_ref"),
-                        attempt.get("actual_model") or attempt.get("requested_model"))
+            if (attempt.get("status") not in {"not_admitted", "unfinished", "inflight", "started", None}
+                    and not attempt.get("has_usage")
+                    and attempt_key not in state.get("_attempt_estimates", {})
+                    and metadata.get("shared") is True and metadata.get("runtime") == "codex"
+                    and metadata.get("capture_session_id") == attempt.get("session_id")):
+                selector = (attempt.get("session_id"), attempt.get("provider"), attempt.get("key_ref"),
+                            attempt.get("actual_model") or attempt.get("requested_model"))
+                transport_groups.setdefault(selector, []).append(attempt)
+        for selector, attempts in transport_groups.items():
             covered = native_coverage.get(selector)
-            settled = _timestamp(attempt.get("settled_at"))
-            if (attempt.get("status") == "completed" and metadata.get("shared") is True
-                    and metadata.get("runtime") == "codex"
-                    and metadata.get("capture_session_id") == attempt.get("session_id")
-                    and len(native_samples.get(selector, ())) >= transport_counts.get(selector, 0)
-                    and covered and settled is not None and covered["through"] >= settled):
-                attempt["native_coverage"] = _copy(covered)
+            if not covered:
+                continue
+            deficit = max(0, len(attempts) - len(native_samples[selector]))
+            if deficit:
+                maxima = native_usage_max[selector]
+                if not maxima.get("input_tokens") or not maxima.get("output_tokens"):
+                    continue
+                estimated_row = {
+                    "provider": selector[1], "key_ref": selector[2], "actual_model": selector[3],
+                    "usage": {field: 2 * deficit * maxima[field]
+                              for field in ("input_tokens", "output_tokens")},
+                }
+                estimate = estimate_budget_cost(
+                    estimated_row, self._price_for(state, estimated_row, strict=False)
+                )
+                if estimate.get("amount") is None:
+                    continue
+                provisional += Decimal(str(estimate["amount"]))
+                roles = {attempt.get("role") for attempt in attempts}
+                role = next(iter(roles)) if len(roles) == 1 and None not in roles else "unassigned"
+                entry = {
+                    "identity": {"provider": selector[1], "key_ref": selector[2],
+                                 "actual_model": selector[3], "capture_session_id": selector[0],
+                                 "role": role},
+                    "amount": str(estimate["amount"]), "provisional": True,
+                    "status": "native_unmatched_estimate", "currency": state["currency"],
+                    "source": covered["source"], "estimated_attempts": deficit,
+                    "basis": "native_transport_deficit_peer_2x_not_upper_bound",
+                    "evidence_reference": maxima["evidence_reference"],
+                }
+                unit_map["native-unmatched:" + _stable_digest(selector)] = entry
+                cost_units.append(entry)
+                aggregate(by_role.setdefault(role, {}), entry)
+                aggregate(by_model.setdefault(selector[3], {}), entry)
+                aggregate(by_role_model.setdefault(f"{role}|{selector[3]}", {}), entry)
+            for attempt in attempts:
+                # Aggregate coverage is not a measured receipt for this request.
+                attempt["native_coverage"] = {**_copy(covered), "provisional_deficit": deficit}
+        # Missing calls without any credible numeric basis retain their grace
+        # and pause. New native receipts replace a group's deficit estimate.
+        now_stamp = _timestamp(now) if now is not None else _now().timestamp()
+        for attempt_key, attempt in state.get("_attempts", {}).items():
+            if attempt.get("native_coverage"):
                 continue
             source_kinds = set(attempt.get("source_kinds") or [])
             if attempt.get("native_lifecycle"):
@@ -1077,6 +1123,34 @@ class TaskBudget:
             if status in {"unfinished", "inflight", "started", None}:
                 inflight += 1
             elif not attempt.get("has_usage"):
+                host_estimate = state.get("_attempt_estimates", {}).get(attempt_key)
+                if host_estimate:
+                    estimated_row = {
+                        **attempt,
+                        "actual_model": attempt.get("actual_model") or attempt.get("requested_model"),
+                        "usage": host_estimate["usage_estimate"],
+                    }
+                    estimate = estimate_budget_cost(
+                        estimated_row, self._price_for(state, estimated_row, strict=False)
+                    )
+                    if estimate.get("amount") is not None:
+                        provisional += Decimal(str(estimate["amount"]))
+                        entry = {
+                            "identity": _public_identity(estimated_row),
+                            "amount": str(estimate["amount"]), "provisional": True,
+                            "status": "host_usage_estimate", "currency": state["currency"],
+                            "source": attempt.get("source"),
+                            "basis": host_estimate["basis"],
+                            "evidence_reference": host_estimate["evidence_reference"],
+                        }
+                        unit_map["attempt-estimate:" + attempt_key] = entry
+                        cost_units.append(entry)
+                        role = attempt.get("role") or "unassigned"
+                        model = estimated_row["actual_model"] or "unassigned"
+                        aggregate(by_role.setdefault(role, {}), entry)
+                        aggregate(by_model.setdefault(model, {}), entry)
+                        aggregate(by_role_model.setdefault(f"{role}|{model}", {}), entry)
+                        continue
                 started = _timestamp(attempt.get("settled_at") or attempt.get("received_at"))
                 if started is None or now_stamp - started <= PENDING_SETTLEMENT_SECONDS:
                     pending += 1
@@ -1105,7 +1179,7 @@ class TaskBudget:
                 else "complete" if known_zero_sources and not issues
                 else "partial" if units else "unknown"
             ),
-            "units": len(units),
+            "units": len(cost_units),
             "known": sum(1 for item in cost_units if item["amount"] is not None),
             "unknown": sum(1 for item in cost_units if item["amount"] is None),
             "provisional": sum(1 for item in cost_units if item["provisional"]),
@@ -2373,6 +2447,44 @@ class TaskBudget:
             "control_id": control_id,
             "remaining_estimate": state.get("remaining_estimate"),
         }
+
+    def record_attempt_estimate(
+        self, *, proxy_session_id: str, request_id: str, attempt_index: int,
+        usage_estimate: dict, evidence_reference: str, basis: str,
+    ) -> dict:
+        """Host-only, evidenced provisional cost; never a fabricated usage receipt.
+
+        The exact ended attempt remains unchanged. Its actual numeric receipt,
+        if it arrives later, automatically takes precedence on recomputation.
+        This method neither adds authorization nor clears a pause.
+        """
+        evidence_reference = _valid_id(evidence_reference, "evidence_reference")
+        basis = _valid_id(basis, "basis")
+        normalized, invalid = numeric_usage(usage_estimate)
+        if invalid or any(normalized.get(field) is None for field in ("input_tokens", "output_tokens")):
+            raise BudgetError("budget_estimate_invalid", {"fields": invalid})
+
+        def update(state):
+            matches = [(key, attempt) for key, attempt in state.get("_attempts", {}).items()
+                       if attempt.get("proxy_session_id") == proxy_session_id
+                       and attempt.get("request_id") == request_id
+                       and attempt.get("attempt_index") == attempt_index]
+            if len(matches) != 1:
+                raise BudgetError("budget_attempt_not_found", {"request_id": request_id})
+            key, attempt = matches[0]
+            if attempt.get("status") not in {"completed", "client_disconnected", "stream_error", "transport_error", "http_error"}:
+                raise BudgetError("budget_attempt_not_ended", {"request_id": request_id})
+            state.setdefault("_attempt_estimates", {})[key] = {
+                "usage_estimate": normalized, "basis": basis,
+                "evidence_reference": evidence_reference,
+            }
+            self._refresh_summary(state)
+            return self._public_from_state(state)
+
+        return self._mutate("host_attempt_estimate", update, {
+            "proxy_session_id": proxy_session_id, "request_id": request_id,
+            "attempt_index": attempt_index, "evidence_reference": evidence_reference,
+        })
 
     def request_pause(self, reason: str, **meta) -> dict:
         reason = _valid_id(reason, "reason")
