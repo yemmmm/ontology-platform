@@ -19,13 +19,18 @@ delivery evidence. Use the following locations for new documentation.
 
 ## Current requirement entry points
 
-- [v4.4 modeling Team work board and collaboration requests](requirements/requirements-v4.4.md):
+- [v4.4 modeling Team work board, collaboration and task cost budgets](requirements/requirements-v4.4.md):
   R4.4-001 records Agent-maintained current work and flexible near-term goals, with one tracked
   request shown to both requester and assignee. Refinement and design are complete;
   independent review passed for both the initial design and its history-query and linked-statistics
   extension. Engineering implementation and local tests now pass; see the
   [delivery record](delivery/records/2026-10-19-r4-4-001-team-work-board-delivery-record.md).
   Real adoption, net token benefits and independent business semantics remain unverified.
+  R4.4-002 defines one monetary budget across the same task's runs, modeling and independent
+  acceptance, with configurable token prices and programmatic usage aggregation. Its
+  [detailed design](delivery/designs/2026-10-20-r4-4-002-task-cost-budget-design.md) passed
+  independent design review (0 Critical / 0 High); implementation and real budget control
+  remain unverified. See the [review record](delivery/records/2026-10-20-r4-4-002-design-review-record.md).
   The current Delivery token-reduction priority remains R4.3-030.
 - [v4.3 modeling efficiency, semantic retrieval, and rapid iteration](requirements/requirements-v4.3.md):
   target of at most two hours from a fresh start to complete independent semantic acceptance,
