@@ -1057,8 +1057,10 @@ class TaskBudget:
             if (attempt.get("status") not in {"not_admitted", "unfinished", "inflight", "started", None}
                     and not attempt.get("has_usage")
                     and attempt_key not in state.get("_attempt_estimates", {})
-                    and metadata.get("shared") is True and metadata.get("runtime") == "codex"
-                    and metadata.get("capture_session_id") == attempt.get("session_id")):
+                    and metadata.get("shared") is True and metadata.get("runtime") == "codex"):
+                # Shared acceptance files contain several capture sessions.
+                # Match each row to its exact native selector below, rather
+                # than the file's last registering member.
                 selector = (attempt.get("session_id"), attempt.get("provider"), attempt.get("key_ref"),
                             attempt.get("actual_model") or attempt.get("requested_model"))
                 transport_groups.setdefault(selector, []).append(attempt)
@@ -1493,8 +1495,15 @@ class TaskBudget:
             if existing:
                 if existing.get("path") != requested["path"] or existing.get("kind") != requested["kind"]:
                     raise BudgetError("budget_source_conflict", {"source_id": source_id})
+                if meta.get("shared") and meta.get("capture_session_id"):
+                    prior = existing.get("metadata") or {}
+                    sessions = set(prior.get("capture_session_ids") or [])
+                    sessions.update(value for value in (
+                        prior.get("capture_session_id"), meta["capture_session_id"]
+                    ) if value)
+                    requested["metadata"]["capture_session_ids"] = sorted(sessions)
                 existing["binding"] = {**(existing.get("binding") or {}), **binding}
-                existing["metadata"] = {**(existing.get("metadata") or {}), **_copy(meta)}
+                existing["metadata"] = {**(existing.get("metadata") or {}), **requested["metadata"]}
                 existing["heartbeat_at"] = existing.get("heartbeat_at") or _iso()
                 return self._public_from_state(state)
             state["sources"][source_id] = {
@@ -1527,24 +1536,28 @@ class TaskBudget:
         # file for auditability, but it is not a provider attempt and must not
         # enter the missing-usage grace window (or manufacture zero usage).
         if row.get("event") == "attempt_end" and row.get("status") == "not_admitted":
-            return "ignored", None
+            return "attempt", None
         binding = source.get("binding") or {}
         kind = source.get("kind")
         metadata = source.get("metadata") or {}
         expected_session = metadata.get("capture_session_id")
         if expected_session is not None:
+            expected_sessions = metadata.get("capture_session_ids") or [expected_session]
             observed_session = (
                 row.get("session_id")
                 or row.get("proxy_session_id")
                 or row.get("runtime_session_id")
             )
-            if observed_session != expected_session:
+            if observed_session not in expected_sessions:
                 # Shared provider receipts are one physical file.  A source
                 # registration with a capture session is the explicit slice;
                 # rows from other sessions (and rows without that identity)
                 # are consumed but never attributed to this budget.
                 return "ignored", None
         window = metadata.get("window") or binding.get("window")
+        segment = binding.get("cumulative_segment")
+        if not window and isinstance(segment, dict) and "start" in segment and "end" in segment:
+            window = segment
         if isinstance(window, dict):
             stamp = _timestamp(
                 row.get("timestamp")
@@ -2090,7 +2103,7 @@ class TaskBudget:
                 # Attempt state is numeric and bounded; it lets the projection
                 # distinguish in-flight from a completed call with no usage.
                 event = row.get("event")
-                if event in {"attempt_start", "attempt_end", "response_usage", "thread_usage"} and self._attempt_aliases(row):
+                if status != "ignored" and event in {"attempt_start", "attempt_end", "response_usage", "thread_usage"} and self._attempt_aliases(row):
                     self._update_attempt(
                         state,
                         row,

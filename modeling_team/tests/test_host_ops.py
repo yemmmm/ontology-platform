@@ -2147,6 +2147,35 @@ def cq_semantic_runner():
     harness.cleanup()
 
 
+def test_recovered_frozen_pool_exposes_handoff_without_replayed_event(cq_semantic_runner):
+    runner = cq_semantic_runner
+    frozen = _freeze(runner)
+    (runner.run.root / "evidence" / "cq-freeze.jsonl").unlink()
+
+    pending = host_ops.get_pending_actions(runner.run.run_id)
+    (handoff,) = [item for item in pending["items"] if item["type"] == "cq_handoff"]
+    assert handoff["bindings"] == {
+        "freeze_id": frozen["batch_id"],
+        "freeze_digest": frozen["snapshot_digest"],
+    }
+    assert not (runner.run.root / "evidence" / "cq-freeze.jsonl").exists()
+
+
+def test_recovered_frozen_pool_pending_rejects_changed_snapshot(cq_semantic_runner):
+    runner = cq_semantic_runner
+    _freeze(runner)
+    (runner.run.root / "evidence" / "cq-freeze.jsonl").unlink()
+    path = runner.run.root / "competency-questions/frozen/freeze-0001.json"
+    snapshot = json.loads(path.read_text())
+    snapshot["questions"][0]["question"] += " changed"
+    path.chmod(0o600)
+    path.write_text(json.dumps(snapshot))
+
+    pending = host_ops.get_pending_actions(runner.run.run_id)
+    assert not any(item["type"] == "cq_handoff" for item in pending["items"])
+    assert any("frozen snapshot" in item for item in pending["limitations"])
+
+
 def test_a11_handoff_and_acceptance_closure_over_real_evidence(cq_semantic_runner):
     runner = cq_semantic_runner
     run_id = runner.run.run_id

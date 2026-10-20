@@ -982,6 +982,28 @@ def _cq_pending(run_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
     freeze_records, freeze_limits = _evidence_source(run_root, "cq-freeze")
     limitations.extend(freeze_limits)
     freeze = _latest(freeze_records)
+    if freeze is None:
+        # Checkpoint recovery retains the immutable pool without replaying the
+        # source run's cq-freeze event. Expose the same pending handoff from the
+        # real snapshot; the Runner still validates readiness at submission.
+        paths = sorted((run_root / CQ_FREEZE_DIRECTORY).glob("freeze-*.json"))
+        if paths:
+            path = paths[-1]
+            payload, limitation = _read_json_file(path)
+            try:
+                if limitation or path.is_symlink():
+                    raise ValueError("snapshot is unreadable or a symlink")
+                snapshot = reload_frozen_pool(payload)
+                freeze = {
+                    "batch_id": snapshot["batch_id"],
+                    "snapshot_digest": snapshot["snapshot_digest"],
+                    "public_question_ids": [q["question_id"] for q in snapshot["questions"]
+                                            if q["visibility"] == "public"],
+                    "hidden_question_count": sum(q["visibility"] == "hidden"
+                                                 for q in snapshot["questions"]),
+                }
+            except (CQContractError, ValueError, TypeError):
+                limitations.append("retained frozen snapshot failed re-validation; verify the original pool")
     handoff_records, handoff_limits = _evidence_source(run_root, "cq-handoff-complete")
     limitations.extend(handoff_limits)
     handoff = _latest(handoff_records)

@@ -90,6 +90,76 @@ def test_successful_transport_uses_bound_native_metering_without_double_charge(t
     assert attempt["native_coverage"]["additive"] is False
 
 
+def test_shared_capture_keeps_earlier_member_native_coverage(tmp_path):
+    budget, writer, proxy = setup_native(tmp_path)
+    proxy_rows(proxy)
+    snapshot(writer, 100, "2026-10-20T00:00:02+00:00")
+    # Concurrent Consumers share one file; the last source registration is not
+    # the identity of every row. Native coverage still binds the row's session.
+    RuntimeBudget(tmp_path, "owner-b", budget, {}, "codex").register_source(
+        proxy, "capture", shared=True, capture_session_id="capture-b"
+    )
+    state = budget.tick(now=LATE)
+    assert state["charged_estimate"] == "0.00028"
+    assert not state["coverage"]["issues"]
+    assert not state["pause_reasons"]
+
+
+def test_shared_capture_cannot_borrow_another_sessions_native_usage(tmp_path):
+    budget, writer, proxy = setup_native(tmp_path)
+    RuntimeBudget(tmp_path, "owner-b", budget, {}, "codex").register_source(
+        proxy, "capture", shared=True, capture_session_id="capture-b"
+    )
+    proxy_rows(proxy)
+    proxy.write_text(proxy.read_text().replace("capture-a", "capture-b"))
+    snapshot(writer, 100, "2026-10-20T00:00:02+00:00")
+    state = budget.tick(now=LATE)
+    assert any(issue["code"] == "metering_error" for issue in state["coverage"]["issues"])
+
+
+def test_shared_capture_admits_all_registered_sessions_and_excludes_others(tmp_path):
+    budget, writer, proxy = setup_native(tmp_path)
+    RuntimeBudget(tmp_path, "owner-b", budget, {}, "codex").register_source(
+        proxy, "capture", shared=True, capture_session_id="capture-b"
+    )
+    proxy_rows(proxy)
+    rows = proxy.read_text()
+    proxy.write_text(rows + rows.replace("capture-a", "foreign-capture").replace("request-a", "foreign"))
+    snapshot(writer, 100, "2026-10-20T00:00:02+00:00")
+    state = budget.tick(now=LATE)
+    attempts = list(budget._load_state()["_attempts"].values())
+    assert len(attempts) == 1 and attempts[0]["session_id"] == "capture-a"
+    assert attempts[0]["native_coverage"]["additive"] is False
+    assert state["charged_estimate"] == "0.00028"
+    assert not state["coverage"]["issues"]
+
+
+def test_native_thread_segments_share_file_without_cross_attribution(tmp_path, monkeypatch):
+    budget, writer, _ = setup_native(tmp_path)
+    source_id, source = next((key, row) for key, row in budget.show()["sources"].items()
+                             if not row["metadata"].get("shared"))
+    boundary = "2026-10-20T00:00:03+00:00"
+    binding = source["binding"]
+    budget.register_source(source_id, writer.path, "capture", {
+        **binding, "cumulative_segment": {**binding["cumulative_segment"], "end": boundary},
+    })
+    budget.register_source("native-thread-b", writer.path, "capture", {
+        **binding, "thread_id": "thread-b", "runtime_session_id": "thread-b",
+        "cumulative_segment": {**binding["cumulative_segment"], "id": "thread-b", "start": boundary},
+    }, runtime="codex", native_capture_session_id="capture-b")
+    monkeypatch.setattr("modeling_team.usage_capture.utc_now", lambda: "2026-10-20T00:00:02+00:00")
+    snapshot(writer, 100, "2026-10-20T00:00:02+00:00")
+    monkeypatch.setattr("modeling_team.usage_capture.utc_now", lambda: "2026-10-20T00:00:04+00:00")
+    writer({"event": "thread_usage", "thread_id": "thread-b", "turn_id": "turn-b",
+            "runtime_session_id": "thread-b",
+            "received_at": "2026-10-20T00:00:04+00:00", "total": {
+                "input_tokens": 100, "cached_input_tokens": 0, "cache_write_tokens": 0,
+                "output_tokens": 10, "reasoning_output_tokens": 0}})
+    state = budget.tick(now=LATE)
+    assert state["charged_estimate"] == "0.00056"
+    assert not state["coverage"]["issues"]
+
+
 @pytest.mark.parametrize("status", ["client_disconnected", "stream_error", "transport_error"])
 def test_failed_transport_without_numeric_basis_stays_paused(tmp_path, status):
     budget, _, proxy = setup_native(tmp_path)
