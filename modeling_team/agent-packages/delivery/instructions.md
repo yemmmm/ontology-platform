@@ -93,6 +93,7 @@ from its bound `result_ref`. Read these technical fields only, not review
 rationale. Journal status `completed` closes the Host request, not the pool.
 If `selected_scope_complete` is false or a declared stage remains, continue
 the existing CQ interview/slice flow; do not freeze the current partial pool.
+Do not probe freeze merely because its tool is available or a Host request is completed.
 Check actual drafting/review stage receipts for the whole selected scope, not
 only the absence of undecided questions in the currently published pool. Ask
 for the existing next CQ stage while any selected stage is still outstanding.

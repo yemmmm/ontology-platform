@@ -313,6 +313,14 @@ def _is_decision_event_noise(event: Any) -> bool:
     # Explicit errors/unknown outcomes override otherwise routine activity.
     if _event_needs_action(data):
         return False
+    if source == "auth-barrier.jsonl":
+        return data.get("event") == "provider_proxy_ready"
+    if source in {"staged-decisions.jsonl", "competency-questions.jsonl"}:
+        if data.get("event") in {
+            "directories-registered", "protocol-capability-endpoint-started",
+            "modeling-capability-endpoint-started", "cq-capability-endpoint-started",
+        }:
+            return True
     if source == "dsh-dispatch.jsonl":
         return (data.get("event") == "queued" and data.get("runtime") == "dsh"
                 and all(isinstance(data.get(key), str) and data[key]
@@ -330,6 +338,10 @@ def _is_decision_event_noise(event: Any) -> bool:
         return _dsh_wire_noise(data)
     if source == "app-server-events.jsonl":
         method = data.get("method")
+        if method == "thread/started":
+            params = data.get("params")
+            thread = params.get("thread") if isinstance(params, dict) else None
+            return isinstance(thread, dict) and bool(thread.get("id"))
         if method == "mcpServer/startupStatus/updated":
             params = data.get("params")
             return isinstance(params, dict) and params.get("status") in {"starting", "ready"}
@@ -2303,6 +2315,18 @@ class DeliverySession:
     def call_tool(self, name: str, arguments: dict, *, call_identity: str | None = None,
                   _model_view: bool = True) -> dict:
         result = self._call_tool_raw(name, arguments, call_identity=call_identity)
+        if _model_view and name == "read_delivery_artifact" and result.get("ok"):
+            data = result["data"]
+            selection = arguments.get("selection")
+            if selection is None or selection.get("kind") == "bytes":
+                # A read result alone is not native reception. Retain its exact
+                # interval until this native turn completes successfully.
+                with self._state_lock:
+                    self._decision_read_ranges.append({
+                        "path": data["path"], "source_ref": data["source_ref"],
+                        "range": data.get("returned_range", {
+                            "offset": 0, "end": data["source_ref"]["byte_length"]}),
+                    })
         if not _model_view or name not in _MODEL_QUERIES:
             return result
         # Keep the full result before constructing a model-only view. This
@@ -2981,6 +3005,23 @@ class DeliverySession:
                 raise ValueError("waiting_for requires an actual bound object identity")
             if run_id and run_id not in self.run_ids:
                 raise ValueError("waiting run is outside this session")
+            invalid_owner = (
+                operation_id and operation_id not in self.operation_ids | self.verification_ids
+                or host_id and (host_id not in actions.get("requests", {})
+                               or run_id and actions["requests"][host_id].get("run_id") != run_id)
+            )
+            if invalid_owner and run_id and request_id:
+                current = self._request_projection(run_id, self._observe_request_ledger(run_id))
+                data = current.get("data", {})
+                if any(item.get("request_id") == request_id
+                       for item in data.get("pending", []) + data.get("settled", [])):
+                    corrected = [{key: value for key, value in item.items()
+                                  if item is not waiting or key not in {"operation_id", "host_request_id"}}
+                                 for item in arguments["waiting_for"]]
+                    raise HostOpError("delivery_yield_binding_invalid",
+                        "this is a retained run request, not an operation or Host action",
+                        retryable=True, next_action="retry with corrected_waiting_for; follow the actual request receipt",
+                        passthrough={"corrected_waiting_for": corrected})
             if operation_id and operation_id not in self.operation_ids | self.verification_ids:
                 raise ValueError("waiting operation is outside this session")
             if host_id and (host_id not in actions.get("requests", {}) or (
@@ -3280,6 +3321,9 @@ class DeliverySession:
 
     def _restore_decision_inputs(self) -> None:
         self._pending_decisions = []
+        # Unconfirmed tool results deliberately do not survive process recovery.
+        # Only the durable native completion receipt below advances reception.
+        self._decision_read_ranges = []
         self._last_current = {}
         self._decision_event_state = {}
         self._input_ids = set()
@@ -3667,7 +3711,8 @@ class DeliverySession:
                         and parts[0] == "runs" and parts[2:5] == ["requests", "data", "settled"]):
                     continue  # New receipts are explicit; do not resend the entire settled list.
                 if len(parts) == 2 and parts[0] == "runs" and change["change"] == "added":
-                    change = {**change, "value": snapshot["runs"][parts[1]]}
+                    change = {**change, "value": {key: value for key, value in
+                              snapshot["runs"][parts[1]].items() if key != "events"}}
                 changes.append(change)
             for run_id, run in snapshot.get("runs", {}).items():
                 if changed(("runs", run_id, "events")):
@@ -3745,7 +3790,11 @@ class DeliverySession:
             return False
         for run in self._last_current.get("runs", {}).values():
             pending = run.get("pending", {})
-            if (pending.get("ok") is not True or pending.get("data", {}).get("items")
+            unfinished = [item for item in pending.get("data", {}).get("items", [])
+                          if not (item.get("type") == "cq_acceptance_closure"
+                                  and item.get("status") == "completed"
+                                  and item.get("available_actions") == [])]
+            if (pending.get("ok") is not True or unfinished
                     or run.get("status", {}).get("data", {}).get("first_blocker")):
                 return False
         if any(_event_needs_action(state.get("selected", []))
@@ -3760,6 +3809,48 @@ class DeliverySession:
                                 or data.get("process", {}).get("state") == "exited")):
                     return False
         return True
+
+    def record_turn_completion(self, status: str | None) -> None:
+        """Confirm only contiguous decision bytes returned in a completed turn.
+
+        This is a reception fact, not proof of reasoning or action completion.
+        Failed/unknown turns, JSON selections, unread gaps and unknown input
+        submissions cannot acknowledge a decision. Resume reuses the existing
+        durable input-dispatch receipts rather than reconstructing reads.
+        """
+        with self._state_lock:
+            reads, self._decision_read_ranges = self._decision_read_ranges, []
+            if status != "completed":
+                return
+            for item in list(self._pending_decisions):
+                if item["delivery_status"] in {"attempted", "unknown"}:
+                    continue
+                path = self._input_view_path(item["input_id"])
+                if not path.exists():
+                    continue
+                raw = path.read_bytes()
+                ref = _source_ref(path, raw)
+                intervals = sorted((read["range"]["offset"], read["range"]["end"])
+                    for read in reads if read["path"] == str(path)
+                    and all(read["source_ref"].get(key) == value for key, value in ref.items()))
+                end = item["offset"]
+                for start, stop in intervals:
+                    if start <= end:
+                        end = max(end, stop)
+                if end == item["offset"]:
+                    continue
+                complete = end == len(raw)
+                self._append("session-events.jsonl", {
+                    "event": "delivery_input_dispatch", "input_id": item["input_id"],
+                    "status": "accepted", "via": "tool_read_completed_turn",
+                    "view_schema_version": "delivery-decision-input/v2",
+                    "next_offset": end, "complete": complete, "source_ref": ref,
+                })
+                self._last_received_input_id = item["input_id"]
+                if complete:
+                    self._pending_decisions.remove(item)
+                else:
+                    item.update(offset=end, delivery_status="pending")
 
     def record_native_consumption(self, rows: list[dict]) -> None:
         """Reception offsets and native consumption are separate durable facts."""
@@ -3975,10 +4066,21 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         eof = False
         while not session.finished:
             observations = runtime.poll(0.1)
+            failed = any(item.get("status") == "failed" for item in observations)
+            if failed:
+                session.record_turn_completion("failed")
+            else:
+                for event in observations:
+                    if event.get("event") == "turn_completed":
+                        session.record_turn_completion(event.get("status"))
+                    elif event.get("event") == "activity_ended":
+                        reason = event.get("reason")
+                        kind = reason.get("kind") if isinstance(reason, dict) else reason
+                        session.record_turn_completion("completed" if kind == "completed" else None)
             if session.runtime_name == "dsh":
                 session.runtime_identity = runtime.identity
                 session.record_native_consumption(runtime.dispatch_status())
-            if any(item.get("status") == "failed" for item in observations):
+            if failed:
                 if session.budget and not session.budget.show()["admission_open"]:
                     session._append("session-events.jsonl", {"event": "native_turn_failed_during_budget_pause",
                         "failure_layer": "runtime/infrastructure", "observations": observations})

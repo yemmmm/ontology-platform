@@ -480,7 +480,7 @@ def test_deferred_payload_excludes_only_raw_app_server_records(tmp_path, monkeyp
     assert steered["kind"] == "host_observation"
     delivered = json.dumps(steered, ensure_ascii=False)
     assert _HUGE_DELTA not in delivered
-    page = changed_value(steered["data"], "runs", "run")["events"]["data"]
+    page = changed_events(steered["data"])["data"]
     assert [event["source"] for event in page["events"]] == ["outer-input-receipts.jsonl"]
     # Decisions stay byte-complete: receipt, pending item, request ledger.
     assert page["events"][0] == _receipt_event(620_021, "req-9")
@@ -504,7 +504,7 @@ def test_turn_boundary_send_carries_no_raw_app_server_records(tmp_path, monkeypa
     assert sent["kind"] == "host_observation"
     delivered = json.dumps(sent, ensure_ascii=False)
     assert _HUGE_DELTA not in delivered
-    assert changed_value(sent["data"], "runs", "run")["events"]["data"]["events"] == []
+    assert changed_events(sent["data"])["data"]["events"] == []
     assert sent["data"]["raw_observation"]["excluded_noise_event_records"] == 1
     assert sent["data"]["raw_observation"]["path"].endswith("observation.json")
 

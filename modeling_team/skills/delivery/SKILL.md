@@ -398,6 +398,9 @@ history only for a concrete decision gap.
 Paged inputs expose read_remaining for the rest of the same minimal projection
 and read_original for its full immutable view. Collect each input_id's fragments
 once; do not default to the raw journal packet or reread collected byte ranges.
+Successful native turn completion confirms the contiguous decision bytes returned
+by supplemental byte reads. The program then skips those bytes on automatic delivery;
+failed or unknown turns retain them. This reception fact does not prove semantic use.
 When current_state is present, its current budget_control and run summary take
 precedence over the historical page before any state-dependent action.
 For standby_run (including finish_delivery) and complete_cq_acceptance, omitted
@@ -409,6 +412,8 @@ Use `read_delivery_artifact` with `selection={kind:"bytes",offset:...}` (optiona
 length) or `selection={kind:"json",paths:[["literal-key",0,"field"]],offset:...}`
 for the original facts needed by the current decision. Pages default to and
 are capped at 16384 UTF-8 bytes; continue using the returned `continuation`
+verbatim. Do not use remaining_bytes as max_bytes or guess a byte offset.
+Keep max_bytes omitted unless a smaller page is needed. Continue
 with the same source_ref and selected interval/paths. A `found:false` field
 is missing; a `found:true,value:null` field is present with null. JSON page
 text can be incomplete; concatenate selected pages before interpreting it.
@@ -452,6 +457,9 @@ conditions, `next_action`, `reason`, and the complete still-effective
 source_references and explicit replaces IDs (empty if none). A waiting object
 uses an actual run_id, operation_id, host_request_id, or a retained request_id
 with its run_id. Optional evidence_references can locate an active tool read.
+For an ordinary Runner receipt, use only `{run_id, request_id, condition}`;
+do not also label the request as a Host action or the run as an operation.
+When returned, use `corrected_waiting_for` without inventing replacement IDs.
 `delivery_host_action_completed` supplies the finished result locator: read it,
 continue remaining work and remove that completed dependency from the wait.
 The tool only persists a continuation record: after `waiting_recorded`, end
@@ -478,6 +486,11 @@ or recovery. cq_production_pending is a readiness wait, not a platform defect.
 Copy every supplied source_ref field, including byte_length; correct a named
 missing field without refreshing a file or repeating the incomplete call.
 Read native/transport logs for concrete unresolved failures, not routine progress.
+Before escalating a historical tool rejection, check later receipts for that same
+actor/action. A later `terminal_report_accepted` supersedes its earlier rejected
+report; `instruction_recipient_terminal` may confirm the actor already settled.
+Use the current production readiness and retry the original handoff when ready;
+do not infer a stuck report from the earlier rejection alone.
 
 The four active get queries (get_run_status, get_pending_actions,
 get_evaluation_status, get_request_result) return model-only compact views
