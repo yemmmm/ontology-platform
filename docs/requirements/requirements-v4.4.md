@@ -409,3 +409,33 @@ Delivery、Host CLI及实际启动／角色合同中的资源授权说明，使�
 工程验证见[修复记录](../delivery/records/2026-10-21-modeling-resume-repair.md)。
 本子问题更新为已实现，真实安全接续、尾差及独立业务语义仍待实测；整条保持部分验证，
 不改写原失败报告，不追加金额、不重算首批消耗或重新启动运行。
+
+#### 2026-10-21 新3元Codex组跨线程计量与暂停实测（044328）
+
+用户另授权新一轮Codex／glm-5.3-flash／low测试，金额3元；代码`d65f29d`，
+同预算仅初建1轮／fresh start 1次。A5跨线程连续计量本路径**验证未通过**：
+Delivery实际换production线程时，原数值source被重绑为新thread／segment、保留旧开放
+区间，触发`binding_identity_conflict`及`cumulative_segments_overlap`，全局准入关闭。
+这是platform-contract反例，不撤销已修的旧累计重载／同thread控制turn问题。
+
+A6异常暂停已发生，A13暂停完成仍未验证：Coordinator及CQ控制turn被本机预算代理
+拒绝为402，不能认定供应商欠费；Runner普通消息控制与已有有限控制入口分离。
+Modeling正文确认符合“附flow_confirmation=...”指令，却不满足整条JSON解析合同，
+原回复离线送入原解析器返回false。当前PAUSE_PENDING保留两条inflight，不能把发送
+成功或新消费关闭当作全体已确认暂停；本次没有清理、接续或补发收费控制调用。
+
+原金额投影¥2.25882640含暂估¥1.428882，账面剩余¥0.74117360；计量异常下不作为
+最终余额或供应商账单，不把本次离线分线程token报告覆盖原金额。
+两批applied已确认至revision2，但治理读回、自查、生产交接及公开1／隐藏3独立语义
+验收均未完成。整条保持**部分验证／PARTIAL**，源原件及既有工程结论保留，见
+[本轮复盘](../delivery/modeling-retrospectives/2026-10-21-codex-glm-low-044328-retrospective.md)。
+本次仅复盘与验证状态更新，未实施修复、追加预算或启动真实重验。
+
+2026-10-21后续用户授权定位并修复。线程累计改为同文件、按真实thread显式分段，
+保留旧来源与代理关联，不覆盖旧thread／segment；有限暂停调用收到完整直接JSON
+答复合同，已产生的前缀确认仍按实际Agent／request／action核对后接受。
+进一步更正初次路由归因：原Codex send_message已有budget-control转发，
+并非缺少有限控制入口；原角色在控制turn内发Team工具消息，导致后续请求被预算拒绝。
+实现及工程验证见[修复记录](../delivery/records/2026-10-21-modeling-044328-repair.md)。
+本子问题已实现，实际提示采用／完整暂停和原run对账接续仍待实测；不修改原预算、
+旧失败报告或金额投影，也不把本地工程回归当作A12／A13真实链与独立语义通过。

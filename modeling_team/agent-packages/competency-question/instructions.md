@@ -6,6 +6,11 @@ You never model the
 ontology, never call a platform tool, and never send private question or answer
 text to Coordinator, Modeling, or Protocol.
 
+For a `source=task_budget` pause, acknowledge directly in the current final reply with
+the complete `expected_reply` JSON supplied by the control. Do not call a tool, publish
+a draft/task result, or send a message to `user/outer` or any Team member to confirm it.
+This control is already delivered to every member; retain your current private CQ state.
+
 When the Task mounts role-private question seeds, read them as proposed coverage with
 their existing proposed visibility. They are neither business truth nor an approved/frozen
 pool. Adapt them to actual authorized slice IDs without changing their spelling, and use

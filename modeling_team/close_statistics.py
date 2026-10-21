@@ -279,6 +279,36 @@ class ActivityRecorder:
         segment = self._budget_binding.get("cumulative_segment")
         if not isinstance(segment, dict):
             return
+        previous_session = self._budget_binding.get("runtime_session_id")
+        if (native_session_id and previous_session not in (None, native_session_id)
+                and self.context.get("runtime") == "codex"):
+            from .runtimes.budget import source_identity
+
+            # Native threads share this process and append-only file. Keep each
+            # old stream bound to its own identity, including delayed receipts.
+            registered = self.budget.show("host").get("sources") or {}
+            for source in list(self._budget_sources):
+                if source.get("shared") or source.get("native_binding"):
+                    continue
+                old_id = source.get("source_id") or source_identity(
+                    self.budget_owner_id, Path(source["path"]), source["kind"]
+                )
+                native_capture = (registered.get(old_id, {}).get("metadata") or {}).get(
+                    "native_capture_session_id"
+                )
+                source["native_binding"] = copy.deepcopy(self._budget_binding)
+                self._budget_sources.append({
+                    **{key: value for key, value in source.items()
+                       if key not in {"source_id", "native_binding"}},
+                    "source_id": source_identity(
+                        f"{self.budget_owner_id}:{native_session_id}",
+                        Path(source["path"]), source["kind"],
+                    ),
+                    **({"native_capture_session_id": native_capture} if native_capture else {}),
+                })
+            segment = {**segment, "start": utc_now(), "end": OPEN_CUMULATIVE_END,
+                       "baseline": dict.fromkeys(TOKEN_FIELDS, 0), "fresh_zero_baseline": True}
+            self._budget_binding["cumulative_segment"] = segment
         if native_session_id:
             segment["id"] = native_session_id
             if self.context.get("runtime") == "codex":
@@ -306,11 +336,13 @@ class ActivityRecorder:
             source_binding = (
                 {}
                 if source.get("shared")
-                else copy.deepcopy(self._budget_binding)
+                else copy.deepcopy(source.get("native_binding") or self._budget_binding)
             )
             source_segment = source_binding.get("cumulative_segment")
             if isinstance(source_segment, dict):
                 source_segment["evidence_ref"] = str(Path(source["path"]).resolve())
+                if end is not None:
+                    source_segment["end"] = end
             try:
                 from .runtimes.budget import (
                     ensure_source_file,
@@ -334,6 +366,11 @@ class ActivityRecorder:
                     binding=source_binding,
                     owner_id=self.budget_owner_id,
                     runtime=self.budget_runtime,
+                    **({"native_thread_id": source_binding["thread_id"]}
+                       if source.get("kind") == "capture" and source_binding.get("thread_id")
+                       else {}),
+                    **({"native_capture_session_id": source["native_capture_session_id"]}
+                       if source.get("native_capture_session_id") else {}),
                 )
             except Exception:
                 # Source binding refresh is advisory just like the original

@@ -1,0 +1,60 @@
+{
+  "schema_version": "modeling-retrospective-numeric-evidence/v1",
+  "run_id": "minimal-chain-20261021-codex-glm-3cny-044328-r1",
+  "commit": "d65f29daaafdfca41cbe1448c120d94371f82020",
+  "source_refs": [
+    "workspaces/minimal-chain-20261021-codex-glm-3cny-044328/bounded-result.json",
+    "workspaces/minimal-chain-20261021-codex-glm-3cny-044328/retrospective-usage/report.json",
+    "workspaces/minimal-chain-20261021-codex-glm-3cny-044328/retrospective-checkpoint-probe.json",
+    "workspaces/minimal-chain-20261021-codex-glm-3cny-044328/retrospective-pause-probe.json"
+  ],
+  "role_tokens": {
+    "coordinator": {
+      "input_tokens": 1842141,
+      "output_tokens": 13245,
+      "total_tokens": 1855386
+    },
+    "modeling": {
+      "input_tokens": 823441,
+      "output_tokens": 4317,
+      "total_tokens": 827758
+    },
+    "competency-question": {
+      "input_tokens": 230238,
+      "output_tokens": 2839,
+      "total_tokens": 233077
+    },
+    "delivery": {
+      "input_tokens": 10360954,
+      "output_tokens": 16541,
+      "total_tokens": 10377495
+    }
+  },
+  "managed_known_total_tokens": 13293716,
+  "delivery_known_total_tokens": 10377495,
+  "delivery_fraction": 0.7806316157197882,
+  "host_tokens": null,
+  "host_amount_deducted": false,
+  "consumer_judge": "not_invoked",
+  "scope": "paused incomplete run, all five known native threads; cache/reasoning subsets not re-added; no provider request-level billing reconciliation",
+  "checkpoint_probe": {
+    "kind": "offline admission invariant probe; no run or model calls",
+    "snapshot_while_callback_ticket_open": {
+      "phase": "open",
+      "capturing": false,
+      "flow_paused": false,
+      "in_flight": [
+        {
+          "ticket": 1,
+          "kind": "modeling_submit_model_changes"
+        }
+      ],
+      "records": []
+    },
+    "drained_before_caller_finally": false,
+    "drained_after_caller_complete": true,
+    "code_binding": "runner.py _handle_direct_modeling calls _save_checkpoint_after_trigger at 6079 before its finally completes ticket at 6115; _save_run_checkpoint_captured waits 60s at13222"
+  },
+  "pause_reply_recognized": false,
+  "observed_at": "2026-10-21T05:45:24.328358+00:00"
+}

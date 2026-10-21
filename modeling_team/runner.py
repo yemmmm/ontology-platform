@@ -4626,13 +4626,22 @@ class TeamRunner:
             if getattr(self.adapter, "runtime_identity", lambda _: None)(configured.agent_id) is not None:
                 targets.append(configured.agent_id)
         request_id = message["request_id"]
+        expected_reply = {"flow_confirmation": {"request_id": request_id, "action": action}}
+        control_text = (
+            "Task-budget control is already delivered to every active member. "
+            + ("Pause the original work and wait. Acknowledge directly in your final reply; "
+               "do not call tools, forward Team messages, or publish a task result for this control. "
+               "Reply with this complete JSON object only: "
+               + json.dumps(expected_reply, ensure_ascii=False) if action == "pause"
+               else "Continue the authorized original work from its retained receipts without "
+               "repeating successful writes; include flow_confirmation in your JSON reply.")
+        )
         self._budget_member_control = {"request_id": request_id, "action": action,
             "epoch": message["epoch"], "targets": targets, "confirmed": [], "results": {}}
         self._flow_requests = {**getattr(self, "_flow_requests", {}), request_id: action}
         for agent_id in targets:
-            instruction = {**message, "instruction": (
-                "暂停原任务并等待；回复正文附 flow_confirmation={request_id:本消息ID,action:pause}。"
-                if action == "pause" else "沿原任务和原回执继续，不重复写入；回复 flow_confirmation。")}
+            instruction = {**message, "instruction": control_text, "text": control_text,
+                           "expected_reply": expected_reply}
             try:
                 self.adapter.send_message(agent_id, RuntimeDelivery(
                     sender_id="host/task-budget", recipient_id=agent_id, kind="budget-control",
@@ -4746,7 +4755,16 @@ class TeamRunner:
                 budget_control and message.agent_id in budget_control["targets"]):
             return False
         try:
-            value = json.loads(message.text)
+            text = message.text.strip()
+            if text.startswith("flow_confirmation="):
+                # Retained replies followed the old "append confirmation"
+                # instruction. Keep the same agent/request/action checks below.
+                confirmation, _ = json.JSONDecoder().raw_decode(
+                    text[len("flow_confirmation="):].lstrip()
+                )
+                value = {"flow_confirmation": confirmation}
+            else:
+                value = json.loads(text)
             confirmation = value.get("flow_confirmation")
         except (ValueError, TypeError, AttributeError):
             return False
@@ -5935,6 +5953,7 @@ class TeamRunner:
             raise StagedSubmissionRejection("staged_write_quiescing", "Checkpoint capture or independent acceptance has closed new model writes; retry after authorized production resumes")
         reference = None
         digest = None
+        checkpoint_requested = False
         try:
             if ("request" in args) == ("request_ref" in args):
                 raise SubmissionInputError(
@@ -5967,7 +5986,13 @@ class TeamRunner:
             request = (apply_request_edits(value, args["request_edits"])
                        if "request_edits" in args else value)
             if not candidate_gate_open(self.run.root):
-                raise SubmissionInputError("scope_binding_required", "Wait for the existing confirmed scope/topology before model writes")
+                raise SubmissionInputError(
+                    "scope_binding_required",
+                    "Wait for confirmed scope/topology before model writes. Coordinator owns "
+                    "scenario-map/topology-decision.json; inspect candidate-gate/state.json "
+                    "for the current reason and complete that prerequisite before retrying. "
+                    "A new-create scope still requires its confirmed topology.",
+                )
             if self._competency_questions and self._cq_freeze is None:
                 raise SubmissionInputError("cq_freeze_pending", "The approved public competency-question projection is not frozen")
             scope = self._cq_scope_binding()
@@ -6076,8 +6101,7 @@ class TeamRunner:
                         binding["existing_resource_ref"] = {
                             "artifact_ref": observed, "path": item_path,
                         }
-            self._save_checkpoint_after_trigger(CHECKPOINT_KIND_MATERIALIZATION_PROGRESS,
-                                                trigger="direct-modeling-result")
+            checkpoint_requested = True
             return result
         except (ModelChangeCompilationError, SubmissionInputError) as exc:
             errors = exc.errors if isinstance(exc, ModelChangeCompilationError) else [{
@@ -6113,6 +6137,9 @@ class TeamRunner:
             # Durable intent/Attempt records carry uncertainty and its eventual
             # reconciliation; do not introduce a second permanent run latch.
             self._cq_write_admission.complete(ticket, "recorded")
+            if checkpoint_requested:
+                self._save_checkpoint_after_trigger(CHECKPOINT_KIND_MATERIALIZATION_PROGRESS,
+                                                    trigger="direct-modeling-result")
 
     def _inspect_direct_modeling_associations(self, args: Mapping[str, Any]) -> dict[str, Any]:
         from .protocol_mechanics import MODEL_CHECK_QUERY

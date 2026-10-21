@@ -1588,6 +1588,13 @@ class TaskBudget:
         binding = source.get("binding") or {}
         kind = source.get("kind")
         metadata = source.get("metadata") or {}
+        # An explicitly sliced Codex file can contain several real threads,
+        # including old-thread receipts arriving after a phase transition.
+        native_thread = metadata.get("native_thread_id")
+        observed_thread = row.get("thread_id") or row.get("runtime_session_id")
+        if (native_thread and row.get("event") == "thread_usage"
+                and observed_thread and observed_thread != native_thread):
+            return "ignored", None
         expected_session = metadata.get("capture_session_id")
         if expected_session is not None:
             expected_sessions = metadata.get("capture_session_ids") or [expected_session]

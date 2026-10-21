@@ -5,12 +5,73 @@ import json
 import pytest
 
 from modeling_team.runtimes.budget import RuntimeBudget
+from modeling_team.close_statistics import ActivityRecorder
+from modeling_team.task_budget import TaskBudget
+from modeling_team.usage_capture import NumericReceiptWriter
 from modeling_team.tests.test_task_budget import _runtime_binding, make_budget
 
 
 START = "2026-10-20T00:00:00+00:00"
 END = "2026-10-20T00:00:01+00:00"
 LATE = "2026-10-20T00:00:20+00:00"
+
+
+def test_recorder_thread_switch_keeps_prior_usage_and_late_old_notifications(tmp_path, monkeypatch):
+    stamp = [START]
+    monkeypatch.setattr("modeling_team.close_statistics.utc_now", lambda: stamp[0])
+    monkeypatch.setattr("modeling_team.usage_capture.utc_now", lambda: stamp[0])
+    budget = make_budget(tmp_path)
+    path = tmp_path / "usage-events.jsonl"
+    context = {"runtime": "codex", "agent_id": "delivery", "role": "delivery",
+               "process_instance": "process-a", "provider": "route-a",
+               "actual_model": "model-a", "key_ref": "key-a"}
+    recorder = ActivityRecorder(
+        tmp_path / "run", context, fresh_session=True,
+        usage_sources=[{"path": path, "kind": "capture"}], budget=budget,
+        budget_owner_id="delivery-a", budget_binding=context,
+    )
+    writer = NumericReceiptWriter(path, context)
+    recorder.bind("thread-a")
+    proxy = tmp_path / "provider-attempts.jsonl"
+    RuntimeBudget(tmp_path, "delivery-a", budget, context, "codex").register_source(
+        proxy, "capture", shared=True, capture_session_id="capture-a"
+    )
+
+    def write(thread, amount):
+        writer({"event": "thread_usage", "thread_id": thread, "runtime_session_id": thread,
+                "total": {"input_tokens": amount, "cached_input_tokens": 0,
+                          "cache_write_tokens": 0, "output_tokens": amount // 10,
+                          "reasoning_output_tokens": 0}})
+
+    stamp[0] = END
+    write("thread-a", 100)
+    assert budget.tick(now=END)["charged_estimate"] == "0.00028"
+    stamp[0] = "2026-10-20T00:00:02+00:00"
+    recorder.bind("thread-b")
+    recorder.bind("thread-b")  # repeated binding is not another cumulative segment
+    write("thread-b", 200)
+    stamp[0] = "2026-10-20T00:00:03+00:00"
+    write("thread-a", 150)  # a queued old-thread notification arrives after switching
+    rows = []
+    for index in range(3):
+        base = {"proxy_session_id": "proxy-a", "request_id": f"request-{index}",
+                "attempt_index": 1, "session_id": "capture-a", "provider": "route-a",
+                "requested_model": "model-a", "key_ref": "key-a"}
+        rows.extend([
+            {**base, "event": "attempt_start", "start": START, "status": "unfinished"},
+            {**base, "event": "attempt_end", "end": END, "status": "completed"},
+        ])
+    proxy.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    state = budget.tick(now=LATE)
+    assert state["charged_estimate"] == "0.00098"
+    assert not state["coverage"]["issues"]
+    assert not state["pause_reasons"]
+    numeric = [s for s in state["sources"].values()
+               if s["kind"] == "capture" and not s["metadata"].get("shared")]
+    assert {s["binding"]["thread_id"] for s in numeric} == {"thread-a", "thread-b"}
+    assert len(numeric) == 2
+    recorder.exit(0)
+    assert TaskBudget(budget.ref).tick(now=LATE)["charged_estimate"] == "0.00098"
 
 
 def setup_native(tmp_path):

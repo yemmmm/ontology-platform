@@ -100,6 +100,23 @@ def _call(owner, **arguments):
     return response["result"]["structuredContent"]["data"]
 
 
+def test_direct_result_releases_its_ticket_before_automatic_checkpoint(direct_run, monkeypatch):
+    owner, submitted = direct_run
+    owner._modeling_checkpoints = True
+    captured = []
+
+    def capture(kind, **kwargs):
+        assert list((owner.run.root / "value-semantics/submission-receipts").glob("receipt-*.json"))
+        captured.append((kind, owner._cq_write_admission.wait_until_drained(0)))
+
+    monkeypatch.setattr(owner, "_save_run_checkpoint", capture)
+    result = _call(owner, request=_request())
+    assert result["status"] == "completed"
+    assert len(submitted) == 1
+    assert captured == [("materialization_progress", True)]
+    assert not owner._cq_write_admission.snapshot()["in_flight"]
+
+
 @pytest.mark.parametrize("directory", [False, True])
 def test_request_ref_applies_complete_published_bytes_and_deduplicates_inline(direct_run, directory):
     owner, submitted = direct_run

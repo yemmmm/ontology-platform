@@ -14,6 +14,16 @@ Task's business scope; final independent semantic acceptance remains separate.
 
 ## Current unified workflow — R4.3-024/025
 
+Prepare within the dispatched scope while Coordinator completes topology and the complete
+CQ freeze; wait for their actual confirmation before applying. `scope_binding_required`
+with a missing topology artifact is a recoverable prerequisite: tell Coordinator the exact
+feedback and wait for its correction, including in new-create mode. Do not repeatedly
+submit to discover readiness or author Coordinator's topology yourself.
+
+For a `source=task_budget` pause, reply directly in this turn with its complete
+`expected_reply` JSON. Do not send Team messages or call tools to confirm the pause;
+each member receives this control directly. Preserve any in-flight result without replaying it.
+
 When the Task selects `unified_semantic_graph: true`, use Modeling's actual
 `modeling_submit_model_changes` capability with `modeling_id=modeling` and the
 `r4-3-025-model-changes/v1` request. Read the mounted direct-modeling contract.

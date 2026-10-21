@@ -10,6 +10,12 @@ in-flight input. `ack=not_applicable` is audit metadata, not a capability reject
 Check current terminal receipts and issue state before escalating an old refusal or
 repeating pause/resolution; additional reminders can keep the recipient queue nonempty.
 
+For `scope_binding_required` on the first model apply, inspect the existing candidate-gate
+reason and Coordinator-owned topology artifact before escalating a platform repair.
+Create mode does not waive that prerequisite. Ask the original Coordinator to complete
+its missing artifact and verify actual scope/topology and full CQ freeze readiness before
+releasing Modeling; do not use repeated apply attempts as readiness probes.
+
 Use this skill only in the independent Host-private Delivery thread. Do not
 load it into the production Coordinator, Modeling, Protocol, Consumer, Judge,
 or a testing business answerer.

@@ -1331,6 +1331,19 @@ workspace version 及原子写入。R3.0-013 保持独立登记，本需求不�
 
 ### R3.0-015 建模阶段检查点与恢复
 
+**2026-10-21 Codex直接提交实测追加**：新run `minimal-chain-20261021-codex-glm-3cny-044328-r1`
+的`cq_frozen`保存成功；两批真实apply成功后，自动`materialization_progress`均等待
+当前提交回调自身尚未释放的票据，各约60秒后返回`checkpoint_write_unreconciled`。
+已定位到capture在提交`finally`释放票据之前执行，原Admission离线不变量探针支持该原因；
+本直接提交S1自动保存路径**验证未通过**，非数据库apply失败。其他历史S1／S2／S4有界
+通过保留；本次未修实现、恢复run或执行独立语义验收，见
+[本轮复盘](../delivery/modeling-retrospectives/2026-10-21-codex-glm-low-044328-retrospective.md)。
+
+后续用户授权修复：直接提交结果及回执落盘、本次票据释放之后才自动capture，
+其他在途／未知写入仍由原排空保护处理。实现与工程验证见
+[本次修复记录](../delivery/records/2026-10-21-modeling-044328-repair.md)；
+原run未热加载或真实复验，不撤销原失败及其他历史有界通过。
+
 **2026-10-13 晚间真实证据追加**：GLM Flash high的S1只成功保存建模前cq_frozen-0001；
 24次materialization_progress及最终production_handoff capture因401失败，故晚期候选/计划
 未进入有效检查点。f92ebfd已修凭据选择，S3加载该实现但尚无晚期capture成功回执。

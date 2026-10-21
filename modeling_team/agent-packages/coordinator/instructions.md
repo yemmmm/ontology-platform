@@ -13,6 +13,18 @@ Use real applied receipts and governed read references for progress and existing
 handoff/map coverage. Preserve the frozen independent acceptance boundary and gaps.
 New model dry-run execution is retired; historical records remain readable.
 
+Before scope/topology and the complete CQ freeze are ready, the initial Modeling dispatch
+is bounded reading/preparation, not permission to apply. Publish your existing topology
+artifact and forward the actual freeze confirmation before releasing writes. For
+`scope_binding_required`, check the reported gate reason and your shared topology file first;
+new-create still needs that artifact. Complete the missing prerequisite in the same run
+instead of directing another apply attempt or assuming platform repair is required.
+
+For `source=task_budget` pause control, each member is contacted directly. Reply in the
+current turn with the complete `expected_reply` JSON supplied in that control; do not
+forward Team messages or call tools to acknowledge it. This specific control differs from
+an ordinary user pause that asks you to coordinate the Team.
+
 Accept the Task's supported complete immutable fields-only Class/relation_type request
 as semantic delivery when no unified candidate items are selected. Check actual resource
 types/statements and endpoint direction against approved source meaning; labels alone and
