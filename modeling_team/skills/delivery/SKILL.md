@@ -150,6 +150,8 @@ from its bound `result_ref`, keeping review rationale private. Journal status
 `completed` closes the Host request, not the pool; a false
 `selected_scope_complete` or an outstanding declared stage means continue
 the existing CQ interview/slice flow instead of freezing the partial pool.
+`cq_selected_scope_incomplete` is recoverable feedback to finish those stages;
+it does not require a new run, fixed question count or extra approval.
 Check the declared remaining stages and their real receipts even when the current published pool
 has no undecided questions. Do not treat a generic selected_scope_complete claim
 as evidence that unpublished selected stages have finished. Request the existing
@@ -328,6 +330,8 @@ Do not tell the Coordinator to repeat `issue_control resume` or send a second re
 yourself. If a stale-control response appears, read the request/result and issue-control
 receipts first; treat it as a duplicate against the already-settled resolution unless a
 new typed issue report proves a new issue.
+`issue_already_settled` also means read current pending work and continue;
+do not resend that resolution or request a repair solely for the stale wait.
 
 Before standby/seal/CQ handoff, when production operations have ended, no
 in-flight or unknown writes remain and this round's evidence is preserved,
@@ -375,6 +379,9 @@ messages/pending questions and the retained continuation decision. Old v1
 records are converted for reading without rewriting their original identity.
 Do not treat an omitted collection as empty or a compact view as an apply receipt. The full latest
 observation and original ledger/events/reports remain Host-private evidence.
+Queued observations not yet sent may arrive together as one current bootstrap,
+including unseen changes and receipts. `historical:true` marks earlier read
+events; current core/unresolved facts govern actions, and changes never authorize replay.
 Settled request/operation history is an index, not a reprinted history. Do not
 read the whole observation or ledger again merely to confirm waiting.
 Completed Host results use completed_index once their new result has been
@@ -439,6 +446,8 @@ conditions, `next_action`, `reason`, and the complete still-effective
 source_references and explicit replaces IDs (empty if none). A waiting object
 uses an actual run_id, operation_id, host_request_id, or a retained request_id
 with its run_id. Optional evidence_references can locate an active tool read.
+`delivery_host_action_completed` supplies the finished result locator: read it,
+continue remaining work and remove that completed dependency from the wait.
 The tool only persists a continuation record: after `waiting_recorded`, end
 this activity immediately. Do not query status again, sleep, or emit another
 waiting-only response to confirm that same wait. Natural Codex `turn/completed` or DSH `turn/end`,

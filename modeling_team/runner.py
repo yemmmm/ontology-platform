@@ -5039,6 +5039,9 @@ class TeamRunner:
                     resolution=resolution,
                 )
                 ledger.mark_dispatch(control)
+                self._append_evidence("issue-control", {
+                    **control.as_dict(), "source": "provider-recovery",
+                })
         except IssueError as exc:
             # The recovery turn already started; the ledger stays as-is and
             # remains observable instead of failing the recovery.

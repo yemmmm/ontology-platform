@@ -403,3 +403,9 @@ Delivery、Host CLI及实际启动／角色合同中的资源授权说明，使�
 模型revision2生产交接完成，但公开1／隐藏3均无有效答案或Judge裁决，不能据此判模型质量。
 详见[接续复盘](../delivery/modeling-retrospectives/2026-10-21-codex-glm-low-budget-resume-retrospective.md)。
 本次按用户要求不追查首批费用；外部Host仍只展示、不计金额成本，不新增运行授权。
+
+2026-10-21后续用户授权修复上述已定位问题。F8中同thread合法控制turn被误杀的
+重复硬门已删除；线程隔离、累计计量、预算准入及报告绑定保留，相关接续与状态收敛
+工程验证见[修复记录](../delivery/records/2026-10-21-modeling-resume-repair.md)。
+本子问题更新为已实现，真实安全接续、尾差及独立业务语义仍待实测；整条保持部分验证，
+不改写原失败报告，不追加金额、不重算首批消耗或重新启动运行。

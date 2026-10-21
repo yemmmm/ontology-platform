@@ -1131,6 +1131,26 @@ def test_host_recovery_settles_issue_from_coordinator_pause_state(tmp_path: Path
         assert any(entry["type"] == "provider-recovery" for entry in output)
         assert ledger.state == "resolved"
         assert adapter.provider_wait_status("protocol") is None
+        from modeling_team.host_ops import _issue_pending
+        assert _issue_pending(staged.run_root)[0] is None
+        controls = [json.loads(line) for line in
+                    (staged.run_root / "evidence/issue-control.jsonl").read_text().splitlines()]
+        settled = controls[-1]
+        assert settled["action"] == "resume"
+        assert settled["issue_id"] == issue.issue_id
+        assert settled["reporter_id"] == issue.reporter_id
+        assert settled["control_epoch"] == issue.control_epoch
+        repeat = json.loads(_resolution_line(runner.run.run_id, issue))
+        repeat["request_id"] = "already-settled"
+        rejected = _admit_line(runner, sink, json.dumps(repeat))
+        assert rejected["code"] == "issue_already_settled"
+        assert ledger.state == "resolved"
+        from modeling_team.host_ops import _receipt_outcome
+        receipt = json.loads((staged.run_root / "evidence/outer-input-receipts.jsonl")
+                             .read_text().splitlines()[-1])
+        result = _receipt_outcome(runner.run.run_id, "already-settled", receipt)
+        assert result["retryable"] is False
+        assert "resend with a NEW request_id" not in result["next_action"]
     finally:
         staged.cleanup()
 

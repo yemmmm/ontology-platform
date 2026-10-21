@@ -176,7 +176,7 @@ def test_stage_pause_holds_next_role_until_explicit_resume(tmp_path):
         owner.close()
 
 
-def test_explicit_control_turn_preserves_usage_and_rejects_unrequested_turn():
+def test_control_turns_preserve_usage_and_reject_other_threads():
     metrics = ExaminerRunMetrics("consumer", max_inference_steps=None)
     metrics.bind_thread("same-thread")
     def usage(turn, count):
@@ -187,8 +187,39 @@ def test_explicit_control_turn_preserves_usage_and_rejects_unrequested_turn():
     metrics.allow_control_turn()
     usage("explicit-resume", 20)
     assert metrics.thread_id == "same-thread" and metrics._totals["totalTokens"] == 20
+    usage("next-control", 30)
+    assert metrics._totals["totalTokens"] == 30
     with pytest.raises(ExaminerRuntimeBlocked):
-        usage("unrequested", 30)
+        metrics.observe_notification({"method": "thread/tokenUsage/updated", "params": {
+            "threadId": "other-thread", "turnId": "other", "tokenUsage": {
+                "total": {"totalTokens": 40}}}})
+
+
+def test_resume_then_pause_before_first_usage_does_not_kill_examiner(tmp_path):
+    metrics = ExaminerRunMetrics("platform", max_inference_steps=None)
+    metrics.bind_thread("same-thread")
+    def usage(turn, count):
+        return metrics.observe_notification({"method": "thread/tokenUsage/updated", "params": {
+            "threadId": "same-thread", "turnId": turn,
+            "tokenUsage": {"total": {"inputTokens": count, "totalTokens": count}}}})
+    usage("initial", 10)
+    owner = EvaluationOwner(tmp_path)
+    modes = iter(("start", "steer"))
+    agent = SimpleNamespace(agent_id="examiner")
+    adapter = SimpleNamespace(agents={}, send_message=lambda *a: SimpleNamespace(mode=next(modes)))
+    child = SimpleNamespace(thread_id="same-thread", metrics=metrics,
+                            spec={"_owner_adapter": adapter}, _child_agent=agent)
+    try:
+        for action in ("resume", "pause"):
+            owner.receipts[action] = {"status": "dispatch_started"}
+            with owner._lock:
+                owner._dispatch_control(child, {"request_id": action, "action": action})
+        assert usage("resumed", 20)
+        assert metrics.blocked is None
+        assert metrics.as_dict()["total_tokens"] == 20
+        assert metrics.as_dict()["fresh_thread_id"] == "same-thread"
+    finally:
+        owner.close()
 
 
 @pytest.mark.parametrize("invalid", ["active", "lease", "attempt", "malformed"])

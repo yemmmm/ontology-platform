@@ -431,6 +431,18 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
             emit_outer_input_rejection(feedback)
             return []
         if issue_state not in {"waiting_owner", "waiting_repair"}:
+            if issue_state in {"resolved", "aborted", "rebind_required"}:
+                feedback = {
+                    "code": "issue_already_settled",
+                    "detail": "the current issue is already terminal",
+                    "next_action": "read current pending actions and continue remaining work; do not replay the settled resolution",
+                    "issue_state": issue_state,
+                }
+                if receipt is not None:
+                    receipt("rejected", code=feedback["code"], detail=feedback["detail"],
+                            retry=feedback["next_action"])
+                emit_outer_input_rejection(feedback)
+                return []
             if receipt is not None:
                 receipt("rejected", code="invalid_outer_input")
             emit_outer_input_rejection()

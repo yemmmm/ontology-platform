@@ -1054,15 +1054,11 @@ class ExaminerRunMetrics:
     _increments: list[dict[str, int]] = field(default_factory=list, repr=False)
     _totals: dict[str, int] = field(default_factory=lambda: {name: 0 for name in _TOKEN_FIELDS}, repr=False)
     _first_input_tokens: int | None = field(default=None, repr=False)
-    _turn_id: str | None = field(default=None, repr=False)
-    _accepted_turn_ids: set[str] = field(default_factory=set, repr=False)
     _allow_continuation_turn: bool = False
-    _pending_control_turn: bool = False
     terminal_event: bool = False
 
     def allow_control_turn(self) -> None:
-        """Account one explicit owner message on the original thread, without resetting usage."""
-        self._pending_control_turn = True
+        """Reset the terminal marker for an owner message on the original thread."""
         self.terminal_event = False
 
     def record_turn_start(self) -> None:
@@ -1072,7 +1068,7 @@ class ExaminerRunMetrics:
             self.turn_start_count = 1
 
     def allow_continuation_turn(self) -> None:
-        """Permit one Host-issued mechanical continuation turn to change turn_id.
+        """Account the Host-issued mechanical continuation in the step budget.
 
         The continuation is the Runner's deterministic nudge after the model ends
         its turn without submitting; it is not a new Agent thread or history.
@@ -1132,22 +1128,9 @@ class ExaminerRunMetrics:
             if not isinstance(event_turn_id, str) or not event_turn_id:
                 self.blocked = ExaminerRuntimeBlocked("runtime-metrics", role=self.role)
                 raise self.blocked
-            if self._turn_id is not None and event_turn_id != self._turn_id:
-                if self._pending_control_turn:
-                    self._pending_control_turn = False
-                    self._accepted_turn_ids.add(event_turn_id)
-                    self._turn_id = event_turn_id
-                elif self._allow_continuation_turn and len(self._accepted_turn_ids) < 2:
-                    self._accepted_turn_ids.add(event_turn_id)
-                    self._turn_id = event_turn_id
-                else:
-                    self.blocked = ExaminerRuntimeBlocked(
-                        "runtime-metrics", role=self.role, evidence={"turn_id": self._turn_id}
-                    )
-                    raise self.blocked
-            else:
-                self._accepted_turn_ids.add(event_turn_id)
-                self._turn_id = event_turn_id
+            # The owner can start several control turns on this same thread.
+            # Usage is thread-cumulative; a turn change does not reset the
+            # counters or weaken the thread identity and report bindings.
         usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), Mapping) else params.get("token_usage")
         if not isinstance(usage, Mapping):
             return False

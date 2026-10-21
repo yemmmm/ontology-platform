@@ -318,7 +318,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(second["call_total"], 2)
         self.assertEqual(len(proxy.receipt_snapshot), 2)
 
-    def test_metrics_allow_one_continuation_turn_change(self) -> None:
+    def test_metrics_keep_cumulative_usage_across_same_thread_turns(self) -> None:
         metrics = ExaminerRunMetrics("acceptance")
         metrics.bind_thread("thread-1")
         metrics.bind_first_turn_input([{"type": "text", "text": "packet"}])
@@ -335,10 +335,9 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         metrics.allow_continuation_turn()
         self.assertTrue(metrics.observe_notification(usage("turn-2", 20)))
         self.assertIsNone(metrics.blocked)
-        with self.assertRaises(ExaminerRuntimeBlocked) as blocked:
-            metrics.observe_notification(usage("turn-3", 30))
-        self.assertEqual(blocked.exception.reason, "runtime-metrics")
-        self.assertEqual(metrics.inference_steps, 2)
+        metrics.observe_notification(usage("turn-3", 30))
+        self.assertEqual(metrics.as_dict()["total_tokens"], 31)
+        self.assertEqual(metrics.inference_steps, 3)
 
     def test_text_verdict_extraction_accepts_only_strict_verdict(self) -> None:
         valid = {

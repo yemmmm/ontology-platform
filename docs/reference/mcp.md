@@ -421,11 +421,19 @@ DSH正常排队回执、已接收地图以及公开输入的queued／claimed／s
 选择内部视图。未知／损坏／拒绝不补默认成功，compact view 不能用于权威消费判定。
 
 完整原件与原 pending／原生送达回执保留。旧 v1 只读转换，历史分页偏移不混入 v2；
-恢复 bootstrap 仅确认本身，不推进旧 pending 页或 conversation dispatch。
+尚未尝试投递的观察可合并为当前bootstrap，完整携带未送变化、事件和请求回执；
+`historical:true`标识先前读取事件，当前`core`／`unresolved`优先。journal追加
+`delivery_inputs_coalesced`保留被合并input_id与新身份，原件不改写。已部分确认的分页和
+未知／在途送达保留原身份、偏移与确认边界，conversation dispatch不受影响。
 32,000-byte 展示上限内显式分页，长变化正文不替换成只有引用；原件补读沿
 `read_delivery_artifact` 的原权限、selection 和16,384-byte上限，同 session 的原始
 `conversation-events.jsonl`可按需读取。coverage 指投影／所选页，不表示全源或业务完成。
 unknown 输入只重送事实，依赖状态的动作核对 `current_state` 指向的新绑定。
+等待已完成Host请求返回可恢复的`delivery_host_action_completed`及`result_ref`；
+调用方读取结果并推进剩余工作。最新获准CQ结果明确`selected_scope_complete=false`时，
+Delivery冻结工具返回`cq_selected_scope_incomplete`，继续原声明阶段，不新增固定题数或隐藏题门。
+Provider恢复已实际派发时保留正式issue-control终态；重复解决已结清issue返回
+`issue_already_settled`，请求结果`retryable=false`并提示读取当前待办，不再要求重发旧解决动作。
 
 原件补读使用返回的`path`／`source_ref`／`selection`或`continuation`，不猜测路径。
 bytes的`length`是精确区间而非页面大小；省略length可读捕获原件的剩余区间，

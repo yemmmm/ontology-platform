@@ -41,7 +41,6 @@ def test_business_keys_are_not_recursive_noise(tmp_path, key):
     host.record_observation(initial)
     initial["runs"]["run"]["pending"]["data"]["items"][0][key] = "business-2"
     assert host.record_observation(initial)
-    ack(host)
     assert changed_value(ack(host), "runs", "run", "pending", "data", "items", 0, key) == "business-2"
 
 
@@ -196,12 +195,90 @@ def test_unreceived_changes_survive_later_observations_and_resume(tmp_path):
     host.record_observation(second)
     reopened = DeliverySession(repository_root=ROOT, session_root=host.session_root, config=host.config, resume=True)
     assert len(reopened._pending_decisions) == 2
-    assert ack(reopened)["runs"]["run"]["pending"]["data"]["items"][0]["id"] == "question-1"
     last = ack(reopened)
+    assert last["runs"]["run"]["pending"]["data"]["items"] == []
     assert any(row.get("identity") == "question-1" and row["change"] == "removed"
                for row in last["changes"])
     assert any(row["path"][-1] == "items" for row in last["changes"])
     assert not reopened._pending_decisions
+
+
+def test_backlogged_observations_deliver_latest_state_with_all_unseen_events(tmp_path):
+    host = session(tmp_path)
+    raw = observation()
+    host.record_observation(raw)
+    for index in range(1, 6):
+        raw["runs"]["run"]["status"]["data"]["write_phase"] = f"phase-{index}"
+        raw["runs"]["run"]["events"] = _events_page(
+            [_receipt_event(index * 100, f"unseen-{index}")], next_cursor=f"c{index}")
+        host.record_observation(raw)
+    before = (host.session_root / "session-events.jsonl").read_bytes()
+    latest = ack(host)
+    assert latest["runs"]["run"]["status"]["data"]["write_phase"] == "phase-5"
+    assert len(latest["runs"]["run"]["events"]["data"]["events"]) >= 5
+    assert not host._pending_decisions
+    assert (host.session_root / "session-events.jsonl").read_bytes().startswith(before)
+    reopened = DeliverySession(repository_root=ROOT, session_root=host.session_root,
+                               config=host.config, resume=True)
+    assert not reopened._pending_decisions
+
+
+def test_latest_host_result_is_delivered_before_waiting_on_closed_request(tmp_path):
+    from modeling_team.delivery_host_actions import request_host_action, record_host_action_result
+    from modeling_team.tests.test_delivery_host_actions import _platform_request
+    host = session(tmp_path)
+    host.run_ids.add("run")
+    raw = observation()
+    host.record_observation(raw)
+    request_host_action(host.session_root, host.session_id, host.run_ids, host.authorization,
+                        _platform_request(host.session_root, run_id="run"))
+    host.record_observation(raw)
+    result_file = host.session_root / "host-results/repaired.json"
+    result_file.parent.mkdir()
+    result_file.write_text('{"diagnosis":"PRIVATE-HOST-BODY"}')
+    record_host_action_result(host.session_root, "repair-1", "completed", result_file)
+    host.record_observation(raw)
+    latest = ack(host)
+    assert latest["host_actions"]["completed"][0]["request_id"] == "repair-1"
+    assert "PRIVATE-HOST-BODY" not in json.dumps(latest)
+    waiting = host.call_tool("yield_delivery", {"input_id": latest["input_id"],
+        "phase": "production", "waiting_for": [{"run_id": "run", "host_request_id": "repair-1",
+                                                  "condition": "Host repair result"}],
+        "next_action": "continue remaining work", "reason": "wait for repair", "active_decisions": []})
+    assert waiting["error"]["code"] == "delivery_host_action_completed"
+    assert waiting["error"]["result_ref"]["path"] == "host-results/repaired.json"
+    assert "PRIVATE-HOST-BODY" not in json.dumps(waiting)
+
+
+def test_partial_and_unknown_inputs_keep_their_original_identity(tmp_path):
+    host = session(tmp_path)
+    raw = observation()
+    raw["runs"]["run"]["pending"]["data"]["items"] *= 1000
+    host.record_observation(raw)
+    first = ack(host)
+    original = copy.deepcopy(host._pending_decisions[0])
+    assert original["offset"] > 0
+    raw["runs"]["run"]["pending"]["data"]["items"] = []
+    host.record_observation(raw)
+    data = host._model_observation()
+    assert data["input_id"] == first["input_id"]
+    assert host._pending_decisions[0] == original
+    host._pending_decisions[0]["delivery_status"] = "unknown"
+    assert host._model_observation()["delivery_status"] == "unknown"
+
+
+@pytest.mark.parametrize("failure_last", [False, True])
+def test_coalescing_preserves_unseen_read_errors_and_event_bodies(tmp_path, failure_last):
+    host = session(tmp_path)
+    raw = observation()
+    failed = {"ok": False, "error": {"code": "artifact_unavailable", "reason": "read failed"}}
+    events = _events_page([_receipt_event(100, "unseen-receipt")], next_cursor="later")
+    for page in ([events, failed] if failure_last else [failed, events]):
+        raw["runs"]["run"]["events"] = page
+        host.record_observation(raw)
+    data = ack(host)
+    assert "unseen-receipt" in json.dumps(data)
+    assert any(row.get("historical") and row.get("value") == failed for row in data["changes"])
 
 
 def test_unknown_dispatch_keeps_input_and_does_not_claim_acceptance(tmp_path):
@@ -335,17 +412,16 @@ def test_resume_rebuilds_current_input_even_when_last_input_was_accepted(tmp_pat
     assert ack(reopened)["runs"]["run"]["status"]["data"]["recorded_state"]["state"] == "RUNNING"
 
 
-def test_pending_historical_input_identifies_new_current_state(tmp_path):
+def test_undelivered_historical_input_is_merged_with_current_unknown_write(tmp_path):
     host = session(tmp_path)
     raw = observation()
     host.record_observation(raw)
     raw["runs"]["run"]["status"]["data"]["write_phase"] = "unknown"
     host.record_observation(raw)
     data = host._model_observation()
-    current = data["current_state"]
-    original = read(host, current["path"], source_ref=current["source_ref"], selection=current["selection"])
-    packet = json.loads(original["data"]["text"])
-    assert packet["snapshot"]["runs"]["run"]["status"]["data"]["write_phase"] == "unknown"
+    assert data["runs"]["run"]["status"]["data"]["write_phase"] == "unknown"
+    assert data["core"]["runs"]["run"]["write_phase"] == "unknown"
+    assert len(host._pending_decisions) == 1
 
 
 def test_large_blocker_has_body_in_bounded_pages_and_original_reference(tmp_path):

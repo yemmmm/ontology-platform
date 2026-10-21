@@ -2633,6 +2633,27 @@ class DeliverySession:
                 value = args.get(key)
                 if value and not (key == "run_id" and name == "start_run") and value not in self.run_ids:
                     raise ValueError("run is outside this Delivery session")
+            if name == "freeze_cq":
+                actions = host_action_state(self.session_root)
+                reviews = [result for identity, result in actions["results"].items()
+                    if result.get("status") == "completed"
+                    and actions["requests"][identity].get("kind") == "cq_review"
+                    and result.get("run_id") == args["run_id"]]
+                if reviews:
+                    result = max(reviews, key=lambda row: row["recorded_at"])
+                    fields = []
+                    if result["result_ref"]["path"].endswith(".json"):
+                        metadata = self._read_artifact(
+                            str(self.session_root / result["result_ref"]["path"]),
+                            selection={"kind": "json", "paths": [["selected_scope_complete"]]})
+                        fields = json.loads(metadata["text"])["fields"]
+                    if any(field.get("found") and field.get("value") is False for field in fields):
+                        raise HostOpError("cq_selected_scope_incomplete",
+                            "Host review explicitly leaves selected CQ stages unfinished",
+                            retryable=True,
+                            next_action="continue the declared remaining CQ stages, then review and freeze the complete selected scope",
+                            passthrough={"host_request_id": result["request_id"],
+                                         "result_ref": result["result_ref"]})
             if name in _MATERIAL_HOST_TOOLS:
                 try:
                     args = self._resolve_material_submission(name, args)
@@ -2965,6 +2986,12 @@ class DeliverySession:
             if host_id and (host_id not in actions.get("requests", {}) or (
                     run_id and actions["requests"][host_id].get("run_id") != run_id)):
                 raise ValueError("waiting Host request is outside the bound session/run")
+            result = actions.get("results", {}).get(host_id, {})
+            if result.get("status") == "completed":
+                raise HostOpError("delivery_host_action_completed",
+                    "the Host request is complete, not pending", retryable=True,
+                    next_action="read the bound Host result and continue remaining work; remove this completed Host request from waiting_for",
+                    passthrough={"host_request_id": host_id, "result_ref": result["result_ref"]})
             if request_id:
                 requests = self._last_current.get("runs", {}).get(run_id, {}).get("requests", {}).get("data", {})
                 matched = next((item for item in requests.get("pending", []) + requests.get("settled", [])
@@ -3272,6 +3299,10 @@ class DeliverySession:
                 self.last_yield = record
                 if "thread_boundary" in record:
                     self.pending_thread_handoff = record if record["thread_boundary"] else None
+            elif event == "delivery_inputs_coalesced":
+                replaced = set(record["input_ids"])
+                self._pending_decisions = [item for item in self._pending_decisions
+                                           if item["input_id"] not in replaced]
             elif event == "delivery_phase_thread":
                 self.phase_thread_history = [row for row in self.phase_thread_history
                     if row["attempt_id"] != record["attempt_id"]] + [record]
@@ -3395,6 +3426,66 @@ class DeliverySession:
         self._save("active")
         return changed
 
+    def _coalesce_pending_decisions(self) -> None:
+        """Deliver current facts together with all changes not yet sent to the model.
+
+        Partially received and uncertain inputs keep their own identity and
+        offsets. Only observations known not to have been delivered are merged;
+        the original journal and formal action receipts remain unchanged.
+        """
+        pending = [item for item in self._pending_decisions if not item["offset"]
+                   and item["delivery_status"] in {"pending", "deferred_budget", "rejected"}]
+        if len(pending) < 2:
+            return
+        packets = []
+        with (self.session_root / "session-events.jsonl").open("rb") as handle:
+            for item in pending:
+                handle.seek(item["byte_offset"])
+                packets.append(json.loads(handle.read(item["byte_length"])))
+        merged = copy.deepcopy(packets[-1])
+        merged.update(input_id=uuid.uuid4().hex, mode="bootstrap",
+                      recovery_context=self._recovery_context(),
+                      coalesced_input_ids=[item["input_id"] for item in pending])
+        for key in ("changes", "request_results"):
+            values = {}
+            for packet in packets:
+                for value in packet.get(key, []):
+                    values[_json_bytes(value)] = value
+            merged[key] = list(values.values())
+        for run_id, run in merged["snapshot"].get("runs", {}).items():
+            page = run.get("events", {}).get("data")
+            events = {}
+            for packet in packets:
+                previous = packet["snapshot"].get("runs", {}).get(run_id, {})
+                envelope = previous.get("events", {})
+                if envelope.get("ok") is False:
+                    merged["changes"].append({"path": ["runs", run_id, "events"],
+                        "change": "updated", "value": envelope, "historical": True})
+                for event in previous.get("events", {}).get("data", {}).get("events", []):
+                    events[_json_bytes(event)] = event
+            if isinstance(page, dict):
+                page["events"] = list(events.values())
+            elif events:
+                merged["changes"].append({"path": ["runs", run_id, "events"],
+                    "change": "updated", "value": {"ok": True, "data": {
+                        "events": list(events.values())}}, "historical": True})
+        for key in ("operations", "repair_verifications"):
+            merged["changed_operations"][key] = list(dict.fromkeys(
+                identity for packet in packets
+                for identity in packet.get("changed_operations", {}).get(key, [])))
+        offset, length = append_session_event(self.session_root, merged)
+        replaced = merged["coalesced_input_ids"]
+        self._append("session-events.jsonl", {"event": "delivery_inputs_coalesced",
+            "input_ids": replaced, "replacement_input_id": merged["input_id"]})
+        self._pending_decisions = [item for item in self._pending_decisions
+                                   if item["input_id"] not in replaced]
+        self._pending_decisions.append({"input_id": merged["input_id"], "byte_offset": offset,
+            "byte_length": length, "offset": 0, "delivery_status": "pending"})
+        if getattr(self, "_bootstrap_input_id", None) in replaced:
+            self._bootstrap_input_id = merged["input_id"]
+        self._input_ids.add(merged["input_id"])
+        self._latest_input_id = merged["input_id"]
+
     def _model_observation(self, observation: Any = None, *, _item: dict | None = None,
                            _bootstrap: bool = False) -> dict:
         if not self._pending_decisions:
@@ -3402,6 +3493,9 @@ class DeliverySession:
                 self.record_observation(observation)
             if not self._pending_decisions:
                 return {"schema_version": "delivery-decision-input/v2", "coverage": {"complete": True}}
+        self._coalesce_pending_decisions()
+        if _item not in self._pending_decisions:
+            _item = None
         item = _item or next((item for item in self._pending_decisions
             if item["input_id"] == getattr(self, "_bootstrap_input_id", None)), self._pending_decisions[0])
         journal = self.session_root / "session-events.jsonl"
@@ -3540,12 +3634,14 @@ class DeliverySession:
                 add("host_request", value, ["snapshot", "host_actions", collection, index])
 
         changes = []
-        if not bootstrap:
+        if not bootstrap or packet.get("coalesced_input_ids"):
             for change in packet["changes"]:
                 parts = change["path"]
                 # Event fingerprints are only wakeup bookkeeping. Deliver actual
                 # event bodies from the authorized snapshot, never a chain hash.
                 if len(parts) >= 3 and parts[0] == "runs" and parts[2] == "events":
+                    if change.get("historical"):
+                        changes.append(change)
                     continue
                 if ("request_results" in packet and len(parts) >= 5
                         and parts[0] == "runs" and parts[2:5] == ["requests", "data", "settled"]):
@@ -3668,6 +3764,7 @@ class DeliverySession:
                 return True  # The unchanged input remains pending on this session.
         self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
             "input_id": item["input_id"], "status": "attempted"})
+        item["delivery_status"] = "attempted"
         try:
             receipt = (runtime.steer if steer else runtime.send)(json.dumps(payload, ensure_ascii=False))
         except BudgetError as exc:

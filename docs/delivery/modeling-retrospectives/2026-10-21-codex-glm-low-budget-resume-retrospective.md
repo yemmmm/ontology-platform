@@ -133,3 +133,7 @@ GitNexus返回的类位置与当前源码不一致且缺少控制方法，未据
 `.delivery-ops/*host-add3-independent-*.owner/evidence/agent-statistics/*/evidence/close-statistics-capture/`
 的activity／usage；原预算events第2938—2983、3100—3153行；原Delivery journal与native rollout。
 这些原件留在既有本机私有目录，报告不包含隐藏题正文、答案或评分细节。
+
+后续用户授权“修复已定位问题”，上述控制turn、观察积压、恢复投影和阶段反馈的窄修
+已实施，验证范围见[工程修复记录](../records/2026-10-21-modeling-resume-repair.md)。
+此进展不改写本报告原始诊断时点、旧进程身份或L1未完成结论；评分服务内部原因仍未确定。

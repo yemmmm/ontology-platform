@@ -2780,8 +2780,10 @@ def _receipt_outcome(
     if receipt.get("detail"):
         result["reason"] = receipt["detail"]
     if receipt.get("retry"):
-        result["retryable"] = True
-        result["next_action"] = receipt["retry"] + "; resend with a NEW request_id"
+        result["retryable"] = receipt.get("code") != "issue_already_settled"
+        result["next_action"] = receipt["retry"]
+        if result["retryable"]:
+            result["next_action"] += "; resend with a NEW request_id"
     return result
 
 

@@ -45,6 +45,44 @@ def test_host_control_and_private_path_arguments_are_not_model_selected(tmp_path
         assert 'host_session_ref' not in tool['inputSchema'].get('properties', {})
 
 
+@pytest.mark.parametrize("complete", [False, True])
+def test_freeze_respects_explicit_host_scope_completion(tmp_path, monkeypatch, complete):
+    from modeling_team.delivery_host_actions import request_host_action, record_host_action_result
+    host = session(tmp_path)
+    host.run_ids.add("run")
+    host.allowed_operations.update({"production", "supervise"})
+    request = {
+        "request_id": "cq-review", "run_id": "run", "kind": "cq_review", "bindings": {
+            "review_id": "review-1", "content_version": 1,
+            "content_digest": "sha256:" + "a" * 64, "question_ids": ["q1"]}}
+    request_host_action(host.session_root, host.session_id, host.run_ids, host.authorization, request)
+    result_file = host.session_root / "host-results/cq.json"
+    result_file.parent.mkdir()
+    result_file.write_text(json.dumps({"selected_scope_complete": complete,
+                                     "private_rationale": "PRIVATE-CQ-BODY"}))
+    record_host_action_result(host.session_root, "cq-review", "completed", result_file)
+    calls = []
+    def freeze(**kwargs):
+        calls.append(kwargs)
+        return {"status": "submitted"}
+    monkeypatch.setattr(importlib.import_module("modeling_team.delivery").host_ops_mcp, "freeze_cq", freeze)
+    result = host.call_tool("freeze_cq", {"run_id": "run"})
+    assert result["ok"] is complete
+    assert bool(calls) is complete
+    if not complete:
+        assert result["error"]["code"] == "cq_selected_scope_incomplete"
+        assert result["error"]["retryable"] is True
+        assert "PRIVATE-CQ-BODY" not in json.dumps(result)
+        request.update(request_id="cq-review-next")
+        request["bindings"]["review_id"] = "review-2"
+        request_host_action(host.session_root, host.session_id, host.run_ids, host.authorization, request)
+        next_result = result_file.with_name("cq-next.json")
+        next_result.write_text('{"selected_scope_complete":true}')
+        record_host_action_result(host.session_root, "cq-review-next", "completed", next_result)
+        assert host.call_tool("freeze_cq", {"run_id": "run"})["ok"]
+        assert len(calls) == 1
+
+
 @pytest.mark.parametrize("missing", [("mode",), ("freeze_id", "mode")])
 def test_missing_evaluation_parameters_are_named_and_correctable(tmp_path, monkeypatch, missing):
     module = importlib.import_module("modeling_team.delivery")

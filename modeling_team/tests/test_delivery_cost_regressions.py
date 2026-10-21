@@ -105,6 +105,8 @@ def test_historical_page_keeps_current_authorization_visible(tmp_path):
     raw = observation()
     raw["runs"]["run"]["pending"]["data"]["items"][0]["description"] = "旧页" * 20000
     host.record_observation(raw)
+    ack(host)  # This historical input has actually begun delivery.
+    assert host._pending_decisions[0]["offset"] > 0
     host._last_current["session"]["budget_control"] = {"authorized_amount": "6", "epoch": 4}
     raw["runs"]["run"]["status"]["data"]["write_phase"] = "read-only"
     host.record_observation(raw)

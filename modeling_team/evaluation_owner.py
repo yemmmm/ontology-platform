@@ -300,14 +300,12 @@ class EvaluationOwner:
             # owner lock across that round trip.
             self._lock.release()
             try:
-                dispatched = adapter.send_message(agent.agent_id, RuntimeDelivery(
+                adapter.send_message(agent.agent_id, RuntimeDelivery(
                     sender_id="host/task-budget" if message.get("source") == "task_budget" else "user/outer", recipient_id=agent.agent_id,
                     kind="budget-control" if message.get("source") == "task_budget" else "user-control",
                     text=json.dumps({**message, "instruction": instruction}, ensure_ascii=False)))
             finally:
                 self._lock.acquire()
-            if metrics is not None and getattr(dispatched, "mode", None) == "steer":
-                metrics._pending_control_turn = False
             if self.receipts[identity]["status"] != "effective":
                 self.receipts[identity]["status"] = "instruction_delivered"
         except Exception:

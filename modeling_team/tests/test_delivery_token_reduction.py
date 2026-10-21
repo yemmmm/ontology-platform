@@ -219,10 +219,16 @@ def test_deadline_is_one_change_even_when_host_is_static_and_after_resume(tmp_pa
     assert not reopened.record_observation(raw)
 
 
-def test_resume_bootstrap_does_not_ack_historical_pending_input(tmp_path):
+def test_resume_bootstrap_does_not_ack_historical_unknown_input(tmp_path):
     host = session(tmp_path)
     host.record_observation(observation())
     original_id = host._pending_decisions[0]["input_id"]
+    from modeling_team.runtimes.delivery import DeliveryRuntimeError
+    class UnknownReceipt:
+        def send(self, text):
+            raise DeliveryRuntimeError("unknown receipt")
+    assert not host._dispatch_observation(UnknownReceipt(), {
+        "kind": "host_observation", "data": host._model_observation()}, steer=False)
     latest = observation()
     latest["runs"]["run"]["status"]["data"]["write_phase"] = "unknown"
     host.record_observation(latest, force_delivery=True)
@@ -231,6 +237,7 @@ def test_resume_bootstrap_does_not_ack_historical_pending_input(tmp_path):
     host._dispatch_observation(type("Native", (), {"send": lambda _, text: None})(),
         {"kind": "delivery_resume", "observed_state": bootstrap}, steer=False)
     assert host._pending_decisions[0]["input_id"] == original_id
+    assert host._pending_decisions[0]["delivery_status"] == "unknown"
     assert len(host._pending_decisions) == 1
 
 
