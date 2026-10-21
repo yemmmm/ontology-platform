@@ -177,6 +177,10 @@ partial／unknown。not_invoked需要证据，已发生但无usage的attempt不�
 rates显式指定已确认的计费类别，例如cached_input_tokens、uncached_input_tokens、
 output_tokens；缓存写入／推理的计费定义也由真实价表决定，工具不套用其他provider公式。
 金额用Decimal。订阅、缺价、跨价格段无法切片或缺必要token时金额unknown。
+2026-10-21起按用户确认，实际绑定`role: host`的外部Host用量保存在
+`external_host_usage`并单独展示，`included_in_cost: false`；即使匹配到价表，也不进入
+任务`cost_estimates`／`cost_summary`或金额缺测计数。该规则不按文件名或provider猜角色。
+原始`responses`／`cost_units`和独立账单窗口的对账原件保留。
 可选rounding_quantum仅支持十进制精度，须显式声明rounding_mode
 （ROUND_HALF_UP、ROUND_HALF_EVEN、ROUND_DOWN、ROUND_UP），按每成本单元舍入。
 不提供舍入时保留精确值，不使用隐含容差或汇率。

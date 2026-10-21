@@ -1870,6 +1870,8 @@ def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
             _issue(issues, "task_timestamp_unknown", r["sources"][0])
         elif window_contains(task_window, r["timestamp"]):
             task.append(r)
+    external_host = [r for r in task if r.get("role") == "host"]
+    task_cost_units = [r for r in task if r.get("role") != "host"]
     compaction_rows = [r for r in task if r.get("runtime") == "dsh"
                        and r.get("purpose") == "compaction"]
     compaction_keys = set()
@@ -1997,11 +1999,14 @@ def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
         },
         "sources": sources,
         "task_usage": {**summary, "groups": _groups(task)},
+        "external_host_usage": {
+            **summarize(external_host), "groups": _groups(external_host), "included_in_cost": False,
+        },
         "billing_window_usage": billing,
         "layers": layers,
         "compaction_subset": {**summarize(compaction_rows), "additive": False},
         "timing_metrics": timing,
-        "cost_estimates": _costs(task, scope.get("price_versions", [])),
+        "cost_estimates": _costs(task_cost_units, scope.get("price_versions", [])),
         "reconciliation": reconciliation,
         "limitations": issues,
         "billing_scope": {
@@ -2118,10 +2123,20 @@ def render_markdown(report):
         "",
         f"Cache rate: {cell(report['task_usage']['tokens']['cache_rate'])}; "
         f"sample input: {cell(report['task_usage']['cache_rate_input_coverage'])}.",
-        "",
-        "## Groups and layers",
-        "",
     ]
+    external_host = report.get("external_host_usage", {})
+    if external_host.get("cost_units"):
+        lines += [
+            "", "## External Host (display only)", "",
+            "External Host usage is excluded from task cost estimates and budget deductions.",
+            "",
+        ]
+        lines += table(
+            ["Input", "Cached input", "Output"],
+            [[external_host["tokens"][field] for field in
+              ("input_tokens", "cached_input_tokens", "output_tokens")]],
+        )
+    lines += ["", "## Groups and layers", ""]
     lines += table(
         ["Identity", "Units", "Input", "Cached", "Output"],
         [

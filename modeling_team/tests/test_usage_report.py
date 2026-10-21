@@ -439,6 +439,50 @@ def test_prices_are_explicit_versioned_decimal_and_subscription_unknown(tmp_path
     assert build_report(s)["cost_estimates"][0]["amount"] is None
 
 
+def test_external_host_usage_is_display_only_even_when_a_price_is_available(tmp_path):
+    s = scope(tmp_path)
+    s["price_versions"] = [
+        dict(
+            provider="provider-a", model="model-a", source_ref="price-sheet",
+            version="2026-10", verified_at=START, currency="USD", unit_tokens=1000,
+            start=START, end=END, definition_ref="input-includes-cache", billing_mode="api",
+            rates=dict(cached_input_tokens="0.1", uncached_input_tokens="1", output_tokens="2"),
+        )
+    ]
+    host_usage = usage(i=10000, c=6000, o=2000, r=500)
+    add_source(
+        s, tmp_path, "external-host", [{**receipt("host-r1"), "usage": host_usage}],
+        role="host", phase="host-supervision", thread_id="external-host-thread",
+    )
+    s["layer_coverage"].append(dict(role="host", status="observed"))
+
+    report = build_report(s)
+
+    assert len(report["cost_estimates"]) == 1
+    assert report["cost_summary"] == [
+        dict(currency="USD", known_estimate_subtotal="0.086", known=1, unknown=0)
+    ]
+    displayed = report["external_host_usage"]
+    assert displayed["included_in_cost"] is False
+    assert displayed["tokens"]["input_tokens"] == 10000
+    assert displayed["tokens"]["output_tokens"] == 2000
+    assert displayed["groups"][0]["identity"]["role"] == "host"
+    assert any(row.get("role") == "host" for row in report["responses"])
+    assert "External Host (display only)" in render_markdown(report)
+
+
+def test_external_host_only_report_has_no_task_cost(tmp_path):
+    s = scope(tmp_path)
+    s["bindings"][0].update(role="host", phase="host-supervision")
+    s["layer_coverage"] = [dict(role="host", status="observed")]
+
+    report = build_report(s)
+
+    assert report["cost_estimates"] == []
+    assert report["cost_summary"] == []
+    assert report["external_host_usage"]["tokens"]["input_tokens"] == 100
+
+
 def timing(rid, start, end, **extra):
     return dict(
         provider="provider-a",
