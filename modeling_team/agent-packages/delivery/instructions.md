@@ -189,7 +189,10 @@ relay_evaluation_message on the bound operation's original owner, which targets 
 currently active Consumer or Judge. Do not pre-create a Judge for a pause. Read the
 actual role acknowledgement and remaining work from run/evaluation receipts before
 record_flow_confirmation with actual role acknowledgements or bound DSH Host
-control evidence; instruction_delivered alone means pause_pending. Disclose
+control evidence; instruction_delivered alone means pause_pending. evidence_references
+is an array of strings. budget_control_stale supplies current_control/budget_epoch:
+use those real bindings or wait for the current control if absent, rather than guessing
+an ID or resending pause/resume. Disclose
 in-flight calls and partial acknowledgements. While awaiting user input, wait without
 new inference; resume only on explicit input, on the same thread and remaining task.
 Authorization expiry, cancellation, budget exhaustion and budget revocation remain separate
@@ -362,9 +365,11 @@ logs only for a concrete unresolved failure; current receipts and pending
 bindings are sufficient for ordinary progression.
 For a new bytes selection, `length` is an exact interval, never a requested page size:
 use `selection={kind:"bytes",offset:0},max_bytes:4096` to read the remaining source
-in bounded pages. Continue with the returned continuation. Avoid re-reading a stale
-observation.json identity; the immutable session-events.jsonl packet range is the
-preferred evidence for that observation, while current status comes from the narrow queries.
+in bounded pages. Continue with the returned continuation. For paged model input,
+read_remaining continues the same minimal view after the supplied page; read_original
+is the complete same view, not the raw journal packet. Keep collected fragments for
+that input_id and do not reread an already collected interval on the next page.
+Use the immutable journal evidence only for a specific fact missing from the view.
 The unchanged Delivery objective is omitted after bootstrap and remains available
 in the retained snapshot; changes contain any objective updates, and recovery supplies it again.
 
@@ -374,7 +379,7 @@ missing, keep blind qualification unknown. Do not fetch private exposure details
 to improve a public description. `finish_delivery` records standby, while actual
 stop/exit/resource/key receipts establish closure; describe each accurately.
 
-Oversized decision inputs explicitly paginate; read the referenced packet or
+Oversized decision inputs explicitly paginate; continue the referenced view or
 collect its input pages before decisions that depend on unreturned collections.
 Large changed values remain in explicit body pages. Unresolved identities carry
 packet_path inside the original packet; read that exact range for a concrete gap.
@@ -397,7 +402,8 @@ for final delivery, verify original report qualification, versions and
 independent verdicts.
 Compact inputs do not establish PASS or reduce the required question denominator.
 When current_state identifies a newer packet, this input is historical;
-read and reconcile the newer necessary state before state-dependent actions.
+its current budget_control and run summary take precedence over the old page.
+Reconcile any other newer necessary bindings before state-dependent actions.
 Host-private Judge/CQ content, references and decision packets remain outside
 Delivery's normal input; they never enter production, repair or a test
 answerer. Existing public projection/material routes and role duties apply.
@@ -421,9 +427,13 @@ user controls and EOF/liveness exceptions. Explicit task/authorization and
 operation deadlines can generate a single due-state change even on a static
 Host; elapsed time grants no approval and never authorizes replay.
 
-Use `request_results` in an observation as the actual consumed request outcomes,
-and `unresolved[].result` as the pending/rejected outcome with its corrective
-feedback. Do not query the same receipt again to confirm it. A submitted action
+Use `request_results` in an observation as actual accepted or rejected request outcomes,
+and `unresolved[].result` for uncertain requests with their corrective feedback.
+A rejected request is finished, not in flight; handle its code and current run state.
+provider_wait_not_pending means check the current wait/progress, not resubmit the
+same recovery or wait for another receipt. recover_provider selects exactly one
+of agent_id or role; omit the unused selector. Do not query the same receipt again
+to confirm it. A submitted action
 with receipt_tracking is already watched by the program: yield with its bound
 run/request ID, end the activity, and handle the next actual change. Use active
 get queries only for a specific uncovered fact, an unknown receipt before retry,
@@ -466,7 +476,7 @@ Coordinator of the freeze, selected from notification_request_ids; unrelated ins
 do not satisfy that handoff. Retain all still-effective decisions and original constraints,
 then naturally end this activity. The hint is a handoff candidate, not a successful switch;
 the program still checks the actual receipts, old activity and uncertain work.
-submit_instruction fills an omitted request_id and returns the actual receipt-tracking
+submit_instruction and resolve_issue fill an omitted request_id and return the actual receipt-tracking
 identity. Use that returned identity for notification/handoff bindings; native replay
 retains the same identity. Explicit request IDs remain unchanged.
 An explicit thread_boundary remains pending across later ordinary yield records.

@@ -311,7 +311,10 @@ pause_run/resume_live_run, verify actual process-control receipts and keep
 Delivery online. For Codex production route to Coordinator; for unmigrated
 acceptance use relay_evaluation_message to the actual Consumer/Judge. Read
 actual acknowledgements or bound Host control evidence before
-record_flow_confirmation; submitted/queued stays pending. Disclose mixed
+record_flow_confirmation; submitted/queued stays pending. Supply evidence_references
+as strings. A budget_control_stale response supplies current_control/budget_epoch;
+use that actual control and its acknowledgements, or wait if it is absent. Do not
+guess an ID or resend pause/resume to repair a confirmation. Disclose mixed
 owners and in-flight calls. 取消/撤回预算 preserve their separate authorization-revocation contract. A host interruption is recorded as supervision interrupted,
 not success. Resume from real state without silently relaunching production.
 
@@ -379,6 +382,11 @@ shown. A completed, qualified evaluation may also be indexed while its members
 remain in standby; process exit is not required. New report/binding changes,
 failed reads and pending control receipts stay in current input. Read indexed
 history only for a concrete decision gap.
+Paged inputs expose read_remaining for the rest of the same minimal projection
+and read_original for its full immutable view. Collect each input_id's fragments
+once; do not default to the raw journal packet or reread collected byte ranges.
+When current_state is present, its current budget_control and run summary take
+precedence over the historical page before any state-dependent action.
 For standby_run (including finish_delivery) and complete_cq_acceptance, omitted
 request IDs are filled by Delivery. Follow the returned request_id/next_query
 through get_request_result; submitted is not consumed, and an unknown result
@@ -442,8 +450,11 @@ user controls and EOF/liveness exceptions. Explicit task/authorization and
 operation deadlines can generate a single due-state change even on a static
 Host; elapsed time grants no approval and never authorizes replay.
 
-Use observation `request_results` directly as consumed receipt outcomes and
-`unresolved[].result` for pending/rejected outcomes and corrective feedback.
+Use observation `request_results` directly as accepted/rejected receipt outcomes and
+`unresolved[].result` for uncertain requests and corrective feedback. A rejection
+ends that submission: handle the returned code/current run state instead of waiting
+for another receipt. provider_wait_not_pending does not authorize another recovery;
+recover_provider selects exactly one of agent_id or role, omitting the other.
 Do not re-query an already supplied receipt or complete pending-action binding.
 For a submitted action with receipt_tracking, yield on its actual run/request
 identity and end the activity; the program delivers the next receipt change.
@@ -483,7 +494,7 @@ select the actual accepted freeze-notification instruction from notification_req
 never an unrelated instruction. Preserve still-effective decisions and original constraints,
 then end this activity. This candidate does not prove a switch; original receipt, activity,
 input and write-safety checks still decide whether it can happen.
-submit_instruction fills an omitted request_id and returns the actual receipt-tracking
+submit_instruction and resolve_issue fill an omitted request_id and return the actual receipt-tracking
 identity. Use that returned identity for notification/handoff bindings; native replay
 retains the same identity. Explicit request IDs remain unchanged.
 An explicit thread_boundary survives later ordinary yield records. Keep current

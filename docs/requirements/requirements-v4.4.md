@@ -221,6 +221,11 @@ credential alias／model的原生数值覆盖与未匹配传输组暂估，迟�
 Delivery等待积压、控制身份反馈及Host补位限制详见[本轮分析](../delivery/modeling-retrospectives/2026-10-21-codex-delivery-cost-analysis.md)；
 未新增金额授权、未修改预算实现，原失败／报告／估价历史均保留。
 
+2026-10-21用户授权修复后，Delivery金额控制确认已补准确的过期身份／epoch反馈、
+证据字段格式定位及历史页当前预算摘要，见[工程记录](../delivery/records/2026-10-21-delivery-cost-fixes.md)。
+仅确认Delivery自己的实际控制证据，不替代生产／验收owner的暂停证明；未改预算计价、
+追加金额、全员控制或迟到尾差算法，相关真实预算效果仍PARTIAL，原停止与账本历史保留。
+
 #### 目标、例子与当前基线
 
 用户可以授权“在这个已确认业务目标内，使用指定模型完成建模和独立验收，预算 ¥10”，

@@ -420,7 +420,7 @@ def _is_decision_event_noise(event: Any) -> bool:
 # Content stays in the original event. Delivery receives identifiers and state;
 # CQ question text, answer points and review notes never enter its default input.
 _EVENT_METADATA_KEYS = frozenset({
-    "event", "type", "status", "state", "ok", "run_id", "agent_id", "sender_id",
+    "event", "type", "status", "state", "ok", "run_id", "agent_id", "sender_id", "delivery_id",
     "recipient_id", "message_kind", "message_id", "terminal", "settles", "phase",
     "review_id", "question_id", "question_ids", "content_version", "content_digest",
     "candidate_digest", "model_revision", "request_id", "issue_id", "reporter_id",
@@ -504,6 +504,15 @@ def _diagnostic_state(event: Any, *, native_operation: str | None = None) -> tup
     data, source = event.get("data"), event.get("source")
     if not isinstance(data, dict) or not isinstance(source, str):
         return None
+    if (source == "deliveries.jsonl"
+            and (data.get("event") == "delivery-deferred" or data.get("type") == "delivery")
+            and all(isinstance(data.get(key), str) and data[key]
+                    for key in ("delivery_id", "recipient_id"))):
+        # Requeueing the same parked message preserves delivery; it is not a
+        # new decision until the failure or one of its bindings actually changes.
+        current = {key: value for key, value in data.items() if key != "recorded_at"}
+        return (_json_bytes([source, data["delivery_id"], data["recipient_id"]]).decode(),
+                _digest_bytes(_json_bytes(current)), True)
     native_values = None
     if source == "dsh-wire.jsonl":
         if native_operation is None:
@@ -933,7 +942,8 @@ _LOCAL_SPECS = [
         "Do not guess authorization/ledger/Host-result paths. Copy the returned selection or "
         "continuation; for remaining bytes use selection={kind:'bytes',offset:0} without length. "
         "length is an exact interval, not a page size; max_bytes caps a page. "
-        "Prefer the immutable session-events.jsonl evidence range over a stale observation.json."),
+        "For paged decisions use read_remaining or read_original from that view; these read the "
+        "minimal projection, not the raw journal bookkeeping. Raw evidence is for a specific gap."),
      "inputSchema": {"type": "object", "properties": {
          "path": {"type": "string"},
          "source_ref": {"type": "object",
@@ -2147,6 +2157,10 @@ class DeliverySession:
         approved = bound_host_ref is not None or path in self.sources or path in {
             self.session_root / name for name in ("session.json", "session-events.jsonl", "user-input.jsonl", "conversation-events.jsonl", "public-messages.jsonl", "observation.json", "efficiency-round.json", "efficiency-progress.jsonl")
         }
+        approved = approved or (
+            path.parent == self.session_root / "decision-views"
+            and re.fullmatch(r"[0-9a-f]{64}\.json", path.name) is not None
+        )
         approved = approved or path in {
             self.repository_root / '.delivery-ops' / f'{operation_id}.{suffix}'
             for operation_id in self.operation_ids if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', operation_id)
@@ -2348,6 +2362,13 @@ class DeliverySession:
                         obj=".".join(["arguments", *map(str, exc.absolute_path)]), retryable=True,
                         next_action=f"provide the named parameters according to the {name} tool schema and retry",
                         passthrough={"tool": name, "missing_parameters": missing}) from exc
+                if name == "record_flow_confirmation":
+                    field = ".".join(map(str, exc.absolute_path))
+                    raise HostOpError("flow_confirmation_invalid", f"invalid confirmation field: {field}",
+                        retryable=True,
+                        next_action="use evidence_references as an array of strings, the current message_id/action, and status pending/effective/failed/unknown",
+                        passthrough={"field": field, "rule": exc.validator,
+                                     "expected": exc.validator_value}) from exc
                 if name != "read_delivery_artifact":
                     raise
                 raise HostOpError("artifact_selection_invalid", "invalid artifact read parameters",
@@ -2476,10 +2497,19 @@ class DeliverySession:
                     "note": "Work result recorded; original Team retained until explicit stop. This is not semantic PASS."}}
             if name == "record_flow_confirmation":
                 control = getattr(self, "_budget_control_message", None)
-                if control and arguments["message_id"] == control["request_id"]:
+                if self.budget and (not self.conversation or (
+                        control and arguments["message_id"] == control["request_id"])):
                     state = self.budget.show()
-                    if arguments["action"] != control["action"] or control["epoch"] != state["epoch"]:
-                        raise ValueError("confirmation belongs to a stale budget control")
+                    if (not control or arguments["message_id"] != control["request_id"]
+                            or arguments["action"] != control["action"]
+                            or control["epoch"] != state["epoch"]):
+                        current = ({"message_id": control["request_id"], "action": control["action"],
+                                    "epoch": control["epoch"]}
+                                   if control and control["epoch"] == state["epoch"] else None)
+                        raise HostOpError("budget_control_stale", "confirmation is not for the current budget control",
+                            retryable=True,
+                            next_action="use current_control with actual acknowledgements; if absent, wait for the current control message, do not guess an identity",
+                            passthrough={"budget_epoch": state["epoch"], "current_control": current})
                     if arguments["status"] == "effective" and not arguments["evidence_references"]:
                         raise ValueError("effective requires acknowledgement references")
                     self.budget.record_control("delivery:" + self.session_id, control["epoch"],
@@ -2592,7 +2622,7 @@ class DeliverySession:
                 if deadline.tzinfo is None or datetime.now(UTC) >= deadline:
                     raise ValueError("original authorization expired; no automatic renewal")
             args = dict(arguments)
-            if (name in {"submit_instruction", "standby_run", "complete_cq_acceptance"}
+            if (name in {"submit_instruction", "standby_run", "complete_cq_acceptance", "resolve_issue"}
                     and args.get("request_id") is None):
                 identity = (hashlib.sha256(_json_bytes([self.session_id, name, args, call_identity])).hexdigest()
                             if call_identity else uuid.uuid4().hex)
@@ -2828,7 +2858,7 @@ class DeliverySession:
             item = {"run_id": run_id, "request_id": request_id, "action": entry.get("action"),
                     "content_digest": entry.get("content_digest"), "result": result,
                     "ledger_ref": locator, "receipt_ref": receipt_locator}
-            if result.get("ok") and result.get("data", {}).get("outcome") == "accepted":
+            if result.get("ok") and result.get("data", {}).get("outcome") in {"accepted", "rejected"}:
                 settled.append(item)
             else:
                 pending.append(item)
@@ -2937,18 +2967,25 @@ class DeliverySession:
                 raise ValueError("waiting Host request is outside the bound session/run")
             if request_id:
                 requests = self._last_current.get("runs", {}).get(run_id, {}).get("requests", {}).get("data", {})
-                known = any(item.get("request_id") == request_id for item in
-                            requests.get("pending", []) + requests.get("settled", []))
+                matched = next((item for item in requests.get("pending", []) + requests.get("settled", [])
+                                if item.get("request_id") == request_id), None)
+                known = matched is not None
                 if run_id and not known:
                     # A just-submitted request may predate the next program
                     # observation. Reconcile its real ledger here, rather than
                     # requiring an LLM status poll merely to register the wait.
                     current = self._request_projection(run_id, self._observe_request_ledger(run_id))
                     data = current.get("data", {})
-                    known = any(item.get("request_id") == request_id for item in
-                                data.get("pending", []) + data.get("settled", []))
+                    matched = next((item for item in data.get("pending", []) + data.get("settled", [])
+                                    if item.get("request_id") == request_id), None)
+                    known = matched is not None
                 if not run_id or not known:
                     raise ValueError("waiting request requires its retained run/request binding")
+                receipt = matched.get("result", {}).get("data", {})
+                if receipt.get("outcome") == "rejected":
+                    raise HostOpError("delivery_wait_already_rejected", "the request has a final rejection, not an in-flight receipt",
+                        retryable=True, next_action="handle the rejection and current run state; wait only on work that remains pending",
+                        passthrough={"run_id": run_id, "request_id": request_id, "receipt": receipt})
         record = {"event": "delivery_yield", "session_id": self.session_id,
                   "recorded_at": now(), **copy.deepcopy(arguments)}
         offset, length = append_session_event(self.session_root, record)
@@ -3006,7 +3043,8 @@ class DeliverySession:
                 if (requests.get("ok") is not True
                         or requests.get("data", {}).get("coverage", {}).get("complete") is not True):
                     continue
-                settled = requests.get("data", {}).get("settled", [])
+                settled = [row for row in requests.get("data", {}).get("settled", [])
+                           if row.get("result", {}).get("data", {}).get("outcome") == "accepted"]
                 if phase == "production" and any(
                         row.get("action") == "cq_handoff_complete" for row in settled):
                     continue
@@ -3079,7 +3117,8 @@ class DeliverySession:
             return False
         run = current.get("runs", {}).get(run_id, {})
         settled = {item["request_id"]: item for item in
-                   run.get("requests", {}).get("data", {}).get("settled", [])}
+                   run.get("requests", {}).get("data", {}).get("settled", [])
+                   if item.get("result", {}).get("data", {}).get("outcome") == "accepted"}
         ids = boundary.get("request_ids", [])
         if not ids or any(request_id not in settled for request_id in ids):
             return False
@@ -3165,17 +3204,29 @@ class DeliverySession:
         if offset == 0 and len(json.dumps(payload, ensure_ascii=False).encode()) <= 31800:
             return payload
         text, end = _utf8_page(encoded, offset, 12000)
+        # Supplemental reads must continue this same model-facing projection.
+        # The journal reference still identifies the complete raw evidence, but
+        # reading it by default would restore snapshots and internal fingerprints.
+        directory = self.session_root / "decision-views"
+        directory.mkdir(exist_ok=True)
+        path = directory / (_digest_bytes(encoded).removeprefix("sha256:") + ".json")
+        if not path.exists():
+            path.write_bytes(encoded)
+        view = {"path": str(path), "source_ref": _source_ref(path, encoded),
+                "selection": {"kind": "bytes", "offset": 0, "length": len(encoded)}}
         return {"schema_version": payload["schema_version"],
                 **{key: payload[key] for key in ("input_id", "mode", "delivery_status", "current_state")
                    if key in payload},
                 "evidence": reference,
                 "page": {"text": text, "offset": offset, "next_offset": end,
-                         "note": "partial JSON; collect pages or read the original before using unreturned facts"},
+                         "note": "partial JSON; collect pages or continue with read_remaining before using unreturned facts"},
                 "coverage": {"complete": end == len(encoded), "total_bytes": len(encoded),
                              "returned_bytes": end - offset, "source_complete": False,
                              "remaining_bytes": len(encoded) - end},
                 "delivery_range": {"next_offset": end, "complete": end == len(encoded)},
-                "read_original": reference}
+                "read_original": view,
+                "read_remaining": {**view, "selection": {"kind": "bytes", "offset": end,
+                                                        "length": len(encoded) - end}}}
 
     def _bootstrap_observation(self) -> dict:
         # The newest forced input belongs to this bootstrap only. Historical
@@ -3312,7 +3363,10 @@ class DeliverySession:
                 previous_settled = {item["request_id"]: item.get("result") for item in self._last_current.get(
                     "runs", {}).get(run_id, {}).get("requests", {}).get("data", {}).get("settled", [])}
                 for item in run.get("requests", {}).get("data", {}).get("settled", []):
-                    if self._last_current and item.get("result") != previous_settled.get(item["request_id"]):
+                    result = item.get("result", {}).get("data", {})
+                    if ((self._last_current and item.get("result") != previous_settled.get(item["request_id"]))
+                            or ((force_delivery or not self._last_current)
+                                and result.get("outcome") == "rejected")):
                         request_results.append({"run_id": run_id, "request_id": item["request_id"],
                             **{key: value for key, value in item.get("result", {}).get("data", {}).items()
                                if key in _STATUS_FIELDS}})
@@ -3539,6 +3593,11 @@ class DeliverySession:
             latest = self._pending_decisions[-1]
             payload["current_state"] = {"input_id": latest["input_id"],
                 **self._journal_reference(latest["byte_offset"], latest["byte_length"]),
+                "budget_control": copy.deepcopy(self._last_current.get("session", {}).get("budget_control")),
+                "runs": {key: {"state": value.get("status", {}).get("data", {}).get("recorded_state", {}).get("state"),
+                               "write_phase": value.get("status", {}).get("data", {}).get("write_phase"),
+                               "pending_summary": value.get("status", {}).get("data", {}).get("pending_summary")}
+                         for key, value in self._last_current.get("runs", {}).items()},
                 "note": "historical input; reconcile newer bindings/control before acting"}
         encoded = _json_bytes({key: value for key, value in payload.items()
                                if key not in {"delivery_status", "current_state"}})

@@ -61,10 +61,11 @@ def test_request_receipt_projection_preserves_uncertain_rejected_conflict_and_le
     raw["runs"]["run"]["request_ledger"] = host._observe_request_ledger("run")
     host.record_observation(raw)
     data = ack(host)["runs"]["run"]["requests"]["data"]
-    assert data["settled_index"]["total"] == 1
+    assert data["settled_index"]["total"] == 2
     pending = data["pending"]
-    assert {row.get("request_id") for row in pending} == {None, "rejected", "conflict", "unknown"}
-    rejected = next(row for row in pending if row.get("request_id") == "rejected")
+    assert {row.get("request_id") for row in pending} == {None, "conflict", "unknown"}
+    settled = host._last_current["runs"]["run"]["requests"]["data"]["settled"]
+    rejected = next(row for row in settled if row.get("request_id") == "rejected")
     assert rejected["result"]["data"]["receipt"]["message"] == "业务限定必须保留"
     assert next(row for row in pending if row.get("request_id") == "conflict")["result"]["error"]["code"] == "request_id_conflict"
     assert next(row for row in pending if row.get("request_id") == "unknown")["result"]["data"]["outcome"] == "unknown"
