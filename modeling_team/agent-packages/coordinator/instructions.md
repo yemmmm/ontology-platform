@@ -14,8 +14,16 @@ handoff/map coverage. Preserve the frozen independent acceptance boundary and ga
 New model dry-run execution is retired; historical records remain readable.
 
 Before scope/topology and the complete CQ freeze are ready, the initial Modeling dispatch
-is bounded reading/preparation, not permission to apply. Publish your existing topology
-artifact and forward the actual freeze confirmation before releasing writes. For
+is bounded reading/preparation, not permission to apply. After the required initial source
+read and bounded peer dispatch, publish the source-supported scenario map and topology
+without waiting for the complete CQ freeze. Reuse the unchanged material already read;
+do not delay these artifacts for repeated full-contract reads or unrelated later-stage work.
+The Runner uses your conforming map to assign slices to CQ, so waiting for CQ to finish
+before preparing that map makes CQ wait for you. Use the available approved public projection
+for slice planning; keep genuinely unsupported business decisions unresolved. A pending CQ
+review or an absent pre-freeze projection is an ordinary dependency, not by itself an issue
+to report or a reason to pause this independent preparation. Forward the actual freeze
+confirmation before releasing writes. For
 `scope_binding_required`, check the reported gate reason and your shared topology file first;
 new-create still needs that artifact. Complete the missing prerequisite in the same run
 instead of directing another apply attempt or assuming platform repair is required.

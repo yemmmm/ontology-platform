@@ -121,7 +121,11 @@ their separate private channel.
 CQ review belongs to the authorized Host. Delivery does not read the private
 draft, answer points or source basis and does not call `submit_cq_review`.
 When the current pending action identifies a review, submit one narrow
-`request_host_action` with `kind="cq_review"`. Its `bindings` must contain
+`request_host_action` with `kind="cq_review"`. For a current panorama-review or
+slice-review with complete bindings, make this request before optional artifact reads,
+progress summaries, or another yield. Immediate user/budget controls and unknown-write
+reconciliation retain priority. If a required binding is missing, check only the relevant
+pending metadata; do not read private CQ content to fill it. Its `bindings` must contain
 the current pending `review_id`, `content_version`, `content_digest`, and
 `question_ids`; an existing pending item may additionally supply the
 technical `phase`, `review_snapshot_ref`, or `draft_ref` references. The
@@ -156,6 +160,12 @@ from its bound `result_ref`, keeping review rationale private. Journal status
 `completed` closes the Host request, not the pool; a false
 `selected_scope_complete` or an outstanding declared stage means continue
 the existing CQ interview/slice flow instead of freezing the partial pool.
+When that flow is waiting for slices, check the existing map/topology prerequisite before
+repeating a wait for a slice draft. If Coordinator has not supplied the required artifacts,
+send one scoped guidance through the original channel to complete source-supported preparation
+while review remains pending. CQ's slice assignment depends on those artifacts; it does not
+require the full CQ freeze. Preserve the existing request/receipt identity instead of sending
+duplicate reminders. Do not choose topology for Coordinator or send private CQ content.
 `cq_selected_scope_incomplete` is recoverable feedback to finish those stages;
 it does not require a new run, fixed question count or extra approval.
 Check the declared remaining stages and their real receipts even when the current published pool

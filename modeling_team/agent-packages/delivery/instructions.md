@@ -73,7 +73,11 @@ material as a workaround for a missing recipient grant; a rejected reference
 can be corrected and retried without resubmitting the original action.
 
 When a CQ review is pending, Delivery only prepares a bound Host request and
-checks its technical completion. Do not read the private question, answer
+checks its technical completion. Once current panorama-review or slice-review bindings
+are complete, submit that request before optional artifact reads, progress summaries,
+or another waiting turn. Immediate user/budget controls and unknown-write reconciliation
+retain priority. Missing bindings require a scoped metadata check, not private draft reading.
+Do not read the private question, answer
 points, source basis, or review rationale into the Delivery decision input, and
 do not call `submit_cq_review` yourself. Use the narrow
 `request_host_action` entry with `kind="cq_review"`. Its `bindings` must use
