@@ -2501,8 +2501,11 @@ class DeliverySession:
                     results[run_id] = self.call_tool("standby_run", {"run_id": run_id},
                                                      call_identity=call_identity)
                 observation = self.observe()
-                runs_closed = all(x["status"].get("ok") and x["status"].get("data", {}).get("recorded_state", {}).get("lifecycle") == "standby"
-                                  for x in observation["runs"].values())
+                runs_closed = all(
+                    x["status"].get("ok")
+                    and x["status"].get("data", {}).get("lifecycle") == "standby"
+                    for x in observation["runs"].values()
+                )
                 pending_owners = []
                 for operation_id, status in observation["operations"].items():
                     data = status.get("data", {})

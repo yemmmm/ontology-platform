@@ -1255,6 +1255,22 @@ def get_run_status(run_id: str, *, repository_root: Path | None = None) -> dict[
                 and os.access(run_root / name, os.R_OK),
             }
         )
+
+    state_fields = (
+        recorded_state.get("extra_fields", {})
+        if isinstance(recorded_state, dict)
+        else {}
+    )
+    if not isinstance(state_fields, dict):
+        state_fields = {}
+
+    def recorded_state_value(key: str, default: Any = None) -> Any:
+        """Project raw state fields while retaining the legacy direct shape."""
+
+        if key in state_fields:
+            return state_fields[key]
+        return recorded_state.get(key, default) if recorded_state else default
+
     return {
         "run_id": run_id,
         "identity": identity,
@@ -1270,10 +1286,10 @@ def get_run_status(run_id: str, *, repository_root: Path | None = None) -> dict[
         "first_blocker": _first_blocker(run_root, items),
         "pending_summary": {"counts": counts, "detail_tool": "get_pending_actions"},
         "terminal_conclusion": terminal_conclusion,
-        "lifecycle": recorded_state.get("lifecycle") if recorded_state else None,
-        "work_state": recorded_state.get("work_state") if recorded_state else None,
-        "write_phase": recorded_state.get("write_phase") if recorded_state else None,
-        "retained_members": recorded_state.get("retained_members", []) if recorded_state else [],
+        "lifecycle": recorded_state_value("lifecycle"),
+        "work_state": recorded_state_value("work_state"),
+        "write_phase": recorded_state_value("write_phase"),
+        "retained_members": recorded_state_value("retained_members", []),
         "liveness": {
             "recorded_state": recorded_state.get("state") if recorded_state else None,
             "process_observation": _process_observation(run_root, runs_root),

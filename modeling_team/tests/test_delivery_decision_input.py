@@ -577,3 +577,28 @@ def test_finish_standby_has_queryable_receipt_and_native_retry_reuses_request(tm
         assert fifo.pop_line() is None
     finally:
         fifo.close()
+
+
+def test_finish_delivery_uses_projected_standby_lifecycle(tmp_path, monkeypatch):
+    from modeling_team.outer_input import OuterInputFifo
+
+    host, root = bound_run(tmp_path, monkeypatch)
+    root.joinpath("state.json").write_text(json.dumps({
+        "state": "STANDBY",
+        "run_id": "run",
+        "lifecycle": "standby",
+        "work_state": "completed",
+        "write_phase": "read-only",
+    }))
+    host.allowed_operations.add("supervise")
+    fifo = OuterInputFifo(root / "control/outer-input.fifo")
+    fifo.open()
+    try:
+        result = host.call_tool(
+            "finish_delivery", {"conclusion": "work complete"},
+            call_identity="projected-standby-call",
+        )
+        assert result["ok"] is True
+        assert result["data"]["activity"] == "standby"
+    finally:
+        fifo.close()

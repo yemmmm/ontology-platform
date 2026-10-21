@@ -213,6 +213,26 @@ def test_a01_1_status_snapshot_field_groups_and_sources(tmp_path):
     )
 
 
+def test_a01_1_status_projects_recorded_lifecycle_fields_from_extra_fields(tmp_path):
+    repo, run_root = _make_run(tmp_path)
+    _set_state(
+        run_root,
+        "STANDBY",
+        lifecycle="standby",
+        work_state="completed",
+        write_phase="read-only",
+        retained_members=[{"agent_id": "coordinator", "alive": True}],
+    )
+
+    snapshot = host_ops.get_run_status("t-run", repository_root=repo)
+
+    assert snapshot["recorded_state"]["extra_fields"]["lifecycle"] == "standby"
+    assert snapshot["lifecycle"] == "standby"
+    assert snapshot["work_state"] == "completed"
+    assert snapshot["write_phase"] == "read-only"
+    assert snapshot["retained_members"] == [{"agent_id": "coordinator", "alive": True}]
+
+
 def test_a01_1_identity_reads_task_and_profile_snapshots(tmp_path):
     repo, run_root = _make_run(tmp_path)
     (run_root / "task.snapshot.yaml").write_text(
