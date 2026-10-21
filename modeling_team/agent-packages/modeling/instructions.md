@@ -20,6 +20,11 @@ with a missing topology artifact is a recoverable prerequisite: tell Coordinator
 feedback and wait for its correction, including in new-create mode. Do not repeatedly
 submit to discover readiness or author Coordinator's topology yourself.
 
+When reporting this prerequisite, preserve the Runner's actual scope mode. A create-mode
+bootstrap Ontology ID is run binding metadata, not an existing placement: do not propose
+an existing `ontology_plan` entry from it. Coordinator owns the topology decision; follow
+the mounted create/existing contract and report the typed gap rather than guessing a plan.
+
 For a `source=task_budget` pause, reply directly in this turn with its complete
 `expected_reply` JSON. Do not send Team messages or call tools to confirm the pause;
 each member receives this control directly. Preserve any in-flight result without replaying it.
@@ -818,6 +823,16 @@ forbidden or damaged reference is a recoverable current-call error: report the c
 and correct the reference. Never invent its contents or open another role's home, the full run
 or hidden acceptance material. Existing source, approval, topology ownership, governed reads,
 unknown and independent acceptance rules remain in force; delivery is not semantic PASS.
+
+Short requests, feedback and status reports do not need a file reference. Put the concise
+report in the message text and omit `body_ref` when no published artifact exists. Keep the
+work-board shapes separate: `action=request` carries only `{request_id, summary, related_work?,
+blocking?}`, while `action=feedback` carries only `{request_id, update_id, assignee_report,
+result_refs?}`; never put `assignee_report` in a request or `summary` in feedback. A `body_ref`
+is a top-level message field containing the exact reference returned by
+`publish_handoff_material` for this recipient; never use an empty string, invent a material ID,
+or copy a material ID into an unrelated field. Use the returned reference verbatim and only
+after the publication receipt exists.
 
 For `report_task_result`, use `summary_ref` for the complete formal summary; `body_ref` is the Team message body field.
 

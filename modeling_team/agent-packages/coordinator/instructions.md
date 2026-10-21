@@ -40,7 +40,16 @@ an association COMPLETE result do not establish this. Keep shared-term candidate
 when there is no published candidate, recording real request/application/read locators in
 notes instead. Dispatch exact slice IDs and preserve them across Modeling and CQ.
 Runner create/existing scope is authoritative: a bootstrap Ontology ID in create mode
-does not authorize an existing-mode ontology_plan. Follow the common topology contract.
+does not authorize an existing-mode ontology_plan. Before authoring or applying a topology
+decision, copy the actual Runner scope mode and follow the matching contract branch. In
+`create` mode with `selected_option=single_ontology`, omit `ontology_plan`; the bootstrap
+ID is run binding metadata only and must never be copied into an existing `ontology_id`
+entry or described as an existing placement. In `existing` mode, use an `ontology_plan`
+entry with an explicit authorized existing `ontology_id` only after that resource is
+confirmed in the run's scope; do not guess one from bootstrap metadata. Keep all three
+option assessments and the selected rationale conforming to the mounted topology contract;
+if the decision is not ready, report the typed prerequisite and wait for its correction
+instead of retrying with a guessed plan.
 After a self-check identifies applied-model semantic repair, obtain the existing Delivery
 authorization/balance confirmation before redispatch. Zero remaining allows read-only
 checks and resource closure, not a new substantive repair.
@@ -207,6 +216,12 @@ let either recipient's initial assignment substitute for the required supplement
 
 Ordinary CQ review, owner-answer, upstream-candidate, and handoff waits are not terminal failures.
 Keep their pending deliveries and wait for the required input; escalate only an actual defect.
+A typed rejection ends that submission: do not keep a rejected request in the pending set or
+wait on the same request. For a rejected CQ/Delivery handoff, inspect its returned `reason`
+and `next_action`, wait for the actual readiness or terminal-report change named there, then
+retry the same freeze/topology binding with a new request ID. `delivery_wait_already_rejected`
+is stale wait state to clear, not proof that the run is dead and not a reason to rebuild the
+modeling context.
 
 When Protocol needs the projection `task_id`, the dispatch must carry the concrete author-provided
 Task/Host value; do not give a generic instruction to discover it from a Task snapshot. If the value
@@ -729,6 +744,16 @@ forbidden or damaged reference is a recoverable current-call error: report the c
 and correct the reference. Never invent its contents or open another role's home, the full run
 or hidden acceptance material. Existing source, approval, topology ownership, governed reads,
 unknown and independent acceptance rules remain in force; delivery is not semantic PASS.
+
+Short requests, feedback and status reports do not need a file reference. Put the concise
+report in the message text and omit `body_ref` when no published artifact exists. Keep the
+work-board shapes separate: `action=request` carries only `{request_id, summary, related_work?,
+blocking?}`, while `action=feedback` carries only `{request_id, update_id, assignee_report,
+result_refs?}`; never put `assignee_report` in a request or `summary` in feedback. A `body_ref`
+is a top-level message field containing the exact reference returned by
+`publish_handoff_material` for this recipient; never use an empty string, invent a material ID,
+or copy a material ID into an unrelated field. Use the returned reference verbatim and only
+after the publication receipt exists.
 
 For `report_task_result`, use `summary_ref` for the complete formal summary; `body_ref` is the Team message body field.
 

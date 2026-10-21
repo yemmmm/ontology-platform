@@ -81,7 +81,6 @@ def test_pair_loads_current_direct_route_without_protocol_or_checkpoint_experime
     modeling = next(a.package for a in config.profile.agents if a.agent_id == "modeling")
     assert [s.parent.name for s in modeling.required_skills] == ["ontology-modeling"]
 
-
 def test_compact_candidate_and_map_shapes_match_the_existing_contracts():
     compact = read(ROOT / "modeling_team/references/r4-3-026-minimal-chain-contract.json")
     candidate = compact["candidate"]
@@ -196,6 +195,15 @@ def test_runner_stages_exact_private_sources_and_freezes_general_packages(tmp_pa
                 assert not any("cq-private" in path for path in expected)
                 assert "question-seeds.json" not in text.split("Task objective:")[0]
                 assert "r4-3-025-direct-modeling-contract.json" in text
+            if role in {"coordinator", "modeling"}:
+                mandatory = text.split(
+                    "mandatory sources before the first coordination action or terminal result:\n",
+                    1,
+                )[1].split("\nRead the complete business source.", 1)[0]
+                assert "docs/evaluation-scenarios/minimal-installation-chain/modeling-input/scenario.md" in mandatory
+                assert "modeling_team/references/r4-3-025-direct-modeling-contract.json" in mandatory
+                assert "modeling_team/references/r4-0-011-api-mapping-contract.json" not in mandatory
+                assert "other mounted technical references remain authorized" in text
         baseline, _ = TeamRunner.preview_baseline(
             repository_root=ROOT, run_id=run_id, profile_path=PROFILE, task_path=TASK,
         )

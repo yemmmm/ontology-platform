@@ -3631,11 +3631,37 @@ class TeamRunner:
                 for source in task.role_sources
                 if role in source.roles
             )
+            # The current unified direct path still mounts every authorized
+            # contract so the role can use the common method.  It must not
+            # spend its first turn reading every historical/API/protocol
+            # reference in full, though: the business source and the active
+            # direct-modeling contract are the only inputs that need a
+            # complete initial read.  The remaining mounted material stays
+            # authorized and is read in bounded, demand-driven sections.
+            narrow_unified_initial_read = self._unified_graph and role in {
+                "coordinator",
+                "modeling",
+                "protocol",
+            }
+            initial_full_sources = sorted(
+                f"/agent/home/sources/{source.relative_path.as_posix()}"
+                for source in task.role_sources
+                if role in source.roles
+                and (
+                    source.classification == "business-source"
+                    or source.relative_path.name == "r4-3-025-direct-modeling-contract.json"
+                )
+            )
+            if narrow_unified_initial_read and not initial_full_sources:
+                # A malformed direct task should keep its conservative
+                # all-sources behavior rather than silently omitting the
+                # initial read contract.
+                initial_full_sources = staged_sources
             # Prompt-cache contract (R3.0-002/006): the varying objective is one
             # trailing section, so the static role/instruction prefix stays
             # byte-identical whenever only the objective changes.  The reuse
             # guidance below is guidance for the same thread; it never relaxes
-            # the mandatory initial complete read, live refreshes, authorization
+            # the required initial complete read, live refreshes, authorization
             # checks, or read/write validation, and never widens authorized sources.
             objective_suffix = "\n\nTask objective:\n" + task.objective
             if role != "acceptance":
@@ -3652,12 +3678,30 @@ class TeamRunner:
                     "artifact is not mounted, request its approved facts from the owning "
                     "role through Team Transport; do not infer it is missing from the run."
                 )
+            source_inventory_intro = (
+                "Before requesting any teammate work or reporting a terminal result, read the authorized "
+                "role-private source inventory in this canonical list:\n"
+                if narrow_unified_initial_read
+                else "Before requesting any teammate work or reporting a terminal result, read every staged "
+                "role-private source in this canonical list:\n"
+            )
             text = (
-                "Before requesting any teammate work or reporting a terminal result, read every staged "
-                + "role-private source in this canonical list:\n"
+                source_inventory_intro
                 + "\n".join(f"- {path}" for path in staged_sources)
-                + "\nRead only these role-private sources. Complete that initial read of every staged source "
-                + "in full. In this same thread, reuse the already-read "
+                + "\nRead only these role-private sources. "
+                + (
+                    "For the current unified direct path, complete the initial full read only of these "
+                    "mandatory sources before the first coordination action or terminal result:\n"
+                    + "\n".join(f"- {path}" for path in initial_full_sources)
+                    + "\nRead the complete business source. The other mounted technical references remain "
+                    "authorized and required when the current work uses them; read their relevant "
+                    "sections in bounded chunks and continue any truncated output. Do not spend the "
+                    "initial turn reading every mounted historical, API, relational, batch or legacy "
+                    "protocol contract in full."
+                    if narrow_unified_initial_read
+                    else "Complete that initial read of every staged source in full."
+                )
+                + " In this same thread, reuse the already-read "
                 + "unchanged material and its exact locators instead of printing or re-reading a full file "
                 + "again on every teammate turn. Reuse only this role's authorized sources and authorized "
                 + "teammate handoffs; never access another role's private sources, inherit another run's "
@@ -3678,7 +3722,14 @@ class TeamRunner:
                 + "body_ref/material_refs on the existing channel. Inline text remains optional "
                 + "and valid. Give purpose, material entry and recipient task; read the referenced "
                 + "content through list/read_handoff_material and follow continuation metadata. "
-                + "Publication or reading is not approval or semantic acceptance."
+                + "Publication or reading is not approval or semantic acceptance. Short request, "
+                + "feedback and status messages stay inline and omit body_ref when no artifact was "
+                + "published. A body_ref is only the exact reference returned by "
+                + "publish_handoff_material for the target recipient; never send an empty reference "
+                + "or invent/reuse a material ID in another field. Keep work-board metadata typed: "
+                + "action=request uses request_id, summary, related_work and blocking; "
+                + "action=feedback uses request_id, update_id, assignee_report and result_refs; "
+                + "never mix assignee_report into a request or summary into feedback."
             )
             # R3.0-011: the production roles' only legal competency-question
             # input is the read-only public projection mount.  Runs without

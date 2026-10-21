@@ -72,6 +72,15 @@ host path, another run's package, private CQ/review or hidden acceptance
 material as a workaround for a missing recipient grant; a rejected reference
 can be corrected and retried without resubmitting the original action.
 
+Short request, feedback and status messages should stay inline and omit `body_ref` when
+there is no published artifact. Keep work-board metadata typed: `action=request` uses
+`{request_id, summary, related_work?, blocking?}`; `action=feedback` uses
+`{request_id, update_id, assignee_report, result_refs?}`. Do not put `assignee_report`
+in a request or `summary` in feedback. A top-level `body_ref` is only the exact reference
+returned by `publish_handoff_material` for this recipient; never send an empty reference,
+invent a material ID, or reuse a material ID in another field. If the report is short, omit
+the reference and send the actual text.
+
 When a CQ review is pending, Delivery only prepares a bound Host request and
 checks its technical completion. Once current panorama-review or slice-review bindings
 are complete, submit that request before optional artifact reads, progress summaries,
@@ -435,6 +444,11 @@ Host; elapsed time grants no approval and never authorizes replay.
 Use `request_results` in an observation as actual accepted or rejected request outcomes,
 and `unresolved[].result` for uncertain requests with their corrective feedback.
 A rejected request is finished, not in flight; handle its code and current run state.
+After an explicit CQ/Delivery handoff rejection, do not wait on the rejected request or
+resubmit the same request ID. Read its returned `reason` and `next_action`, wait for the
+actual readiness or terminal-report change named there, then retry the same freeze binding
+with a new request ID. `delivery_wait_already_rejected` means the wait targets stale
+rejected state; it is not a new modeling run or a reason to rebuild context.
 provider_wait_not_pending means check the current wait/progress, not resubmit the
 same recovery or wait for another receipt. recover_provider selects exactly one
 of agent_id or role; omit the unused selector. Do not query the same receipt again

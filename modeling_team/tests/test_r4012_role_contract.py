@@ -92,11 +92,23 @@ def test_actual_v4_task_text_keeps_authorized_reads_without_tracing_obligation(r
     runner.run = SimpleNamespace(
         configuration=configuration, protocol_context=None, gate_binding=None
     )
+    runner._unified_graph = True
     runner._competency_questions = True
     text = runner._task_text(role)
     assert "full evidence obligation" not in text
     assert "authorization checks, and read/write validation" in text
-    assert "Complete that initial read of every staged source in full" in text
+    if role in {"coordinator", "modeling", "protocol"}:
+        assert "current unified direct path, complete the initial full read only" in text
+        mandatory = text.split(
+            "mandatory sources before the first coordination action or terminal result:\n", 1
+        )[1].split("\nRead the complete business source.", 1)[0]
+        assert "r4-3-025-direct-modeling-contract.json" in mandatory
+        if any("scenario-brief.md" in source.relative_path.name for source in configuration.task.role_sources
+               if role in source.roles):
+            assert "scenario-brief.md" in mandatory
+        assert "r4-0-011-api-mapping-contract.json" not in mandatory
+    else:
+        assert "Complete that initial read of every staged source in full" in text
     assert "compaction lost them or the relevant content is missing, stale, changed, or truncated" in text
     for source in configuration.task.role_sources:
         mounted_path = f"/agent/home/sources/{source.relative_path.as_posix()}"

@@ -110,6 +110,13 @@ publication, delivery, and reading do not by themselves prove approval or
 semantic completion. Use inline text for short messages and report a concrete
 typed error when a source, recipient, run, version, or member is unavailable.
 
+Short request, feedback and status messages stay inline and omit `body_ref` when no
+artifact was published. Keep work-board metadata typed: `action=request` uses
+`{request_id, summary, related_work?, blocking?}`; `action=feedback` uses
+`{request_id, update_id, assignee_report, result_refs?}`. A top-level `body_ref` is only
+the exact reference returned by `publish_handoff_material` for the target recipient; never
+send an empty reference or invent/reuse a material ID in another field.
+
 Preserve each user_input packet's original text and source_reference. Match a
 reply to the actual pending question_delivery_id from get_pending_actions;
 do not make one up. Send unsolicited supplements via submit_instruction with
@@ -486,7 +493,13 @@ Host; elapsed time grants no approval and never authorizes replay.
 Use observation `request_results` directly as accepted/rejected receipt outcomes and
 `unresolved[].result` for uncertain requests and corrective feedback. A rejection
 ends that submission: handle the returned code/current run state instead of waiting
-for another receipt. provider_wait_not_pending does not authorize another recovery;
+for another receipt.
+After an explicit CQ/Delivery handoff rejection, do not wait on the rejected request or
+resubmit the same request ID. Read its returned `reason` and `next_action`, wait for the
+actual readiness or terminal-report change named there, then retry the same freeze binding
+with a new request ID. `delivery_wait_already_rejected` means stale rejected wait state,
+not a new modeling run or a reason to rebuild context.
+`provider_wait_not_pending` does not authorize another recovery;
 recover_provider selects exactly one of agent_id or role, omitting the other.
 Do not re-query an already supplied receipt or complete pending-action binding.
 For a submitted action with receipt_tracking, yield on its actual run/request

@@ -333,3 +333,11 @@ or hidden acceptance material. Existing source, approval, topology ownership, go
 unknown and independent acceptance rules remain in force; delivery is not semantic PASS.
 
 For `report_task_result`, use `summary_ref` for the complete formal summary; `body_ref` is the Team message body field.
+
+Keep short requests, feedback and status reports inline and omit `body_ref` when no
+artifact was published. The work-board metadata shapes are distinct: `action=request`
+uses `{request_id, summary, related_work?, blocking?}`; `action=feedback` uses
+`{request_id, update_id, assignee_report, result_refs?}`. Never put `assignee_report`
+in a request or `summary` in feedback. A top-level `body_ref` is only the exact reference
+returned by `publish_handoff_material` for the target recipient; do not send an empty
+reference or invent/reuse a material ID in another field.
