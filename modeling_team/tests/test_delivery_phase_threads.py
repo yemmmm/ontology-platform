@@ -79,7 +79,7 @@ def test_phase_switch_rebuilds_facts_constraints_and_decisions_once(tmp_path, mo
     assert not reopened.maybe_switch_phase_thread(runtime)
 
 
-@pytest.mark.parametrize("block", ["disabled", "busy", "user_input", "pending_page",
+@pytest.mark.parametrize("block", ["disabled", "busy", "user_input", "unknown_delivery",
                                    "unknown_receipt", "unknown_write", "missing_operation"])
 def test_unsafe_or_disabled_boundary_keeps_original_thread(tmp_path, monkeypatch, block):
     host, raw = ready(tmp_path, monkeypatch)
@@ -91,8 +91,9 @@ def test_unsafe_or_disabled_boundary_keeps_original_thread(tmp_path, monkeypatch
         runtime.busy = True
     elif block == "user_input":
         pending = [{"text": "new control"}]
-    elif block == "pending_page":
+    elif block == "unknown_delivery":
         host.record_observation(raw, force_delivery=True)
+        host._pending_decisions[-1]["delivery_status"] = "unknown"
     elif block == "unknown_receipt":
         host._last_current["runs"]["run"]["requests"]["data"]["pending"].append({
             "request_id": "unknown", "result": {"ok": True, "data": {"outcome": "unknown"}}})

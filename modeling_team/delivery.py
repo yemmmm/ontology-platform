@@ -3125,9 +3125,11 @@ class DeliverySession:
         boundary = pending.get("thread_boundary") or {}
         phase, run_id = boundary.get("phase"), boundary.get("run_id")
         if (phase not in self.config.get("phase_thread_boundaries", [])
-                or runtime.busy or pending_inputs or self._pending_decisions
+                or runtime.busy or pending_inputs
+                or any(item["delivery_status"] in {"unknown", "attempted"}
+                       for item in self._pending_decisions)
                 or self.activity != "active" or self.recovery_pending
-                or handoff.get("input_id") != self._latest_input_id):
+                or handoff.get("input_id") != self._last_received_input_id):
             return False
         if any(row.get("run_id") == run_id and row.get("phase") == phase and (
                 row.get("status") in {"switched", "attempted"}
@@ -3223,11 +3225,24 @@ class DeliverySession:
                             "started_at": data["started_at"], "session_timeout": timeout})
         return due
 
-    def _page_view(self, payload: dict, reference: dict, *, offset: int = 0) -> dict:
+    def _input_view_path(self, input_id: str) -> Path:
+        return self.session_root / "decision-views" / (
+            hashlib.sha256(input_id.encode()).hexdigest() + ".json")
+
+    def _page_view(self, payload: dict, reference: dict, *, offset: int = 0,
+                   frozen_path: Path | None = None) -> dict:
         # Transport acknowledgement and newer-state locators can change during
         # paging. Keep them outside the stable JSON whose offsets we acknowledge.
         encoded = _json_bytes({key: value for key, value in payload.items()
                                if key not in {"delivery_status", "current_state"}})
+        if frozen_path is not None:
+            if frozen_path.exists():
+                encoded = frozen_path.read_bytes()
+                payload = {**json.loads(encoded), **{key: payload[key] for key in
+                           ("delivery_status", "current_state") if key in payload}}
+            else:
+                frozen_path.parent.mkdir(exist_ok=True)
+                frozen_path.write_bytes(encoded)
         if offset == 0 and len(json.dumps(payload, ensure_ascii=False).encode()) <= 31800:
             return payload
         text, end = _utf8_page(encoded, offset, 12000)
@@ -3236,7 +3251,8 @@ class DeliverySession:
         # reading it by default would restore snapshots and internal fingerprints.
         directory = self.session_root / "decision-views"
         directory.mkdir(exist_ok=True)
-        path = directory / (_digest_bytes(encoded).removeprefix("sha256:") + ".json")
+        path = frozen_path or directory / (
+            _digest_bytes(encoded).removeprefix("sha256:") + ".json")
         if not path.exists():
             path.write_bytes(encoded)
         view = {"path": str(path), "source_ref": _source_ref(path, encoded),
@@ -3268,6 +3284,7 @@ class DeliverySession:
         self._decision_event_state = {}
         self._input_ids = set()
         self._latest_input_id = None
+        self._last_received_input_id = None
         self.last_yield = None
         self.pending_thread_handoff = None
         path = self.session_root / "session-events.jsonl"
@@ -3308,6 +3325,8 @@ class DeliverySession:
                     if row["attempt_id"] != record["attempt_id"]] + [record]
                 self.pending_thread_handoff = None
             elif event == "delivery_input_dispatch":
+                if record["status"] == "accepted":
+                    self._last_received_input_id = record["input_id"]
                 for item in list(self._pending_decisions):
                     if item["input_id"] != record["input_id"]:
                         continue
@@ -3443,8 +3462,9 @@ class DeliverySession:
                 handle.seek(item["byte_offset"])
                 packets.append(json.loads(handle.read(item["byte_length"])))
         merged = copy.deepcopy(packets[-1])
-        merged.update(input_id=uuid.uuid4().hex, mode="bootstrap",
-                      recovery_context=self._recovery_context(),
+        bootstrap = any(packet.get("mode", "bootstrap") == "bootstrap" for packet in packets)
+        merged.update(input_id=uuid.uuid4().hex, mode="bootstrap" if bootstrap else "changes",
+                      recovery_context=self._recovery_context() if bootstrap else None,
                       coalesced_input_ids=[item["input_id"] for item in pending])
         for key in ("changes", "request_results"):
             values = {}
@@ -3687,20 +3707,59 @@ class DeliverySession:
             payload["recovery_context"] = packet.get("recovery_context")
         if len(self._pending_decisions) > 1 and item is not self._pending_decisions[-1]:
             latest = self._pending_decisions[-1]
+            # Follow newer facts through the same model-facing projection;
+            # reading a raw journal packet would restore internal snapshots.
+            self._model_observation(_item=latest)
+            latest_path = self._input_view_path(latest["input_id"])
+            latest_bytes = latest_path.read_bytes()
             payload["current_state"] = {"input_id": latest["input_id"],
-                **self._journal_reference(latest["byte_offset"], latest["byte_length"]),
+                "path": str(latest_path), "source_ref": _source_ref(latest_path, latest_bytes),
+                "selection": {"kind": "bytes", "offset": 0, "length": len(latest_bytes)},
                 "budget_control": copy.deepcopy(self._last_current.get("session", {}).get("budget_control")),
                 "runs": {key: {"state": value.get("status", {}).get("data", {}).get("recorded_state", {}).get("state"),
                                "write_phase": value.get("status", {}).get("data", {}).get("write_phase"),
                                "pending_summary": value.get("status", {}).get("data", {}).get("pending_summary")}
                          for key, value in self._last_current.get("runs", {}).items()},
+                "operation_errors": {key: value.get("error") for key, value in
+                    self._last_current.get("operations", {}).items() if value.get("ok") is False},
                 "note": "historical input; reconcile newer bindings/control before acting"}
-        encoded = _json_bytes({key: value for key, value in payload.items()
-                               if key not in {"delivery_status", "current_state"}})
-        result = self._page_view(payload, reference, offset=item["offset"])
+        result = self._page_view(payload, reference, offset=item["offset"],
+                                 frozen_path=self._input_view_path(item["input_id"]))
         if "page" not in result:
+            encoded = _json_bytes({key: value for key, value in result.items()
+                                   if key not in {"delivery_status", "current_state"}})
             result["delivery_range"] = {"next_offset": len(encoded), "complete": True}
         return result
+
+    def _completed_observations_are_quiet(self) -> bool:
+        """Retain old pages without repeatedly reasoning about completed work."""
+        if not self.work_result or self.activity not in {"standby", "read_only_wait"}:
+            return False
+        if (self._phase_thread_run_blocker()
+                or self._last_current.get("deadline_events")
+                or any(item["delivery_status"] in {"unknown", "attempted"}
+                       for item in self._pending_decisions)):
+            return False
+        actions = self._last_current.get("host_actions", {})
+        if actions.get("pending") or actions.get("unresolved"):
+            return False
+        for run in self._last_current.get("runs", {}).values():
+            pending = run.get("pending", {})
+            if (pending.get("ok") is not True or pending.get("data", {}).get("items")
+                    or run.get("status", {}).get("data", {}).get("first_blocker")):
+                return False
+        if any(_event_needs_action(state.get("selected", []))
+               for state in self._decision_event_state.values()):
+            return False
+        for collection in ("operations", "repair_verifications"):
+            for envelope in self._last_current.get(collection, {}).values():
+                data = envelope.get("data", {})
+                if (envelope.get("ok") is not True or _event_needs_action(data)
+                        or not (data.get("work_state") == "completed"
+                                or data.get("status") in {"exited", "stopped"}
+                                or data.get("process", {}).get("state") == "exited")):
+                    return False
+        return True
 
     def record_native_consumption(self, rows: list[dict]) -> None:
         """Reception offsets and native consumption are separate durable facts."""
@@ -3734,6 +3793,7 @@ class DeliverySession:
                     "input_id": item["input_id"], "status": "accepted", "native_receipt": {
                         key: value for key, value in row.items() if key != "payload"},
                     "view_schema_version": data["schema_version"], **received})
+                self._last_received_input_id = item["input_id"]
                 if received["complete"]:
                     self._pending_decisions.remove(item)
                 else:
@@ -3785,6 +3845,7 @@ class DeliverySession:
             "input_id": item["input_id"], "status": "accepted",
             **({"native_receipt": receipt} if receipt else {}),
             "view_schema_version": data["schema_version"], **received})
+        self._last_received_input_id = item["input_id"]
         if received["complete"]:
             self._pending_decisions.remove(item)
         else:
@@ -4064,7 +4125,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                             session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native",
                                 **({"native_receipt": receipt} if receipt else {}))
                     steer_blocked_turn = None
-                elif session._pending_decisions:
+                elif session._pending_decisions and not session._completed_observations_are_quiet():
                     packet = {"kind": "host_observation", "data": session._model_observation()}
                     if not session._dispatch_observation(runtime, packet, steer=False):
                         raise DeliveryRuntimeError("Delivery observation receipt unknown")
@@ -4072,7 +4133,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                 elif time.monotonic() >= next_observation:
                     observation = session.observe()
                     next_observation = time.monotonic() + 2
-                    if session.record_observation(observation):
+                    if (session.record_observation(observation)
+                            and not session._completed_observations_are_quiet()):
                         packet = {"kind": "host_observation", "data": session._model_observation()}
                         if not session._dispatch_observation(runtime, packet, steer=False):
                             raise DeliveryRuntimeError("Delivery observation receipt unknown")

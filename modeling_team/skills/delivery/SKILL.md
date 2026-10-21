@@ -514,8 +514,17 @@ identity. Use that returned identity for notification/handoff bindings; native r
 retains the same identity. Explicit request IDs remain unchanged.
 An explicit thread_boundary survives later ordinary yield records. Keep current
 effective decisions in each yield; omit the field to retain that pending handoff,
-or send null to cancel it. New inputs still need a fresh yield; pending controls,
-unknown receipts/writes and active inference continue to defer the switch.
+or send null to cancel it. Inputs already received by the model still need a fresh
+yield. Known unsent observation pages can follow the task onto the new thread;
+their original identities and unacknowledged ranges remain retained. Pending user
+controls, uncertain native delivery, unknown receipts/writes and active inference
+continue to defer the switch. A paged input keeps one immutable projection across
+new observations and resume; use its current_state projection to inspect newer facts.
+
+After finish_delivery and confirmed resource closure, the program retains ordinary
+old observation pages without starting more waiting-only turns. User input, unresolved
+Host work, unknown outcomes and actual failures remain actionable; retained pages are
+not silently marked consumed and the original Team remains available.
 
 ## Deterministic phase progression after a semantic decision
 
