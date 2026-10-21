@@ -1,10 +1,13 @@
 """Regression cases for the first real Codex amount-budget run."""
 
 import json
+from io import StringIO
+from types import SimpleNamespace
 
 import pytest
 
 from modeling_team.runtimes.budget import RuntimeBudget
+from modeling_team.runtimes.codex import CodexRuntimeAdapter, _Agent
 from modeling_team.close_statistics import ActivityRecorder
 from modeling_team.task_budget import TaskBudget
 from modeling_team.usage_capture import NumericReceiptWriter
@@ -343,6 +346,62 @@ def test_transport_waits_for_its_active_native_turn_without_missing_usage_pause(
     assert state["inflight_count"] >= 1
     snapshot(writer, 100, LATE)
     assert not budget.tick(now=LATE)["pause_reasons"]
+
+
+@pytest.mark.parametrize("first_turn,notification_first", [(False, False), (False, True),
+                                                          (True, True)])
+def test_turn_dispatch_precedes_proxy_even_when_start_notice_arrives_late(
+    tmp_path, monkeypatch, first_turn, notification_first,
+):
+    # A provider request can finish before the first native usage notification.
+    # Its turn must start at dispatch, not at the later local acknowledgement.
+    stamp = [START]
+    monkeypatch.setattr("modeling_team.close_statistics.utc_now", lambda: stamp[0])
+    monkeypatch.setattr("modeling_team.close_statistics.clock_stamp", lambda: {
+        "clock_ref": "dispatch-clock", "monotonic_ns": 100 if stamp[0] == START else 200,
+    })
+    budget, _, proxy = setup_native(tmp_path)
+    binding = {"runtime": "codex", "runtime_session_id": "thread-a",
+               "provider": "route-a", "actual_model": "model-a", "key_ref": "key-a"}
+    recorder = ActivityRecorder(tmp_path / "runtime", binding)
+    budget.register_source("native-activity", recorder.path, "activity", binding, runtime="codex")
+
+    class Input(StringIO):
+        def flush(self):
+            proxy_rows(proxy)
+            stamp[0] = "2026-10-20T00:00:00.010756+00:00"
+
+    agent = _Agent("modeling", None, tmp_path, tmp_path, tmp_path,
+                   process=SimpleNamespace(stdin=Input(), stdout=StringIO()),
+                   thread_id="thread-a", activity=recorder,
+                   auth_barrier_pending=first_turn, credential_mode="provider_proxy")
+    adapter = CodexRuntimeAdapter(repository_root=tmp_path, use_bwrap=False)
+    frames = []
+    if notification_first:
+        frames.append({"method": "turn/started", "params": {"turn": {"id": "turn-a"}}})
+    frames.append({"id": 1, "result": {"turn": {"id": "turn-a"}}})
+    replies = iter(json.dumps(frame) for frame in frames)
+    monkeypatch.setattr(adapter, "_read_output_line", lambda *_: next(replies))
+    monkeypatch.setattr(adapter, "_drain_agent_output_locked", lambda *_: None)
+
+    reply = adapter._rpc(agent, "turn/start", {"threadId": "thread-a", "input": []})
+    adapter._activity_turn_start(agent, reply["turn"]["id"])
+    state = budget.tick(now=LATE)
+    assert not state["pause_reasons"]
+    assert not state["coverage"]["issues"]
+    assert state["pending_settlement"] >= 1
+    rows = [json.loads(line) for line in recorder.path.read_text().splitlines()]
+    starts = [row for row in rows if row["event"] == "llm_start"]
+    assert len(starts) == 1 and starts[0]["recorded_at"] == START
+    assert starts[0]["clock_ref"] == "dispatch-clock"
+    assert starts[0]["monotonic_ns"] == 100
+
+    # The original protection still starts its grace at actual turn completion.
+    stamp[0] = "2026-10-20T00:00:19+00:00"
+    adapter._activity_turn_end(agent, "turn-a", "completed")
+    assert not budget.tick(now=LATE)["pause_reasons"]
+    late = budget.tick(now="2026-10-20T00:00:30+00:00")
+    assert any(row["reason"] == "metering_error" for row in late["pause_reasons"])
 
 
 def test_transport_missing_usage_grace_starts_when_native_turn_ends(tmp_path):

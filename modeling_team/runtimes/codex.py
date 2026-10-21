@@ -864,6 +864,7 @@ class _Agent:
     provider_id: str | None = None
     activity: Any = None
     activity_turn_id: str | None = None
+    activity_turn_dispatch_stamp: dict[str, Any] | None = None
     budget: Any = None
     usage_path: Path | None = None
 
@@ -5731,7 +5732,21 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self, agent: _Agent, method: str, params: dict[str, Any]
     ) -> dict[str, Any]:
         with agent.io_lock:
-            return self._rpc_locked(agent, method, params)
+            if method == "turn/start":
+                from ..close_statistics import clock_stamp, utc_now
+
+                # The provider can start before the RPC acknowledgement or
+                # turn/started notice reaches this process. Bind the eventual
+                # native turn to the actual dispatch origin, on both clocks.
+                agent.activity_turn_dispatch_stamp = {
+                    **clock_stamp(), "recorded_at": utc_now(),
+                }
+            try:
+                return self._rpc_locked(agent, method, params)
+            except Exception:
+                if method == "turn/start":
+                    agent.activity_turn_dispatch_stamp = None
+                raise
 
     @staticmethod
     def _rpc_timeout_seconds(method: str) -> float:
@@ -7062,7 +7077,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         if activity is None or getattr(agent, "activity_turn_id", None) == turn_id:
             return
         call_id = f"{agent.thread_id}:{turn_id}"
-        activity.emit("llm_start", call_id=call_id, turn_id=turn_id)
+        stamp = getattr(agent, "activity_turn_dispatch_stamp", None) or {}
+        activity.emit("llm_start", call_id=call_id, turn_id=turn_id, **stamp)
+        agent.activity_turn_dispatch_stamp = None
         agent.activity_turn_id = turn_id
 
     @staticmethod
