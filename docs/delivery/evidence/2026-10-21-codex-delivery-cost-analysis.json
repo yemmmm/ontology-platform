@@ -1,0 +1,439 @@
+{
+  "rollout_path": "workspaces/delivery-sessions/minimal-chain-20261020-codex-glm-3cny-171156/native/sessions/2026/10/21/rollout-2026-10-21T01-12-05-01a15a4c-7ea3-72b2-b640-88416456136f.jsonl",
+  "response_count": 180,
+  "turn_count": 65,
+  "totals": {
+    "input_tokens": 42143430,
+    "cached_input_tokens": 41202304,
+    "output_tokens": 52364,
+    "reasoning_output_tokens": 2837
+  },
+  "input_per_response": {
+    "first": 33666,
+    "last": 458770,
+    "min": 33666,
+    "max": 458770,
+    "median": 234739.0,
+    "mean": 234130.16666666666
+  },
+  "by_turn_type": {
+    "yield_only": {
+      "turns": 36,
+      "responses": 72,
+      "input": 12673384,
+      "output": 21826,
+      "user_bytes": 351120
+    },
+    "read_and_yield": {
+      "turns": 11,
+      "responses": 55,
+      "input": 17260453,
+      "output": 14581,
+      "user_bytes": 157967
+    },
+    "other": {
+      "turns": 18,
+      "responses": 53,
+      "input": 12209593,
+      "output": 15957,
+      "user_bytes": 193250
+    }
+  },
+  "by_tool": {
+    "start_run": {
+      "calls": 1,
+      "output_bytes": 2649,
+      "arg_bytes": 384,
+      "failures": []
+    },
+    "get_run_status": {
+      "calls": 1,
+      "output_bytes": 2995,
+      "arg_bytes": 60,
+      "failures": []
+    },
+    "yield_delivery": {
+      "calls": 61,
+      "output_bytes": 42569,
+      "arg_bytes": 119751,
+      "failures": []
+    },
+    "read_delivery_artifact": {
+      "calls": 36,
+      "output_bytes": 462055,
+      "arg_bytes": 18260,
+      "failures": [
+        {
+          "line": 994,
+          "error": {
+            "code": "artifact_selection_invalid",
+            "reason": "byte interval exceeds captured source",
+            "retryable": true,
+            "object": "/home/yangxiang/ontology-platform/workspaces/delivery-sessions/minimal-chain-20261020-codex-glm-3cny-171156/session-events.jsonl",
+            "next_action": "correct selection; continue only at next_offset"
+          },
+          "result_code": null,
+          "output_status": null
+        },
+        {
+          "line": 1014,
+          "error": {
+            "code": "artifact_selection_invalid",
+            "reason": "invalid artifact read parameters",
+            "retryable": true,
+            "next_action": "use path, optional source_ref/selection and max_bytes 1..16384"
+          },
+          "result_code": null,
+          "output_status": null
+        }
+      ]
+    },
+    "request_host_action": {
+      "calls": 3,
+      "output_bytes": 9621,
+      "arg_bytes": 4508,
+      "failures": []
+    },
+    "resolve_issue": {
+      "calls": 1,
+      "output_bytes": 525,
+      "arg_bytes": 1057,
+      "failures": []
+    },
+    "freeze_cq": {
+      "calls": 1,
+      "output_bytes": 535,
+      "arg_bytes": 90,
+      "failures": []
+    },
+    "submit_instruction": {
+      "calls": 1,
+      "output_bytes": 577,
+      "arg_bytes": 1142,
+      "failures": []
+    },
+    "record_flow_confirmation": {
+      "calls": 11,
+      "output_bytes": 807,
+      "arg_bytes": 4458,
+      "failures": [
+        {
+          "line": 695,
+          "error": {
+            "code": "delivery_tool_failed",
+            "message": "check tool schema and bound inputs"
+          },
+          "result_code": null,
+          "output_status": null
+        },
+        {
+          "line": 707,
+          "error": {
+            "code": "delivery_tool_failed",
+            "message": "check tool schema and bound inputs"
+          },
+          "result_code": null,
+          "output_status": null
+        },
+        {
+          "line": 749,
+          "error": {
+            "code": "delivery_contract",
+            "message": "unified conversation has not been enabled"
+          },
+          "result_code": null,
+          "output_status": null
+        },
+        {
+          "line": 1246,
+          "error": {
+            "code": "delivery_contract",
+            "message": "unified conversation has not been enabled"
+          },
+          "result_code": null,
+          "output_status": null
+        },
+        {
+          "line": 1266,
+          "error": {
+            "code": "delivery_contract",
+            "message": "unified conversation has not been enabled"
+          },
+          "result_code": null,
+          "output_status": null
+        }
+      ]
+    },
+    "recover_provider": {
+      "calls": 6,
+      "output_bytes": 2788,
+      "arg_bytes": 2418,
+      "failures": [
+        {
+          "line": 901,
+          "error": {
+            "code": "invalid_provider_recovery",
+            "reason": "exactly one of agent_id or role is required",
+            "retryable": false,
+            "object": "agent_id",
+            "next_action": "bind the recovery to one pending wait via get_pending_actions"
+          },
+          "result_code": null,
+          "output_status": null
+        },
+        {
+          "line": 902,
+          "error": {
+            "code": "invalid_provider_recovery",
+            "reason": "exactly one of agent_id or role is required",
+            "retryable": false,
+            "object": "agent_id",
+            "next_action": "bind the recovery to one pending wait via get_pending_actions"
+          },
+          "result_code": null,
+          "output_status": null
+        }
+      ]
+    }
+  },
+  "user_messages": {
+    "count": 71,
+    "bytes": 702337,
+    "kinds": {
+      "null": 11,
+      "delivery_start": 1,
+      "host_observation": 59
+    }
+  },
+  "top_turns": [
+    {
+      "id": "01a15bb5-b2d1-76e0-b4f6-ddb6f46714fe",
+      "start": "2026-10-20T23:46:36.894Z",
+      "end": "2026-10-20T23:48:19.856Z",
+      "type": "read_and_yield",
+      "response_count": 11,
+      "input": 3753028,
+      "output": 2476,
+      "user_bytes": 15325
+    },
+    {
+      "id": "01a15bba-5b37-72a2-830f-f9bddea8ce7f",
+      "start": "2026-10-20T23:51:42.154Z",
+      "end": "2026-10-20T23:53:05.549Z",
+      "type": "read_and_yield",
+      "response_count": 8,
+      "input": 3463339,
+      "output": 1847,
+      "user_bytes": 15254
+    },
+    {
+      "id": "01a15bb9-21c9-74c2-b597-1ca7a3a348f0",
+      "start": "2026-10-20T23:50:21.907Z",
+      "end": "2026-10-20T23:51:41.782Z",
+      "type": "read_and_yield",
+      "response_count": 8,
+      "input": 3234345,
+      "output": 1859,
+      "user_bytes": 15325
+    },
+    {
+      "id": "01a15bb7-4820-73a0-900b-3c3176814717",
+      "start": "2026-10-20T23:48:20.650Z",
+      "end": "2026-10-20T23:49:28.079Z",
+      "type": "read_and_yield",
+      "response_count": 7,
+      "input": 2590369,
+      "output": 1645,
+      "user_bytes": 15256
+    },
+    {
+      "id": "01a15bbd-d52e-7452-b9a6-df6a763e9003",
+      "start": "2026-10-20T23:55:29.992Z",
+      "end": "2026-10-20T23:56:09.613Z",
+      "type": "other",
+      "response_count": 4,
+      "input": 1830434,
+      "output": 1088,
+      "user_bytes": 1033
+    },
+    {
+      "id": "01a15bbb-aad0-7861-a92b-f48988ef5dc1",
+      "start": "2026-10-20T23:53:08.059Z",
+      "end": "2026-10-20T23:53:38.464Z",
+      "type": "other",
+      "response_count": 3,
+      "input": 1357730,
+      "output": 542,
+      "user_bytes": 15601
+    },
+    {
+      "id": "01a15bb3-d1ed-7ae0-b3dc-728f4dd35b50",
+      "start": "2026-10-20T23:44:33.782Z",
+      "end": "2026-10-20T23:45:13.284Z",
+      "type": "other",
+      "response_count": 4,
+      "input": 1188354,
+      "output": 1351,
+      "user_bytes": 17520
+    },
+    {
+      "id": "01a15bb8-57ec-7773-a923-09888eb45b0a",
+      "start": "2026-10-20T23:49:30.231Z",
+      "end": "2026-10-20T23:50:02.174Z",
+      "type": "read_and_yield",
+      "response_count": 3,
+      "input": 1151954,
+      "output": 827,
+      "user_bytes": 15131
+    },
+    {
+      "id": "01a15a59-66f9-7343-aa03-7df15df37b12",
+      "start": "2026-10-20T17:26:10.974Z",
+      "end": "2026-10-20T17:26:44.735Z",
+      "type": "other",
+      "response_count": 4,
+      "input": 961788,
+      "output": 1114,
+      "user_bytes": 322
+    },
+    {
+      "id": "01a15bb4-fc2a-7ca0-8ef6-bde6121fab09",
+      "start": "2026-10-20T23:45:50.133Z",
+      "end": "2026-10-20T23:46:20.657Z",
+      "type": "read_and_yield",
+      "response_count": 3,
+      "input": 946329,
+      "output": 869,
+      "user_bytes": 15255
+    },
+    {
+      "id": "01a15bb4-6d9f-7ac2-b20b-9c9118666160",
+      "start": "2026-10-20T23:45:13.640Z",
+      "end": "2026-10-20T23:45:47.362Z",
+      "type": "read_and_yield",
+      "response_count": 3,
+      "input": 918479,
+      "output": 1088,
+      "user_bytes": 15329
+    },
+    {
+      "id": "01a15bb3-6d6b-73f3-87e6-06ca89b36caa",
+      "start": "2026-10-20T23:44:08.054Z",
+      "end": "2026-10-20T23:44:33.499Z",
+      "type": "other",
+      "response_count": 3,
+      "input": 866873,
+      "output": 852,
+      "user_bytes": 11606
+    }
+  ],
+  "stop": {
+    "original_bound_pids_alive": {
+      "3478496": false,
+      "3478623": false,
+      "3479323": false,
+      "3479462": false,
+      "3479645": false,
+      "3479861": false,
+      "687955": false,
+      "687957": false
+    },
+    "temporary_api_key_revoked_count": 4,
+    "evidence": "workspaces/minimal-chain-20261020-codex-glm-3cny-171156/explicit-stop-final-verification.json",
+    "run_state": "CLEANED",
+    "model_revision": 2,
+    "model_disposition": "sealed-retained",
+    "source_cleanup_limitation": "Runtime credential-copy audit recorded private_credentials_destroyed=false; API keys revoked, auth.json absent. Historical source/evidence preserved; no long-lived provider keys revoked."
+  },
+  "observer": {
+    "observations": 10446,
+    "decision_packets": 165,
+    "event_only_packets": 123,
+    "journal_bytes": 172823040,
+    "raw_delivery_deferred": 9585,
+    "raw_deferred_unique_delivery_ids": 9,
+    "same_selection_duplicate_reads": 14,
+    "session_journal_read_calls": 31,
+    "session_journal_read_original_count": 31
+  },
+  "thread": {
+    "configured_boundaries": [
+      "production",
+      "acceptance"
+    ],
+    "actual_threads": 1,
+    "actual_phase_switches": 0,
+    "blocker": "request_identity_missing for Delivery resolve_issue without request_id",
+    "blocking_ledger_action": "issue_resolution",
+    "blocking_request_timestamp": "2026-10-20T17:18:17.950279+00:00"
+  },
+  "stale_recovery_window": {
+    "start_utc": "2026-10-20T23:44:55",
+    "end_utc": "2026-10-20T23:53:06",
+    "response_count": 49,
+    "input_tokens": 18068247,
+    "output_tokens": 12547,
+    "interpretation": "Observed window includes log paging, waiting, and necessary new events; not a proof that all cost is removable."
+  },
+  "cost": {
+    "currency": "CNY",
+    "authorized_amount": "6",
+    "charged_estimate": "7.80155240",
+    "priced_amount": "2.74692240",
+    "provisional_amount": "5.054630",
+    "delivery_known_native_estimate": "1.97462808",
+    "billing": "local estimates only; provisional buckets and auxiliary/Host unknown kept separate"
+  },
+  "cutoff_utc": "2026-10-21T00:10:06.882624+00:00",
+  "ratios": {
+    "wait_read_turn_input_share": 0.7102847822305873,
+    "delivery_input_share": 0.8434885303302515,
+    "delivery_input_output_share": 0.8429576057937337,
+    "cached_input_share": 0.9776685001671672
+  },
+  "findings": [
+    {
+      "id": "A",
+      "cause": "Repeated unchanged delivery-deferred events are retained as distinct decision events and queue stale observations",
+      "code": [
+        "modeling_team/runner.py:11677",
+        "modeling_team/delivery.py:291",
+        "modeling_team/delivery.py:575"
+      ]
+    },
+    {
+      "id": "B",
+      "cause": "Whole raw journal packet is read_original fallback for a paginated minimal v2 decision view; repeats unneeded snapshot/fingerprint/event state",
+      "code": [
+        "modeling_team/delivery.py:3160",
+        "modeling_team/delivery.py:3345",
+        "modeling_team/delivery.py:931"
+      ]
+    },
+    {
+      "id": "C",
+      "cause": "resolve_issue is omitted from existing automatic request identity injection; null ledger entry prevents configured phase switch",
+      "code": [
+        "modeling_team/delivery.py:2597",
+        "modeling_team/delivery.py:2768",
+        "modeling_team/delivery.py:3019"
+      ]
+    },
+    {
+      "id": "D",
+      "cause": "Rejected request receipts remain pending; explicit changed request_results emits accepted-only; stale provider recovery waits not advanced",
+      "code": [
+        "modeling_team/delivery.py:2823",
+        "modeling_team/delivery.py:3310"
+      ]
+    },
+    {
+      "id": "E",
+      "cause": "Budget pause/resume model control and confirmation amplify churn; stale message IDs fall into conversation-only confirmation branch",
+      "code": [
+        "modeling_team/delivery.py:2093",
+        "modeling_team/delivery.py:2477"
+      ]
+    }
+  ]
+}

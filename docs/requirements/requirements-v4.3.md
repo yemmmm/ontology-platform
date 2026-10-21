@@ -2957,6 +2957,15 @@ Codex原生耦合。DSH提供Python SDK、JSON-RPC及MCP工具接入，但SDK消
 
 <a id="r4-3-031"></a>
 
+**2026-10-21 Codex金额模式实测复核**：沿用户3元＋追加3元、同一run／一轮初建，
+全角色Codex／glm-5.3-flash／low。revision2应用、治理读回、自查及只读handoff完成；
+独立公开1／隐藏3受预算控制和用户stop终止，未取得语义PASS。Delivery原生180个唯一响应
+累计42,195,794 token，占已知运行链50,056,840的84.30%；等待／补读型turn占其输入71.03%。
+重复delivery-deferred9,585条进入决策、分页补读退回原始journal、正式拒绝仍列pending、
+resolve_issue缺request_id阻断阶段切换均已定位；实际零阶段切换。F1／F2当前场景效果未达，
+F3本子条件待调整；**完整任务10M量化目标验证未通过**，030整体仍部分实现／部分验证。
+未修改运行代码、未新增模型调用，不以模型生产完成代替独立验收。见[分析及最小建议](../delivery/modeling-retrospectives/2026-10-21-codex-delivery-cost-analysis.md)。
+
 ### R4.3-031 DeepSeek Harness生产Team运行时适配
 
 **确认与状态**：2026-10-17用户要求“请细化和设计v4.3-031需求，并通过独立审阅”。
