@@ -38,6 +38,13 @@ delivery evidence. Use the following locations for new documentation.
   Engineering scope and test evidence are in the
   [delivery record](delivery/records/2026-10-20-r4-4-002-task-cost-budget-delivery-record.md).
   The current Delivery token-reduction priority remains R4.3-030.
+  [R4.4-003](requirements/requirements-v4.4.md#r4-4-003) defines immediate handling of every new
+  user/Host input and actionable critical event, with ordinary Team changes recorded for periodic
+  batch review (180 seconds by default). Its [design](delivery/designs/2026-10-22-r4-4-003-delivery-periodic-review-design.md)
+  reuses work-card history and runtime evidence, with scoped diagnosis and retained delivery receipts.
+  Refinement and design passed independent Round 1 review (0 Critical / 0 High; no key unresolved
+  assumptions); see the [review record](delivery/records/2026-10-22-r4-4-003-design-review-record.md).
+  Implementation and real token/quality effects remain unverified.
 - [v4.3 modeling efficiency, semantic retrieval, and rapid iteration](requirements/requirements-v4.3.md):
   target of at most two hours from a fresh start to complete independent semantic acceptance,
   with a later one-hour goal. Covers continuous approved execution, deterministic artifact handling,
