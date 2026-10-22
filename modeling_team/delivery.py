@@ -1041,7 +1041,7 @@ class DeliverySession:
         self.repository_root = repository_root.resolve()
         self.session_root = session_root.resolve()
         self.config = copy.deepcopy(config)
-        interval = config.get("status_review_interval_seconds", 180)
+        interval = config.get("status_review_interval_seconds", 90)
         if type(interval) is not int or interval <= 0:
             raise ValueError("status_review_interval_seconds must be a positive integer; correct the configuration and resume")
         self._status_review = StatusReview(interval, _utc_now())

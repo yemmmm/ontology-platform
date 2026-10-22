@@ -388,7 +388,7 @@ Codex fast 继承。operation 请求和新报告绑定 runtime；旧报告缺字
 ### R4.4-003：即时关键输入与普通批量巡检
 
 新启动及显式恢复的Delivery使用本策略；存活进程不热替换。Host配置
-`status_review_interval_seconds`，缺省180，须为正整数；程序仍约2秒观察，普通变化不
+`status_review_interval_seconds`，缺省90，须为正整数；程序仍约2秒观察，普通变化不
 send／steer。到期空闲时发送一次当前窗口，忙碌只保留一次到期；普通变化不重置时钟。
 用户／Host新消息、私有结果的原获准流程投影、关键绑定／就绪、异常及授权控制即时处理。
 空闲send、忙碌steer；原生完成竞态保留原身份，未知投递先对账。程序先执行停止／预算

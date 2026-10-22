@@ -201,7 +201,7 @@ evaluation_model_profile: dsh-acceptance-deepseek-flash-low
 
 ## R4.4-003：Delivery 批量巡检
 
-新启动和显式恢复的 Delivery 默认每180秒批量查看普通变化；Host可在原配置设置正整数
+新启动和显式恢复的 Delivery 默认每90秒批量查看普通变化；Host可在原配置设置正整数
 `status_review_interval_seconds`。程序约2秒持续观察，用户／Host新输入与真实关键事件
 即时send／steer，普通变化不向活跃推理持续steer。忙碌跨周期只合并一次到期检查。
 

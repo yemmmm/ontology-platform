@@ -88,3 +88,19 @@ GitNexus未收录当前Delivery／DSH关键方法，impact返回target-not-found
 本轮未修改应用后端／前端或服务配置，不重启`ontology-platform.service`，不热改任何
 存活Delivery／生产进程。工程通过不表示真实降耗、完整任务10M、独立语义或重复性通过；
 R4.3-030与R4.4-002原有未验证边界及历史结果保持。
+
+## 后续默认周期调整为90秒
+
+用户同日要求“180巡检时间缩短至90秒”。默认值、当前需求、Delivery提示／Skill和指南
+同步为90秒，显式Host配置继续覆盖默认值；此前180秒设计与测试结论保留历史范围。
+不热改存活进程；新启动／显式恢复采用当前配置。
+
+本次还复现并修复已标记DSH会话因两处秒数说明变化而恢复失败的兼容问题：仅当其余
+绑定完全相同，且把当前提示的`default 90 seconds`恢复为`default 180 seconds`后摘要
+精确等于原SHA时接受更新，并在原基线追加差异证据；任意其他提示漂移仍受原校验约束。
+
+`test_delivery_periodic_review.py`与`test_dsh_delivery.py`：**60 passed，27.12秒**。
+覆盖89秒未到期／90秒到期、忙碌合并、显式配置、原会话和约束保留、恢复本身无推理，
+以及新提示在下一本地Provider请求采用。变更Python文件Ruff、接口同步与diff检查通过；
+日志留存`workspaces/requirement-tests/r4.4-003-20261022/default90-tests.log`。
+未运行真实付费建模或语义验收；原全量验证和真实效果边界不改写。

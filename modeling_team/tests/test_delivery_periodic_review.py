@@ -38,7 +38,9 @@ def test_ordinary_hundred_updates_are_one_due_window(tmp_path, clock):
         }], next_cursor=str(index))
         assert not host.record_observation(raw)
     assert not host._pending_decisions
-    clock[0] += timedelta(seconds=180)
+    clock[0] += timedelta(seconds=89)
+    assert not host.record_observation(raw)
+    clock[0] += timedelta(seconds=1)
     assert host.record_observation(raw)
     packet = host._model_observation()
     assert packet["trigger"]["kind"] == "periodic_review"
@@ -53,13 +55,13 @@ def test_busy_coalesces_due_periods_and_silent_work_is_reviewed(tmp_path, clock)
     raw = observation()
     host.record_observation(raw)
     finish(host)
-    for seconds in (180, 400, 1000):
+    for seconds in (90, 200, 500):
         clock[0] = datetime(2026, 10, 22, tzinfo=UTC) + timedelta(seconds=seconds)
         assert not host.record_observation(raw, allow_periodic=False)
     assert host.record_observation(raw)
     finish(host)
     assert not host.record_observation(raw)
-    clock[0] += timedelta(seconds=180)
+    clock[0] += timedelta(seconds=90)
     assert host.record_observation(raw)  # no card change cannot disable reviews forever
 
 
@@ -100,7 +102,7 @@ def test_recoverable_tool_retry_is_batched_unknown_anomaly_is_immediate(tmp_path
 
 def test_invalid_interval_is_field_specific_and_correctable(tmp_path):
     host = session(tmp_path)
-    for value in (0, -1, True, 1.5, "180"):
+    for value in (0, -1, True, 1.5, "90"):
         config = {**host.config, "status_review_interval_seconds": value}
         with pytest.raises(ValueError, match="status_review_interval_seconds"):
             DeliverySession(repository_root=ROOT, session_root=tmp_path / "invalid",
@@ -122,7 +124,7 @@ def test_explicit_defer_only_suppresses_unchanged_facts(tmp_path, clock):
     packet = finish(host)
     args = wait_args(packet["input_id"], next_review_at=(clock[0] + timedelta(seconds=600)).isoformat())
     assert host.call_tool("yield_delivery", args)["ok"]
-    clock[0] += timedelta(seconds=180)
+    clock[0] += timedelta(seconds=90)
     assert not host.record_observation(raw)
     raw["runs"]["run"]["status"]["data"]["semantic_progress"]["staged_decision_count"] += 1
     assert host.record_observation(raw)
@@ -140,7 +142,7 @@ def test_new_card_fact_is_not_suppressed_by_a_previous_defer(tmp_path, clock):
     packet = finish(host)
     assert host.call_tool("yield_delivery", wait_args(packet["input_id"],
         next_review_at=(clock[0] + timedelta(seconds=600)).isoformat()))["ok"]
-    clock[0] += timedelta(seconds=180)
+    clock[0] += timedelta(seconds=90)
     raw["runs"]["run"]["events"] = _events_page([{
         "source": "work-board-events.jsonl", "byte_offset": 100,
         "data": {"schema_version": "team-work-board/v1", "kind": "card", "record_seq": 1},
@@ -183,7 +185,7 @@ def test_critical_preempts_old_ordinary_page_and_only_critical_steers(tmp_path, 
     raw = observation()
     host.record_observation(raw)
     finish(host)
-    clock[0] += timedelta(seconds=180)
+    clock[0] += timedelta(seconds=90)
     host.record_observation(raw)
     old = host._pending_decisions[0]
     old["offset"] = 1  # a known partial ordinary page is still outstanding
@@ -299,14 +301,14 @@ def test_work_card_window_uses_actual_frozen_history_and_omits_unchanged_body(tm
     assert first["periodic_review"]["roles"][0]["cards"][0]["card"]
     for index in range(65):
         call(broker, "a", "update_work_card", card={"current_work": "work " + str(index)})
-    clock[0] += timedelta(seconds=180)
+    clock[0] += timedelta(seconds=90)
     host.record_observation(raw)
     second = finish(host)
     roles = second["periodic_review"]["roles"][0]
     assert roles["changes_by_actor"]["a"]["count"] == 65
     assert roles["source_ref"]["max_record_seq"] == 66
     assert "judge" not in json.dumps(roles["cards"])
-    clock[0] += timedelta(seconds=180)
+    clock[0] += timedelta(seconds=90)
     host.record_observation(raw)
     third = finish(host)["periodic_review"]["roles"][0]
     card = next(card for card in third["cards"] if card["agent_id"] == "a")
@@ -330,7 +332,7 @@ def test_failed_card_sources_expose_continuation_and_keep_positions(tmp_path, cl
         return {"ok": True, "data": {"cards": [], "history": [], "source_ref": {"max_record_seq": 9},
                 "limitations": [], "continuation": "fixed-current-cursor" if failed_view == "current_page" else None}}
     monkeypatch.setattr(host, "call_tool", tool)
-    clock[0] += timedelta(seconds=180)
+    clock[0] += timedelta(seconds=90)
     host.record_observation(observation())
     packet = finish(host)
     review = packet["periodic_review"]
@@ -433,7 +435,7 @@ def test_program_loop_keeps_busy_periodic_reviews_out_of_steer(tmp_path, clock, 
         nonlocal count
         count += 1
         if 1 < count <= 4:
-            clock[0] += timedelta(seconds=180)
+            clock[0] += timedelta(seconds=90)
         if count == 6:
             self.finished = True
         return observation()

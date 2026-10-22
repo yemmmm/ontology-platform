@@ -644,7 +644,7 @@ and retention path; report limitations rather than stopping an owner to force ex
 
 ## R4.4-001 work visibility
 
-Program observation retains ordinary updates and supplies a periodic review (default 180 seconds,
+Program observation retains ordinary updates and supplies a periodic review (default 90 seconds,
 Host-configured `status_review_interval_seconds`). User/Host inputs and actual critical workflow,
 control or safety changes arrive immediately, using send when idle and steer when busy.
 Read `trigger` and `periodic_review`: current cards or explicit missing/stale reports, window changes,

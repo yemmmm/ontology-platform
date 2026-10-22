@@ -274,7 +274,8 @@ def test_persisted_resume_keeps_original_session_and_queued_input(runtime, phase
         restored.close()
 
 
-def test_dsh_resume_migrates_periodic_review_policy_without_inference(tmp_path):
+@pytest.mark.parametrize("prior_policy", [None, "delivery-periodic-review/v1"])
+def test_dsh_resume_migrates_periodic_review_policy_without_inference(tmp_path, prior_policy):
     from modeling_team.delivery import DeliverySession
 
     config = {"session_id": "policy-migration", "runtime": "dsh",
@@ -286,16 +287,18 @@ def test_dsh_resume_migrates_periodic_review_policy_without_inference(tmp_path):
     optional = {"yield_delivery": "next_review_at", "get_team_work_board": "after_record_seq"}
     by_name = {tool["name"]: tool for tool in old_tools}
     assert set(optional) <= set(by_name)
-    for name, property_name in optional.items():
-        assert property_name in by_name[name]["inputSchema"]["properties"]
-        by_name[name]["inputSchema"]["properties"].pop(property_name)
-    previous_instructions = "previous approved Delivery instructions"
+    if prior_policy is None:
+        for name, property_name in optional.items():
+            assert property_name in by_name[name]["inputSchema"]["properties"]
+            by_name[name]["inputSchema"]["properties"].pop(property_name)
     current_instructions = (ROOT / "modeling_team/agent-packages/delivery/instructions.md").read_text()
     current_instructions += "\n" + (ROOT / "modeling_team/skills/delivery/SKILL.md").read_text()
+    previous_instructions = (current_instructions.replace("default 90 seconds", "default 180 seconds")
+                             if prior_policy else "previous approved Delivery instructions")
     home = host.session_root / "native"
     old_runtime = DSHDeliveryRuntime(binding=host.binding, home=home, instructions=previous_instructions,
         tools=old_tools, tool_handler=host.call_tool, session_id=host.session_id,
-        provider_factory=LocalMessagesProvider)
+        provider_factory=LocalMessagesProvider, input_policy=prior_policy)
     restored = None
     try:
         old_runtime.start()
@@ -321,10 +324,12 @@ def test_dsh_resume_migrates_periodic_review_policy_without_inference(tmp_path):
         records = [json.loads(line) for line in (home / "dsh-baseline.jsonl").read_text().splitlines()]
         upgrade = records[-1]["policy_upgrade"]
         assert upgrade["prior_instructions_sha256"] == hashlib.sha256(previous_instructions.encode()).hexdigest()
-        assert {"input_policy", "instructions_sha256",
+        expected_changes = {"instructions_sha256"} if prior_policy else {
+                "input_policy", "instructions_sha256",
                 "tools.yield_delivery.parameters.properties.next_review_at",
-                "tools.get_team_work_board.parameters.properties.after_record_seq"} <= set(upgrade["changed_fields"])
-        assert "input_policy" not in records[0]
+                "tools.get_team_work_board.parameters.properties.after_record_seq"}
+        assert expected_changes == set(upgrade["changed_fields"])
+        assert records[0].get("input_policy") == prior_policy
         assert records[-1]["input_policy"] == "delivery-periodic-review/v1"
         assert records[-1]["instructions_sha256"] == hashlib.sha256(current_instructions.encode()).hexdigest()
     finally:

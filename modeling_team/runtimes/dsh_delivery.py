@@ -373,7 +373,18 @@ class DSHDeliveryRuntime:
                 if migration_fields is None:
                     changed = [key for key in _BASELINE_FIELDS
                                if baseline.get(key) != previous.get(key)]
-                    if changed:
+                    # This authorized default change only edits the two timing
+                    # descriptions; every other instruction byte/binding stays exact.
+                    previous_default_sha = hashlib.sha256(self.instructions.replace(
+                        "default 90 seconds", "default 180 seconds").encode()).hexdigest()
+                    if (changed == ["instructions_sha256"]
+                            and self.input_policy == previous.get("input_policy") == _DELIVERY_INPUT_POLICY
+                            and previous["instructions_sha256"] == previous_default_sha):
+                        baseline["policy_upgrade"] = {
+                            "prior_instructions_sha256": previous["instructions_sha256"],
+                            "changed_fields": changed,
+                        }
+                    elif changed:
                         raise DeliveryRuntimeError(f"dsh-recovery-binding-drift: {', '.join(changed)}; no replacement created")
             self._record("baseline", **baseline)
             if self._resume_existing:
