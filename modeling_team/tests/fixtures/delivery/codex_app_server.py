@@ -81,6 +81,10 @@ for line in sys.stdin:
             emit({'method': 'item/agentMessage/delta', 'params': {'delta': 'PRIVATE-STEERED-CANARY'}})
             emit({'method': 'turn/completed', 'params': {'turn': {'id': pending, 'status': 'completed'}}})
             pending = None
+    elif method == 'test/complete-turn':
+        emit({'id': request_id, 'result': {}})
+        emit({'method': 'turn/completed', 'params': {'turn': {'id': pending, 'status': 'completed'}}})
+        pending = None
     elif method == 'turn/interrupt':
         emit({'id': request_id, 'result': {}})
         emit({'method': 'turn/completed', 'params': {'turn': {'id': pending, 'status': 'interrupted'}}})

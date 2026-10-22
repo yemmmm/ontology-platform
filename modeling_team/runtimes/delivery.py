@@ -162,6 +162,7 @@ class DeliveryRuntime:
         self._budget = None
         self._budget_control_epochs: set[str] = set()
         self._budget_control_receipts: dict[str, dict] = {}
+        self._queued_inputs: list[tuple[str, Any]] = []
 
     @property
     def identity(self) -> dict:
@@ -480,29 +481,14 @@ class DeliveryRuntime:
         return self._turn_id
 
     def steer(self, text: str) -> None:
-        """Deliver input into the currently active turn via ``turn/steer``.
-
-        A long-running turn must not starve later sourced input: the packet is
-        delivered on the same live thread and turn instead of queueing behind
-        it.  The request binds the actual active turn id, so a turn that has
-        already ended server-side is rejected as stale instead of silently
-        dropping the input.
-        """
-        if not self.busy or self._turn_id is None or self.thread_id is None:
-            raise DeliveryRuntimeError("Delivery active turn is unavailable", category="rejected")
-        if self._budget is not None:
-            self._budget.require("steer")
-        self._rpc("turn/steer", {
-            "threadId": self.thread_id,
-            "expectedTurnId": self._turn_id,
-            "input": [{"type": "text", "text": text, "text_elements": []}],
-        })
+        """Compatibility entry point: enqueue without interrupting generation."""
+        self._queued_inputs.append(("message", text))
 
     def control_budget(self, message: dict) -> dict:
         """Apply one bounded task-budget control to the native Codex turn.
 
-        The Host process and its monitor remain alive.  A busy native turn gets
-        one steer on its existing turn; an idle runtime gets one control turn.
+        The Host process and its monitor remain alive. A busy native turn queues
+        the control; after natural completion it starts one control turn.
         Repeated requests for the same epoch are acknowledged without another
         model call.
         """
@@ -518,6 +504,12 @@ class DeliveryRuntime:
         except ValueError as exc:
             raise DeliveryRuntimeError("task-budget control epoch is invalid", category="rejected") from exc
         key = f"{action}:{epoch}"
+        if self.busy:
+            if not any(kind == "control" and value.get("action") == action
+                       and value.get("epoch") == epoch for kind, value in self._queued_inputs):
+                self._queued_inputs.append(("control", message))
+            return {"status": "pending", "action": action, "epoch": epoch,
+                    "basis": "queued_until_turn_end", **self.identity}
         if key in self._budget_control_epochs:
             return {
                 **self._budget_control_receipts.get(key, {
@@ -570,19 +562,12 @@ class DeliveryRuntime:
                 # before the native RPC.  A rejected callback therefore leaves
                 # no model request in flight and is reported as pending below.
                 self._before_budget_control(text, control_id)
-            if self.busy and self._turn_id:
-                self._rpc("turn/steer", {
-                    "threadId": self.thread_id,
-                    "expectedTurnId": self._turn_id,
-                    "input": [{"type": "text", "text": text}],
-                })
-            else:
-                self.busy = True
-                result = self._rpc("turn/start", {
-                    "threadId": self.thread_id,
-                    "input": [{"type": "text", "text": text}],
-                })
-                self._turn_id = result["turn"]["id"]
+            self.busy = True
+            result = self._rpc("turn/start", {
+                "threadId": self.thread_id,
+                "input": [{"type": "text", "text": text}],
+            })
+            self._turn_id = result["turn"]["id"]
             self._budget_control_epochs.add(key)
             result = {"status": "instruction_delivered", "action": action, "epoch": epoch, **self.identity}
             self._budget_control_receipts[key] = result
@@ -602,6 +587,17 @@ class DeliveryRuntime:
         value = self._read(timeout)
         if value is not None:
             self._handle(value)
+        if not self.busy and self._queued_inputs:
+            kind, value = self._queued_inputs[0]
+            try:
+                if kind == "control":
+                    self.control_budget(value)
+                else:
+                    self.send(value)
+            except BudgetError:
+                pass
+            else:
+                self._queued_inputs.pop(0)
         observations, self._observations = self._observations, []
         return observations
 

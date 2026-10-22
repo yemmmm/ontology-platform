@@ -163,16 +163,16 @@ def test_observation_tool_failures_are_decisions(tmp_path):
     assert host.record_observation(before)
 
 
-def test_critical_host_observation_steers_before_natural_turn_boundary(tmp_path, monkeypatch):
+def test_critical_host_observation_waits_for_natural_turn_boundary(tmp_path, monkeypatch):
     import importlib
     from modeling_team.tests.test_delivery_session import _run_delivery_with_stub
     module = importlib.import_module("modeling_team.delivery")
     monkeypatch.setattr(module.DeliverySession, "observe", observe_after_bootstrap())
     runtime, result, _ = _run_delivery_with_stub(tmp_path, monkeypatch, [], run_ids=["bound"])
     assert result == 2
-    assert len(runtime.steered) == 1
-    assert json.loads(runtime.steered[0])["kind"] == "host_observation"
-    assert runtime.events.index("steer") < runtime.events.index("turn_completed")
+    assert runtime.steered == [] and runtime.steer_attempts == 0
+    assert json.loads(runtime.sent[1])["kind"] == "host_observation"
+    assert runtime.events.index("turn_completed") < runtime.events.index("send", 2)
 
 
 def test_automatic_observation_keeps_decision_for_next_turn(tmp_path, monkeypatch):
@@ -182,7 +182,7 @@ def test_automatic_observation_keeps_decision_for_next_turn(tmp_path, monkeypatc
     monkeypatch.setattr(module.DeliverySession, "observe", observe_after_bootstrap())
     runtime, result, _ = _run_delivery_with_stub(tmp_path, monkeypatch, [], run_ids=["bound"], steer_failures=1)
     assert result == 2
-    assert runtime.steer_attempts == 1
+    assert runtime.steer_attempts == 0
     assert json.loads(runtime.sent[1])["kind"] == "host_observation"
 
 
@@ -457,7 +457,7 @@ def test_resume_persists_full_observation_then_delivers_filtered_state(tmp_path,
     assert state["runs"]["run"]["events"]["data"]["next_cursor"] == "cursor-9"
     assert state["raw_observation"]["excluded_noise_event_records"] == 1
     # The deferred automatic input uses the same filtered view.
-    steered = json.loads(stub.steered[0])
+    steered = json.loads(stub.sent[1])
     assert steered["kind"] == "host_observation"
     assert _HUGE_DELTA not in json.dumps(steered, ensure_ascii=False)
     # The complete record was persisted before delivery, at the referenced path.
@@ -476,7 +476,7 @@ def test_deferred_payload_excludes_only_raw_app_server_records(tmp_path, monkeyp
     runtime, result, _record = _run_delivery_with_stub(
         tmp_path, monkeypatch, [], run_ids=["bound"])
     assert result == 2
-    steered = json.loads(runtime.steered[0])
+    steered = json.loads(runtime.sent[1])
     assert steered["kind"] == "host_observation"
     delivered = json.dumps(steered, ensure_ascii=False)
     assert _HUGE_DELTA not in delivered
@@ -493,13 +493,14 @@ def test_deferred_payload_excludes_only_raw_app_server_records(tmp_path, monkeyp
 
 def test_turn_boundary_send_carries_no_raw_app_server_records(tmp_path, monkeypatch):
     raw = _huge_delta_observation()
-    raw["runs"]["run"]["events"]["data"]["events"] =         raw["runs"]["run"]["events"]["data"]["events"][:1]
+    raw["runs"]["run"]["events"]["data"]["events"] = (
+        raw["runs"]["run"]["events"]["data"]["events"][:1])
     module = importlib.import_module("modeling_team.delivery")
     monkeypatch.setattr(module.DeliverySession, "observe", observe_after_bootstrap(raw))
     runtime, result, _record = _run_delivery_with_stub(
         tmp_path, monkeypatch, [], run_ids=["bound"], steer_failures=1)
     assert result == 2
-    assert runtime.steered == [] and runtime.steer_attempts == 1
+    assert runtime.steered == [] and runtime.steer_attempts == 0
     sent = json.loads(runtime.sent[1])
     assert sent["kind"] == "host_observation"
     delivered = json.dumps(sent, ensure_ascii=False)

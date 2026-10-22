@@ -299,6 +299,7 @@ class _PendingCandidate:
     conflict_delivery_id: str | None = None
     dispatch_mode: str | None = None
     dispatch_turn_id: str | None = None
+    dispatch_id: str | None = None
     turn_barrier_complete: bool = False
     redrive_count: int = 0
     active_elapsed: float = 0.0
@@ -874,6 +875,14 @@ class FormalCandidateProgress:
             return
         turn_id = getattr(receipt, "turn_id", None) if receipt is not None else None
         mode = getattr(receipt, "mode", None) if receipt is not None else None
+        self.pending.dispatch_id = None
+        if mode == "enqueue" and getattr(receipt, "dispatch_id", None):
+            self.pending.dispatch_mode = mode
+            self.pending.dispatch_id = receipt.dispatch_id
+            self.pending.dispatch_turn_id = None
+            self.pending.accepted_at = None  # Queue time is not active candidate time.
+            self.pending.turn_barrier_complete = False
+            return
         if not isinstance(turn_id, str) or not turn_id:
             raise FormalCandidatePlatformContractError(
                 "formal candidate dispatch did not return a non-empty turn_id"
@@ -890,6 +899,20 @@ class FormalCandidateProgress:
     def observe_states(self, states: Any, *, protocol_agent_id: str) -> bool:
         if self.pending is None or not isinstance(states, list):
             return False
+        if self.pending.dispatch_id is not None:
+            for state in states:
+                if getattr(state, "agent_id", None) != protocol_agent_id:
+                    continue
+                for dispatch in getattr(state, "pending_dispatches", ()):
+                    if (dispatch.get("dispatch_id") == self.pending.dispatch_id
+                            and dispatch.get("turn_id")):
+                        if self.pending.dispatch_turn_id != dispatch["turn_id"]:
+                            self.pending.accepted_at = self.clock()
+                        self.pending.dispatch_turn_id = dispatch["turn_id"]
+                        self.pending.dispatch_mode = "start"
+                        if dispatch.get("state") == "settled":
+                            self.pending.turn_barrier_complete = True
+                            return True
         turn_id = self.pending.dispatch_turn_id
         if not isinstance(turn_id, str):
             return False

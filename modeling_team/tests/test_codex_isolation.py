@@ -1136,7 +1136,7 @@ class CodexIsolationTests(unittest.TestCase):
             set(),
         )
 
-    def test_stale_active_turn_falls_back_to_one_new_turn(self) -> None:
+    def test_completed_turn_notification_releases_one_queued_input(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -1165,10 +1165,13 @@ class CodexIsolationTests(unittest.TestCase):
             adapter.send_message(
                 "coordinator", RuntimeDelivery("user/outer", "coordinator", "outer-user", "exact text")
             )
-            self.assertEqual(calls, ["turn/steer", "turn/start"])
+            self.assertEqual(calls, [])
+            agent.active_turn_id, agent.state = None, "idle"
+            adapter.receive_messages()
+            self.assertEqual(calls, ["turn/start"])
             self.assertEqual(agent.active_turn_id, "replacement-turn")
 
-    def test_stale_steer_uses_server_reported_active_turn_once(self) -> None:
+    def test_busy_input_does_not_attempt_stale_steer(self) -> None:
         root = repository_root()
         agent = _Agent(
             "coordinator",
@@ -1200,7 +1203,8 @@ class CodexIsolationTests(unittest.TestCase):
         adapter.send_message(
             "coordinator", RuntimeDelivery("modeling", "coordinator", "peer", "exact text")
         )
-        self.assertEqual(calls, [("turn/steer", "old-turn"), ("turn/steer", "new-turn")])
+        self.assertEqual(calls, [])
+        self.assertEqual(agent.queued_deliveries[0][1].text, "exact text")
 
     def test_runtime_delivery_envelope_exposes_sender_and_preserves_exact_text(self) -> None:
         root = repository_root()

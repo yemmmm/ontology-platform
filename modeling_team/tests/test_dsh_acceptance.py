@@ -327,7 +327,7 @@ def test_late_bound_member_is_frozen_before_any_prompt(runtime):
         owner.close()
 
 
-def test_active_pause_keeps_owner_online_and_resumes_original_session(runtime):
+def test_active_pause_waits_for_completion_and_resumes_original_session(runtime):
     packet = _batch_packet(questions=_questions(1))
     entry = _examiner_entry(packet.batch_id, "cq-1")
     provider_entered, provider_release = threading.Event(), threading.Event()
@@ -352,12 +352,19 @@ def test_active_pause_keeps_owner_online_and_resumes_original_session(runtime):
                         )
                         + "\n"
                     )
-                wait_until(lambda: owner.receipts.get(action, {}).get("status") == "effective")
                 if action == "pause":
-                    assert runtime.resource.user_waiting
+                    wait_until(lambda: owner.receipts.get(action, {}).get("status") == "queued")
+                    assert not runtime.resource.user_waiting
                     assert runtime.resource.submitted_reports == []
                     assert runtime.resource.agent.projection.activity is not None
                     provider_release.set()
+                def applied():
+                    owner.poll()
+                    return owner.receipts.get(action, {}).get("status") == "effective"
+                wait_until(applied)
+                if action == "pause":
+                    assert runtime.resource.user_waiting
+                    assert runtime.resource.agent.projection.activity is None
         except BaseException as exc:
             failures.append(exc)
             provider_release.set()

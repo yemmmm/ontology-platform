@@ -18,7 +18,7 @@ import threading
 import time
 import tempfile
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -792,6 +792,8 @@ class _Agent:
     process: subprocess.Popen[str] | None = None
     thread_id: str | None = None
     active_turn_id: str | None = None
+    queued_deliveries: list[tuple[str, RuntimeDelivery]] = field(default_factory=list)
+    dispatches: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_started_turn_id: str | None = None
     last_completed_turn_id: str | None = None
     state: str = "starting"
@@ -2055,13 +2057,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         return resolve_budget(root, explicit) if root is not None else explicit
 
     def _before_provider_request(self, receipt: dict) -> None:
-        budget = self._request_budget()
-        if budget is None or receipt.get("_budget_control_admitted") is True:
-            return
-        budget.require_available(binding={
-            "provider": receipt["provider"],
-            "actual_model": receipt.get("requested_model"),
-        })
+        # Admission belongs to turn/start. Tool follow-ups and provider retries
+        # finish the admitted turn even when its cost crosses the threshold.
+        return None
 
     def _provider_credential_key_ref(self, provider_id: str | None) -> str | None:
         """Read the manager's opaque Host credential alias when available."""
@@ -2715,45 +2713,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                                         "re-read anything, do not plan. The tool call "
                                         "itself is the only valid final action."
                                     )
-                            active_turn_id = getattr(agent, "active_turn_id", None)
-                            budget = getattr(agent, "budget", None)
-                            if isinstance(active_turn_id, str) and active_turn_id:
-                                try:
-                                    if budget is not None:
-                                        budget.require("steer")
-                                    self._rpc(
-                                        agent,
-                                        "turn/steer",
-                                        {
-                                            "threadId": agent.thread_id,
-                                            "expectedTurnId": active_turn_id,
-                                            "input": [{"type": "text", "text": input_text}],
-                                        },
-                                    )
-                                except Exception as exc:
-                                    if getattr(exc, "code", None) or type(exc).__name__ == "BudgetError":
-                                        raise
-                                    if budget is not None:
-                                        budget.require("start")
-                                    self._rpc(
-                                        agent,
-                                        "turn/start",
-                                        {
-                                            "threadId": agent.thread_id,
-                                            "input": [{"type": "text", "text": input_text}],
-                                        },
-                                    )
+                            continuation = RuntimeDelivery(
+                                "runner/examiner", agent.agent_id, "continuation", input_text)
+                            if agent.active_turn_id:
+                                self._queue_delivery(agent, continuation)
                             else:
-                                if budget is not None:
-                                    budget.require("start")
-                                self._rpc(
-                                    agent,
-                                    "turn/start",
-                                    {
-                                        "threadId": agent.thread_id,
-                                        "input": [{"type": "text", "text": input_text}],
-                                    },
-                                )
+                                self._send_idle_message(agent, continuation)
                             resource._continuation_reason = "sent"
                         except Exception as exc:
                             if getattr(exc, "code", None) or type(exc).__name__ == "BudgetError":
@@ -6931,6 +6896,59 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             }
         ]
 
+    def _queue_delivery(self, agent: _Agent, delivery: RuntimeDelivery) -> RuntimeDispatchReceipt:
+        dispatch_id = uuid4().hex
+        agent.queued_deliveries.append((dispatch_id, delivery))
+        agent.dispatches[dispatch_id] = {"dispatch_id": dispatch_id, "state": "queued",
+            "runtime": "codex", "runtime_identity": agent.thread_id,
+            "message_id": delivery.delivery_id or dispatch_id, "turn_id": None}
+        self._append_runtime_evidence("queued-inputs", {
+            "agent_id": agent.agent_id, **agent.dispatches[dispatch_id],
+            "delivery": asdict(delivery),
+        })
+        return RuntimeDispatchReceipt("enqueue", None, "codex", dispatch_id,
+                                      agent.thread_id, delivery.delivery_id or dispatch_id)
+
+    def dispatch_status(self, agent_id: str) -> list[dict[str, Any]]:
+        return list(self.agents[agent_id].dispatches.values())
+
+    def _flush_queued_delivery(self, agent: _Agent) -> None:
+        if (agent.active_turn_id or not agent.queued_deliveries
+                or agent.runtime_failure is not None or agent.provider_wait is not None
+                or any(row["state"] == "unknown" for row in agent.dispatches.values())):
+            return
+        dispatch_id, delivery = agent.queued_deliveries[0]
+        try:
+            if delivery.kind == "budget-control":
+                result = self.control_budget({**json.loads(delivery.text),
+                                              "target_agent_id": agent.agent_id})
+                receipt = next(iter(result.get("members", [])), {})
+                turn_id = receipt.get("turn_id")
+            else:
+                receipt = self._send_idle_message(agent, delivery)
+                turn_id = receipt.turn_id
+        except BudgetError:
+            return  # Preserve the FIFO and the original identity for authorized continuation.
+        except Exception:
+            agent.dispatches[dispatch_id]["state"] = "unknown"
+            agent.queued_deliveries.pop(0)
+            raise
+        agent.queued_deliveries.pop(0)
+        agent.dispatches[dispatch_id].update(state="claimed", turn_id=turn_id)
+        self._append_runtime_evidence("queued-inputs", {
+            "agent_id": agent.agent_id, **agent.dispatches[dispatch_id]})
+
+    def _send_idle_message(self, agent: _Agent, delivery: RuntimeDelivery) -> RuntimeDispatchReceipt:
+        budget = getattr(agent, "budget", None)
+        if budget is not None:
+            budget.require("start")
+        result = self._rpc(agent, "turn/start", {
+            "threadId": agent.thread_id, "input": self._delivery_input(delivery)})
+        agent.active_turn_id, agent.state = self._turn_id(result), "running"
+        self._activity_turn_start(agent, agent.active_turn_id)
+        self._reset_activity_clock(agent)
+        return RuntimeDispatchReceipt("start", agent.active_turn_id)
+
     def send_message(
         self, agent_id: str, delivery: RuntimeDelivery
     ) -> RuntimeDispatchReceipt:
@@ -6948,12 +6966,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 (row for row in result.get("members", []) if row.get("agent_id") == agent_id),
                 {},
             )
+            if member.get("mode") == "enqueue":
+                identity = member["dispatch_id"]
+                return RuntimeDispatchReceipt("enqueue", None, "codex", identity,
+                                              self.agents[agent_id].thread_id, identity)
             return RuntimeDispatchReceipt(
                 member.get("mode", "start"),
                 member.get("turn_id"),
             )
-        # A turn/start notification may be queued before an outer message arrives. Pump it
-        # first so turn/steer uses the App Server's active turn identity, not a stale reply.
+        # Consume real turn boundaries before deciding whether this input can start.
         self.receive_messages()
         agent = self.agents[agent_id]
         if getattr(agent, "runtime_failure", None) is not None:
@@ -6964,73 +6985,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             # goes through ``recover_provider_wait`` only.
             raise CodexRuntimeError("provider wait is active; use an explicit provider recovery")
         if agent.active_turn_id:
-            budget = getattr(agent, "budget", None)
-            if budget is not None:
-                budget.require("steer")
-            try:
-                result = self._rpc(
-                    agent,
-                    "turn/steer",
-                    {
-                        "threadId": agent.thread_id,
-                        "expectedTurnId": agent.active_turn_id,
-                        "input": self._delivery_input(delivery),
-                    },
-                )
-                server_turn_id = self._turn_id(result) or agent.active_turn_id
-                if server_turn_id:
-                    agent.active_turn_id = server_turn_id
-                return RuntimeDispatchReceipt("steer", server_turn_id)
-            except CodexRuntimeError as exc:
-                # App-server may finish a turn between its notification and our steer.
-                # Its explicit rejection means the text was not accepted, so a fresh turn is safe.
-                category = (
-                    exc.category
-                    if isinstance(exc, CodexRuntimeRPCError)
-                    else CodexRuntimeAdapter._classify_steer_message(str(exc))[0]
-                )
-                if category == "no_active_turn_to_steer":
-                    agent.active_turn_id, agent.state = None, "idle"
-                else:
-                    active = self._expected_active_turn_id(exc)
-                    if active:
-                        # The server explicitly rejected the first request and supplies its
-                        # active turn. One retry preserves the text without duplicating it.
-                        agent.active_turn_id = active
-                        if budget is not None:
-                            budget.require("steer")
-                        result = self._rpc(
-                            agent,
-                            "turn/steer",
-                            {
-                                "threadId": agent.thread_id,
-                                "expectedTurnId": agent.active_turn_id,
-                                "input": self._delivery_input(delivery),
-                            },
-                        )
-                        server_turn_id = self._turn_id(result) or agent.active_turn_id
-                        if server_turn_id:
-                            agent.active_turn_id = server_turn_id
-                        return RuntimeDispatchReceipt("steer", server_turn_id)
-                    states = {item.agent_id: item.state for item in self.get_agent_states()}
-                    if states.get(agent_id) == "running":
-                        raise
-        budget = getattr(agent, "budget", None)
-        if budget is not None:
-            budget.require("start")
-        result = self._rpc(
-            agent,
-            "turn/start",
-            {
-                "threadId": agent.thread_id,
-                "input": self._delivery_input(delivery),
-            },
-        )
-        agent.active_turn_id, agent.state = self._turn_id(result), "running"
-        self._activity_turn_start(agent, agent.active_turn_id)
-        # A freshly started turn is the activity origin for the inactivity watchdog.
-        self._reset_activity_clock(agent)
-        return RuntimeDispatchReceipt("start", agent.active_turn_id)
+            return self._queue_delivery(agent, delivery)
+        if agent.queued_deliveries or any(row["state"] == "unknown" for row in agent.dispatches.values()):
+            return self._queue_delivery(agent, delivery)
+        return self._send_idle_message(agent, delivery)
 
     @staticmethod
     def _native_sleep_item_id(agent: _Agent, params: Mapping[str, Any]) -> str | None:
@@ -7212,9 +7170,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 turn_status = turn.get("status") if isinstance(turn, dict) else None
                 self._activity_turn_end(agent, completed_turn_id, turn_status)
                 agent.active_turn_id, agent.state = None, "idle"
+                for dispatch in agent.dispatches.values():
+                    if dispatch.get("turn_id") == completed_turn_id:
+                        dispatch["state"] = "settled"
                 # The turn ended without the sleep completion: the pause never
                 # outlives its turn.
                 agent.active_sleep_item_ids.clear()
+                self._flush_queued_delivery(agent)
             if method in {"turn/failed", "thread/error"}:
                 # The failed turn is already captured by the pending provider
                 # wait; keep the observable waiting state for that wait.
@@ -8063,6 +8025,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # queue. Preserve that cause and suppress only this secondary EOF.
                 if getattr(agent, "runtime_failure", None) is None:
                     raise
+        for agent in self.agents.values():
+            self._flush_queued_delivery(agent)
         values, self._messages = self._messages[:], []
         return values
 
@@ -8073,6 +8037,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 value.state,
                 value.last_started_turn_id,
                 value.last_completed_turn_id,
+                runtime_identity=value.thread_id,
+                pending_dispatches=tuple(value.dispatches.values()),
             )
             for key, value in self.agents.items()
         ]
@@ -8170,6 +8136,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         for agent in agents:
             budget = getattr(agent, "budget", None)
             member_control_id = f"{control_id}:{agent.agent_id}"
+            if agent.active_turn_id:
+                queued_message = {**message, "control_id": control_id,
+                                  "target_agent_id": agent.agent_id}
+                existing = next((identity for identity, queued in agent.queued_deliveries
+                    if queued.kind == "budget-control"
+                    and json.loads(queued.text).get("epoch") == epoch
+                    and json.loads(queued.text).get("action") == action), None)
+                if existing is None:
+                    queued = self._queue_delivery(agent, RuntimeDelivery(
+                        "host/task-budget", agent.agent_id, "budget-control",
+                        json.dumps(queued_message, ensure_ascii=False)))
+                    existing = queued.dispatch_id
+                if budget is not None:
+                    budget.record_control(epoch, "pending", action=action, basis="queued_until_turn_end")
+                statuses.append({"agent_id": agent.agent_id, "status": "pending",
+                                 "mode": "enqueue", "dispatch_id": existing})
+                continue
             if budget is not None:
                 try:
                     budget.require(
@@ -8230,29 +8213,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     )
                     if provider_id and callable(authorize_control):
                         authorize_control(provider_id, member_text, member_control_id)
-                if agent.active_turn_id:
-                    dispatch_mode = "steer"
-                    result = self._rpc(
-                        agent,
-                        "turn/steer",
-                        {
-                            "threadId": agent.thread_id,
-                            "expectedTurnId": agent.active_turn_id,
-                            "input": [{"type": "text", "text": member_text}],
-                        },
-                    )
-                    agent.active_turn_id = self._turn_id(result) or agent.active_turn_id
-                else:
-                    dispatch_mode = "start"
-                    self._reset_activity_clock(agent)
-                    result = self._rpc(
-                        agent,
-                        "turn/start",
-                        {"threadId": agent.thread_id, "input": [{"type": "text", "text": member_text}]},
-                    )
-                    agent.active_turn_id = self._turn_id(result)
-                    agent.state = "running"
-                    self._activity_turn_start(agent, agent.active_turn_id)
+                dispatch_mode = "start"
+                self._reset_activity_clock(agent)
+                result = self._rpc(agent, "turn/start", {
+                    "threadId": agent.thread_id,
+                    "input": [{"type": "text", "text": member_text}]})
+                agent.active_turn_id = self._turn_id(result)
+                agent.state = "running"
+                self._activity_turn_start(agent, agent.active_turn_id)
                 if budget is not None:
                     budget.record_control(epoch, "instruction_delivered", action=action)
                 statuses.append({
@@ -8270,8 +8238,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "members": statuses,
                 }
                 raise
-        self._budget_control_epochs.add(control_key)
-        result = {"status": "instruction_delivered", "action": action, "epoch": epoch, "members": statuses}
+        pending = any(row["status"] == "pending" for row in statuses)
+        if not pending:
+            self._budget_control_epochs.add(control_key)
+        result = {"status": "pending" if pending else "instruction_delivered",
+                  "action": action, "epoch": epoch, "members": statuses}
         self._budget_control_receipts[control_key] = result
         return result
 

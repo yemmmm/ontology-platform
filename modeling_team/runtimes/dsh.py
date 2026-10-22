@@ -161,7 +161,8 @@ class DshRuntimeAdapter(RuntimeAdapter):
                 "budget_member_identity_missing",
                 {"runtime_session_id": session_id, "provider": receipt.get("provider")},
             )
-        matches[0].budget.require("send")
+        # session/prompt performs turn admission. Let its active activity finish
+        # every tool follow-up even if the amount crosses the threshold.
 
     def _record_budget_control(self, budget, epoch, status, **metadata):
         """Keep SIGSTOP/SIGCONT effective when the budget ledger is unreadable."""
@@ -1053,6 +1054,10 @@ class DshRuntimeAdapter(RuntimeAdapter):
             self.agents[agent_id].terminal = True
 
     def receive_messages(self):
+        controls = getattr(self, "_queued_budget_controls", {})
+        if controls and all(agent.projection.activity is None for agent in self.agents.values()):
+            key = next(iter(controls))
+            self.control_budget(controls.pop(key))
         values = []
         while not self._messages.empty():
             values.append(self._messages.get())
@@ -1391,6 +1396,12 @@ class DshRuntimeAdapter(RuntimeAdapter):
         except ValueError as exc:
             raise DshRuntimeError("task-budget control epoch is invalid", category="rejected") from exc
         key = f"{message['action']}:{epoch}"
+        if any(agent.projection.activity is not None for agent in self.agents.values()):
+            pending = getattr(self, "_queued_budget_controls", {})
+            pending[key] = message
+            self._queued_budget_controls = pending
+            return {"status": "pending", "action": action, "epoch": epoch,
+                    "basis": "queued_until_activity_end"}
         if key in self._budget_control_epochs:
             return {
                 **self._budget_control_receipts.get(key, {

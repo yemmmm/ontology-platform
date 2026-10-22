@@ -4301,6 +4301,14 @@ class TeamRunner:
         if not self.run or not isinstance(message, dict):
             return self._receive_outer_normalized(message)
         action = message.get("action")
+        if action in {"pause", "resume", "stop"} and self._runtime_turns_busy():
+            controls = getattr(self, "_queued_outer_controls", [])
+            controls.append(message)
+            self._queued_outer_controls = controls
+            self._append_evidence("team-lifecycle", {
+                "action": action, "status": "queued", "request_id": message.get("request_id"),
+                "basis": "waiting_for_natural_turn_completion"})
+            return [{"type": "flow-control", "action": action, "status": "queued"}]
         if getattr(self, "budget", None) and action in {
                 "instruction", "user", "consult", "recover_provider", "issue_resolution"}:
             try:
@@ -4658,7 +4666,9 @@ class TeamRunner:
             requests = getattr(self, "_flow_requests", {})
             requests[message["request_id"]] = action
             self._flow_requests = requests
-        event = {"action": action, "status": "instruction_delivered", "agent_id": coordinator,
+        event = {"action": action,
+                 "status": "queued" if getattr(receipt, "mode", None) == "enqueue" else "instruction_delivered",
+                 "agent_id": coordinator,
                  "confirmation": "pending", "request_id": message.get("request_id")}
         self._append_evidence("team-lifecycle", event)
         return [{"type": "flow-instruction", **event}]
@@ -4694,15 +4704,17 @@ class TeamRunner:
             instruction = {**message, "instruction": control_text, "text": control_text,
                            "expected_reply": expected_reply}
             try:
-                self.adapter.send_message(agent_id, RuntimeDelivery(
+                receipt = self.adapter.send_message(agent_id, RuntimeDelivery(
                     sender_id="host/task-budget", recipient_id=agent_id, kind="budget-control",
                     text=json.dumps(instruction, ensure_ascii=False)))
-                status = "instruction_delivered"
+                status = "pending" if getattr(receipt, "mode", None) == "enqueue" else "instruction_delivered"
             except Exception:
                 status = "unknown"
             self._budget_member_control["results"][agent_id] = status
         event = {"type": "flow-control", "source": "task_budget", "action": action,
-                 "request_id": request_id, "status": "instruction_delivered" if targets else "not_started",
+                 "request_id": request_id,
+                 "status": ("pending" if "pending" in self._budget_member_control["results"].values()
+                            else "instruction_delivered") if targets else "not_started",
                  "member_results": self._budget_member_control["results"]}
         self._append_evidence("team-lifecycle", event)
         return [event]
@@ -4710,6 +4722,8 @@ class TeamRunner:
     def _sync_task_budget(self):
         if not getattr(self, "budget", None):
             return False
+        if self._runtime_turns_busy():
+            return False  # Keep the admitted turns' tool calls and normal receipts alive.
         # require_available also notices a dead/stale metering owner. Its typed
         # refusal closes new work, while the current Runner remains observable.
         try:
@@ -5477,7 +5491,8 @@ class TeamRunner:
                 "runtime/infrastructure", "candidate-receipt-wakeup-dispatch-failed"
             )
             raise TeamConfigurationError("candidate receipt registration wakeup failed") from exc
-        if not isinstance(getattr(receipt, "turn_id", None), str) or not receipt.turn_id:
+        if (getattr(receipt, "mode", None) != "enqueue"
+                and (not isinstance(getattr(receipt, "turn_id", None), str) or not receipt.turn_id)):
             gate.close("receipt_notification_failed")
             self._append_evidence(
                 "formal-candidate-progress",
@@ -10635,11 +10650,9 @@ class TeamRunner:
             control.action == "resume"
             and control.reporter_id == control.coordinator_id
         )
-        # CodexRuntimeAdapter.send_message already routes a live reporter turn
-        # through the bound ``turn/steer`` API.  Waiting here for
-        # ``active_turn_id`` to clear creates a self-requeue loop: the live
-        # turn never receives the persisted resolution, and the inactivity
-        # watchdog eventually kills an otherwise recoverable run.
+        # The runtime queues a live reporter's resolution until its current turn
+        # completes. Keep that original dispatch identity instead of requeueing
+        # another issue control on every Runner tick.
         receipt: RuntimeDispatchReceipt | None = None
         # 2026-09-14 provider-recovery: a reporter parked in a provider wait can
         # neither receive an ordinary control turn nor be rebound — its process
@@ -11434,6 +11447,9 @@ class TeamRunner:
         )
 
     def drain(self) -> list[dict[str, Any]]:
+        controls = getattr(self, "_queued_outer_controls", [])
+        if controls and not self._runtime_turns_busy():
+            return self.receive_outer(controls.pop(0))
         try:
             return self._drain_current_work()
         except BudgetError as exc:
@@ -11442,6 +11458,11 @@ class TeamRunner:
             self._hold_budget_refusal(exc)
             self._state("PAUSE_PENDING", budget_error=exc.code)
             return [{"type": "budget-pause", "code": exc.code, "retryable": True}]
+
+    def _runtime_turns_busy(self) -> bool:
+        reader = getattr(self.adapter, "get_agent_states", None)
+        return callable(reader) and any(
+            state.state in {"starting", "running"} for state in reader())
 
     def _drain_current_work(self) -> list[dict[str, Any]]:
         if not self.run or not self.transport:

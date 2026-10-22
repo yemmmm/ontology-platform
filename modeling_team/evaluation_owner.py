@@ -51,6 +51,7 @@ class EvaluationOwner:
         self._budget_control_epoch = None
         self._budget_paused = False
         self._pause_reasons = set()
+        self._queued_controls = []
         self._save()
 
     def _identity(self, resource):
@@ -71,6 +72,7 @@ class EvaluationOwner:
                  "current": self._identity(self.current) if self.current else None,
                  "active_members": [self._identity(r) for r in self.active],
                  "retained_members": [self._identity(r) for r in self.retained], "receipts": self.receipts}
+        value["queued_controls"] = self._queued_controls
         if self.budget:
             value["budget_ref"] = str(self.budget.ref)
         value["stage_waiting"] = bool(self.current is None and self.pending_pause)
@@ -164,7 +166,18 @@ class EvaluationOwner:
                         pass
                     self.consult_replies.append({**self._identity(resource), "text": message.text})
                     self._save()
-        message = self._next_budget_control()
+        def busy(resource):
+            if getattr(resource, "runtime", None) == "dsh":
+                return resource.agent.projection.activity is not None
+            return bool(getattr(getattr(resource, "_child_agent", None), "active_turn_id", None))
+
+        working = any(busy(resource) for resource in [*self.active, *self.retained])
+        message = None
+        if self._queued_controls and not working:
+            message = self._queued_controls.pop(0)
+            self.receipts.pop(message["request_id"], None)
+        if message is None:
+            message = self._next_budget_control()
         if message is None:
             if select.select([self.fifo], [], [], 0)[0]:
                 self.fifo.read_ready()
@@ -185,6 +198,12 @@ class EvaluationOwner:
             action, text = message["action"], message["text"]
             if action not in {"consult", "pause", "resume", "stop"} or not isinstance(text, str):
                 raise ValueError("unsupported evaluation control")
+            if working:
+                self._queued_controls.append(message)
+                self.receipts[identity] = {"action": action, "status": "queued",
+                                          "basis": "waiting_for_natural_turn_completion"}
+                self._save()
+                return
             cause = "task_budget" if message.get("source") == "task_budget" else "user"
             if cause == "task_budget" and self.budget and message.get("epoch") != self.budget.show()["epoch"]:
                 return
@@ -300,14 +319,15 @@ class EvaluationOwner:
             # owner lock across that round trip.
             self._lock.release()
             try:
-                adapter.send_message(agent.agent_id, RuntimeDelivery(
+                dispatch = adapter.send_message(agent.agent_id, RuntimeDelivery(
                     sender_id="host/task-budget" if message.get("source") == "task_budget" else "user/outer", recipient_id=agent.agent_id,
                     kind="budget-control" if message.get("source") == "task_budget" else "user-control",
                     text=json.dumps({**message, "instruction": instruction}, ensure_ascii=False)))
             finally:
                 self._lock.acquire()
             if self.receipts[identity]["status"] != "effective":
-                self.receipts[identity]["status"] = "instruction_delivered"
+                self.receipts[identity]["status"] = (
+                    "queued" if getattr(dispatch, "mode", None) == "enqueue" else "instruction_delivered")
         except Exception:
             self.receipts[identity]["status"] = "unknown"
 

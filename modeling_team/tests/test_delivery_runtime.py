@@ -8,8 +8,7 @@ state, and ``turn/steer`` delivers input into the currently active turn while
 rejecting a stale ``expectedTurnId``.  Those facts are why a request flag such
 as ``default_tools_enabled`` could never prove the effective tool boundary,
 why ``DeliveryRuntime.start`` fails closed unless the running server reports
-the native tool features as off, and why busy-turn input is steered onto the
-actual active turn id rather than queueing behind a long-running turn.
+the native tool features as off, and busy-turn input now waits for natural completion before starting a new turn.
 """
 from __future__ import annotations
 
@@ -286,83 +285,49 @@ def test_native_turn_remains_independent_across_multiple_turns(tmp_path):
         runtime.close()
 
 
-def test_busy_turn_input_is_steered_onto_the_same_turn_before_completion(tmp_path):
+def test_busy_turn_input_waits_for_completed_native_turn(tmp_path):
     module = importlib.import_module('modeling_team.runtimes.delivery')
     profile = load_team_model_profile(ROOT, 'openai-sol-medium')
     native = tmp_path / 'native'
     native.mkdir(parents=True)
-    # This marker makes the offline double hold the turn open (no auto
-    # completion) until a supported turn/steer delivers input onto it.
     (native / 'hold_turn_for_steer').write_text('')
     runtime = _runtime(module, profile, native)
     try:
         runtime.start()
         runtime.send('首轮业务输入。')
-        observed: list[dict] = []
+        runtime.steer('排队的技术补充。')
+        runtime.poll(0.05)
+        assert runtime.busy and runtime.turn_id == 'turn-1'
+        assert not any(x.get('method') in {'turn/steer', 'turn/interrupt'} for x in _messages(runtime))
+        assert len([x for x in _messages(runtime) if x.get('method') == 'turn/start']) == 1
+        runtime._rpc('test/complete-turn', {})
         deadline = time.monotonic() + 2
-        while time.monotonic() < deadline:
-            observed.extend(runtime.poll(0.05))
-        # The turn is still active and owns the live thread.
-        assert runtime.busy
-        assert runtime.turn_id == 'turn-1'
-        packet = {'kind': 'user_input', 'text': '排队的技术补充。',
-                  'source_reference': 'delivery:test-session:user:canary',
-                  'authorization_reference': 'user-test'}
-        runtime.steer(json.dumps(packet, ensure_ascii=False))
-        # The completion event has not been read yet: the input went into the
-        # still-active turn, not into a new one.
-        assert runtime.busy
-        deadline = time.monotonic() + 2
-        while runtime.busy and time.monotonic() < deadline:
-            observed.extend(runtime.poll(0.05))
-        assert not runtime.busy
+        while runtime.turn_id == 'turn-1' and time.monotonic() < deadline:
+            runtime.poll(0.05)
+        assert runtime.turn_id == 'turn-2'
         messages = _messages(runtime)
-        steer = next(x for x in messages if x.get('method') == 'turn/steer')
-        assert steer['params']['threadId'] == 'delivery-native-thread'
-        assert steer['params']['expectedTurnId'] == 'turn-1'
-        assert steer['params']['input'] == [
-            {'type': 'text', 'text': json.dumps(packet, ensure_ascii=False),
-             'text_elements': []}]
-        # The server acknowledged the steer for the same turn id and only
-        # then completed that turn: steered input precedes completion.
-        server_events = [
-            json.loads(line)
-            for line in (runtime.home / 'server-events.jsonl').read_text().splitlines()
-        ]
-        ack = next(x for x in server_events if x.get('id') == steer.get('id') and 'result' in x)
-        assert ack['result'] == {'turnId': 'turn-1'}
-        completed = [x for x in server_events if x.get('method') == 'turn/completed']
-        assert len(completed) == 1
-        assert server_events.index(completed[0]) > server_events.index(ack)
-        # Same single thread and turn; no new thread or semantic start.
+        starts = [x for x in messages if x.get('method') == 'turn/start']
+        assert len(starts) == 2
+        assert starts[1]['params']['input'][0]['text'] == '排队的技术补充。'
         assert len([x for x in messages if x.get('method') == 'thread/start']) == 1
-        assert len([x for x in messages if x.get('method') == 'turn/start']) == 1
-        # Steered private reasoning stays private.
-        assert 'PRIVATE-HIDDEN-CANARY' not in json.dumps(observed)
-        assert 'PRIVATE-STEERED-CANARY' not in json.dumps(observed)
+        assert not any(x.get('method') in {'turn/steer', 'turn/interrupt'} for x in messages)
     finally:
         runtime.close()
 
 
-def test_steer_of_completed_turn_is_rejected_not_silently_dropped(tmp_path):
+def test_input_after_completed_turn_starts_next_turn_without_stale_steer(tmp_path):
     module = importlib.import_module('modeling_team.runtimes.delivery')
     profile = load_team_model_profile(ROOT, 'openai-sol-medium')
     runtime = _runtime(module, profile, tmp_path / 'native')
     try:
         runtime.start()
         _drive_turn(runtime, '首轮业务输入。')
-        assert not runtime.busy
-        # Simulate the observed end-of-turn race: the host still believes the
-        # turn is busy while the server has already completed it.  The stale
-        # steer surfaces as an error instead of silently dropping the packet.
-        runtime.busy = True
-        with pytest.raises(module.DeliveryRuntimeError):
-            runtime.steer('迟到的排队输入。')
+        runtime.steer('迟到的排队输入。')
+        runtime.poll(0)
+        assert runtime.turn_id == 'turn-2'
         messages = _messages(runtime)
-        steer = next(x for x in messages if x.get('method') == 'turn/steer')
-        assert steer['params']['expectedTurnId'] == 'turn-1'
-        # No new turn or thread was created to absorb the stale packet.
-        assert len([x for x in messages if x.get('method') == 'turn/start']) == 1
+        assert not any(x.get('method') == 'turn/steer' for x in messages)
+        assert len([x for x in messages if x.get('method') == 'turn/start']) == 2
         assert len([x for x in messages if x.get('method') == 'thread/start']) == 1
     finally:
         runtime.close()

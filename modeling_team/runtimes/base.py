@@ -27,9 +27,11 @@ class RuntimeMessage:
 class RuntimeDispatchReceipt:
     """Identity returned by a runtime dispatch.
 
-    ``turn_id`` is optional for legacy adapters and fake runtimes.  The formal
-    R2.3-005 gate treats a missing id as a platform-contract failure, while
-    older gates continue to accept ``None`` for backwards compatibility.
+    Queued inputs carry their real dispatch identity with no turn_id until native
+    dispatch; queued is not delivered or consumed. ``turn_id`` is optional for legacy
+    adapters and fake runtimes. The formal
+    gate binds a queued input to the actual native turn when it starts; direct
+    dispatches still require the returned native turn identity.
     """
 
     mode: str
@@ -44,10 +46,10 @@ class RuntimeDispatchReceipt:
         if self.mode not in {"start", "steer", "enqueue"}:
             raise ValueError("runtime dispatch mode must be start, steer or enqueue")
         if self.mode == "enqueue" and (
-            self.runtime != "dsh" or self.turn_id is not None
+            self.runtime not in {"codex", "dsh"} or self.turn_id is not None
             or not all((self.dispatch_id, self.runtime_identity, self.message_id))
         ):
-            raise ValueError("DSH enqueue requires dispatch/session/message identities and null turn_id")
+            raise ValueError("enqueue requires dispatch/session/message identities and null turn_id")
         if self.turn_id is not None and not isinstance(self.turn_id, str):
             raise TypeError("runtime dispatch turn_id must be a string or null")
 

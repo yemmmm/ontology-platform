@@ -274,7 +274,8 @@ Host observation continues in program code and retains the full latest
 snapshot in observation.json, with separate observation_count and wake_count.
 Under R4.4-003 ordinary progress is recorded for a periodic overview, not steered
 into active inference. Inspect the packet's trigger: critical events and user/Host
-inputs are immediate; periodic_review/followup_due may review unchanged ongoing work.
+inputs are recorded immediately and wait in the queue until the active native turn/activity ends;
+periodic_review/followup_due may review unchanged ongoing work.
 Use the supplied window and actual activity to decide what needs a targeted read.
 Do not ask for another identical observation to confirm
 waiting. When all selected CQ drafting/review phases are complete, freeze promptly;
@@ -646,7 +647,10 @@ and retention path; report limitations rather than stopping an owner to force ex
 
 Program observation retains ordinary updates and supplies a periodic review (default 90 seconds,
 Host-configured `status_review_interval_seconds`). User/Host inputs and actual critical workflow,
-control or safety changes arrive immediately, using send when idle and steer when busy.
+control or safety changes are recorded immediately and queued. All new inputs, including pause,
+stop and budget controls, wait for the current native turn/activity to complete naturally before
+sending. Never steer or interrupt an active turn to deliver input. Amount limits are checked before
+new turns; admitted turns finish their tool follow-ups and normal usage receipts, with overruns recorded.
 Read `trigger` and `periodic_review`: current cards or explicit missing/stale reports, window changes,
 retry counts, actual activity, coverage and source references. Unchanged card bodies are omitted.
 No update alone proves a stall; token growth alone does not prove effective progress.

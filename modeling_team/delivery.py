@@ -2113,6 +2113,8 @@ class DeliverySession:
     def sync_budget_control(self, runtime) -> bool:
         if not self.budget:
             return False
+        if getattr(runtime, "busy", False):
+            return False  # Finish the admitted turn, including tools and usage receipts.
         if time.monotonic() < getattr(self, "_budget_next_check", 0):
             return self._budget_paused
         self._budget_next_check = time.monotonic() + 2
@@ -4148,6 +4150,8 @@ class DeliverySession:
                             key: value for key, value in row.items() if key != "payload"})
 
     def _dispatch_observation(self, runtime: DeliveryRuntimeProtocol, payload: dict, *, steer: bool) -> bool:
+        if steer:
+            return False  # Every input waits for natural turn completion on both runtimes.
         data = payload.get("observed_state") if payload.get("kind") in {"delivery_start", "delivery_resume"} else payload.get("data")
         data = data or payload
         item = next((item for item in self._pending_decisions
@@ -4242,12 +4246,9 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         if session.runtime_name == "codex" and uses_external_credential_session(session.binding.provider_id):
             selected = replace(session.profile, bindings={"delivery": session.binding})
             def before_provider_request(receipt: dict) -> None:
-                if receipt.get("_budget_control_admitted") is True:
-                    return
-                session.budget.require_available(operation="supervise", binding={
-                    "provider": receipt["provider"],
-                    "actual_model": receipt.get("requested_model"),
-                })
+                # Runtime turn/start checks the amount. Do not cut off follow-ups
+                # inside a turn whose normal token receipt is still pending.
+                return None
 
             providers = ProviderSessionManager(preflight_profile_credentials(selected),
                 on_attempt=NumericReceiptWriter(session_root / "native" / "provider-attempts.jsonl",
@@ -4306,18 +4307,15 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         initial_packet = {"kind": "delivery_resume" if resume else "delivery_start",
                           "observed_state": observed_state,
                           "session_reference": str(session_root / "session.json")}
-        if getattr(session, "stop_pending", False):
-            runtime.interrupt()
-        elif session._pending_decisions:
+        if not getattr(session, "stop_pending", False) and session._pending_decisions:
             session._dispatch_observation(runtime, initial_packet, steer=False)
-        else:
+        elif not getattr(session, "stop_pending", False):
             try:
                 runtime.send(json.dumps(initial_packet, ensure_ascii=False))
             except BudgetError as exc:
                 session._hold_budget_refusal(exc)
         next_observation = 0.0
         pending_input: list[dict] = []
-        steer_blocked_turn: str | None = None
         eof = False
         while not session.finished:
             observations = runtime.poll(0.1)
@@ -4375,17 +4373,21 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                     else:
                         packet = session.accept_user_input(text)
                         control_text = text
-                    control = session.apply_user_control(control_text, source_reference=packet.get("source_reference"))
-                    if control is not None:
-                        packet["host_control_result"] = control
-                        if session.conversation:
-                            session.conversation.append("control_result", message_id=packet["message_id"],
-                                action=message["action"], status="pending", basis="host_control_submitted")
-                        if control_text in {"取消", "撤回预算", "停止"}:
-                            runtime.interrupt()
+                    packet["_queued_control_text"] = control_text
                     pending_input.append(packet)
+            if not runtime.busy and pending_input:
+                packet = pending_input[0]
+                control_text = packet.pop("_queued_control_text", "")
+                control = session.apply_user_control(
+                    control_text, source_reference=packet.get("source_reference"))
+                if control is not None:
+                    packet["host_control_result"] = control
+                    if session.conversation:
+                        session.conversation.append("control_result", message_id=packet["message_id"],
+                            action=packet.get("action"), status="pending", basis="turn_completed")
                     if control_text == "停止":
                         session.stop_message_id = packet.get("message_id")
+                        pending_input.pop(0)
             if getattr(session, "stop_pending", False):
                 # Submission is not process exit. Keep the Delivery owner online until bound
                 # owners have actually stopped; do not start inference while collecting exits.
@@ -4415,52 +4417,10 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                     next_observation = time.monotonic() + 2
                     session.record_observation(session.observe(), allow_periodic=False)
                 continue
-            if runtime.busy and pending_input and steer_blocked_turn != runtime.turn_id:
-                # An active turn must not starve later sourced input: deliver
-                # the original packets promptly onto the same live thread and
-                # turn through the supported turn/steer API, in queue order.
-                while pending_input and runtime.busy and steer_blocked_turn != runtime.turn_id:
-                    current = pending_input[0]
-                    if session.conversation:
-                        session.conversation.append("dispatch_started", message_id=current["message_id"],
-                            dispatch_attempt_id=__import__("uuid").uuid4().hex)
-                    try:
-                        receipt = runtime.steer(json.dumps(current, ensure_ascii=False))
-                    except BudgetError as exc:
-                        session._hold_budget_refusal(exc)
-                        break
-                    except DeliveryRuntimeError as exc:
-                        if session.conversation:
-                            rejected = exc.category == "rejected"
-                            session.conversation.append("dispatch_result", message_id=current["message_id"],
-                                status="rejected" if rejected else "unknown", reason="native_rejected" if rejected else "native_receipt_unknown")
-                            if not rejected:
-                                pending_input.pop(0)
-                        # End-of-turn race: the turn completed server-side
-                        # between the busy check and the steer request.  Keep
-                        # the packet queued; the idle branch below delivers it
-                        # with a fresh turn/start once the completion event is
-                        # read, so a stale turn is never fatal or retried hot.
-                        steer_blocked_turn = runtime.turn_id
-                        break
-                    pending_input.pop(0)
-                    if session.conversation:
-                        session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native",
-                            **({"native_receipt": receipt} if receipt else {}))
-            # Continue program observation during an active inference too. Send
-            # decisions on its current turn; a heartbeat never starts a turn.
+            # Observe while busy, but leave all model inputs in their queues.
             if runtime.busy and time.monotonic() >= next_observation:
-                observation = session.observe()
                 next_observation = time.monotonic() + 2
-                session.record_observation(observation, allow_periodic=False)
-            if (runtime.busy and not pending_input and session._pending_decisions
-                    and not session._next_decision()["offset"]
-                    and session._next_decision().get("trigger", {}).get("kind")
-                        not in {"periodic_review", "followup_due"}
-                    and steer_blocked_turn != runtime.turn_id):
-                packet = {"kind": "host_observation", "data": session._model_observation()}
-                if not session._dispatch_observation(runtime, packet, steer=True):
-                    steer_blocked_turn = runtime.turn_id
+                session.record_observation(session.observe(), allow_periodic=False)
             if not runtime.busy:
                 uncertain = session._next_decision()
                 if uncertain and uncertain["delivery_status"] in {"attempted", "unknown"}:
@@ -4504,7 +4464,6 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         if session.conversation:
                             session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native",
                                 **({"native_receipt": receipt} if receipt else {}))
-                    steer_blocked_turn = None
                 elif (session._pending_decisions and not session._completed_observations_are_quiet()
                       and time.monotonic() >= getattr(session, "_dispatch_retry_at", 0)):
                     packet = {"kind": "host_observation", "data": session._model_observation()}
@@ -4515,7 +4474,6 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         if eof and server is None:
                             return 2
                         continue
-                    steer_blocked_turn = None
                 elif time.monotonic() >= next_observation:
                     observation = session.observe()
                     next_observation = time.monotonic() + 2

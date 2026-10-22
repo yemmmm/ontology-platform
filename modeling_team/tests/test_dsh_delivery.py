@@ -205,7 +205,7 @@ def test_bad_tool_json_can_continue_original_dsh_session_after_explicit_correcti
     assert len(runtime.provider.requests) == 2 and not calls
 
 
-def test_active_steer_claims_next_step_and_keeps_original_source(runtime):
+def test_active_input_waits_for_next_activity_and_keeps_original_source(runtime):
     provider = runtime.provider
     provider.hold = threading.Event()
     runtime.send(json.dumps({"text": "first"}))
@@ -221,7 +221,7 @@ def test_active_steer_claims_next_step_and_keeps_original_source(runtime):
     settle(runtime)
     rows = runtime.dispatch_status()
     assert rows[1]["state"] == "settled"
-    assert rows[0]["turn_start_seq"] == rows[1]["turn_start_seq"]
+    assert rows[0]["turn_end_seq"] < rows[1]["turn_start_seq"]
     user_blocks = [block for request in provider.requests for message in request["messages"]
                    if message["role"] == "user" for block in message["content"]
                    if block.get("type") == "text" and "host_dispatch_id" in block.get("text", "")]

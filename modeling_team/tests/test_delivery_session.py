@@ -304,10 +304,8 @@ def test_bound_private_artifacts_and_unknown_request_ledger_are_readable(tmp_pat
 class _StubNativeRuntime:
     """Offline stand-in for DeliveryRuntime inside the _run_delivery loop.
 
-    Holds the first turn open (busy) until the expected number of steers has
-    been delivered onto it, mirroring a long-running turn that must not starve
-    later sourced input.  ``steer_failures`` simulates the end-of-turn race by
-    rejecting the first steers exactly like a stale ``expectedTurnId``.
+    Holds the first turn busy briefly, then completes naturally. The legacy
+    steer probe remains so tests can prove that no input uses that path.
     """
 
     def __init__(self, *, steers_to_complete: int = 1, steer_failures: int = 0):
@@ -326,9 +324,9 @@ class _StubNativeRuntime:
 
     def start(self):
         self.events.append('start')
-        # Hold the first turn open long enough for queued input to arrive and
-        # be steered, then self-complete so a broken route still fails fast.
-        self._hold_deadline = time.monotonic() + 5
+        # Hold the first turn open long enough for queued input to arrive,
+        # then self-complete so the next queued input can start normally.
+        self._hold_deadline = time.monotonic() + 0.1
 
     def send(self, text):
         self.events.append('send')
@@ -427,31 +425,30 @@ def test_delivery_session_defaults_to_doubled_window(tmp_path, monkeypatch):
     assert stub.configured_options['model_auto_compact_token_limit'] == 489600
 
 
-def test_run_delivery_steers_queued_input_into_the_active_turn_in_order(tmp_path, monkeypatch):
+def test_run_delivery_sends_queued_inputs_after_natural_completion_in_order(tmp_path, monkeypatch):
     stub, result, record = _run_delivery_with_stub(
         tmp_path, monkeypatch,
         ['第一条排队的技术补充。', '第二条排队的技术补充。'], steers_to_complete=2)
-    # Both packets were steered onto the one still-active turn, in arrival
-    # order, before that turn completed; none was sent as a new turn.
+    # Both original packets wait for natural completion and start later turns.
     assert result == 2
-    assert len(stub.steered) == 2
-    assert '第一条排队的技术补充。' in stub.steered[0]
-    assert '第二条排队的技术补充。' in stub.steered[1]
-    assert stub.events.index('steer') < stub.events.index('turn_completed')
+    assert stub.steered == [] and stub.steer_attempts == 0
+    assert '第一条排队的技术补充。' in stub.sent[1]
+    assert '第二条排队的技术补充。' in stub.sent[2]
+    first_send = stub.events.index('send')
+    assert stub.events.index('turn_completed') < stub.events.index('send', first_send + 1)
     # Original sourcing metadata rides along unchanged.
-    packet = json.loads(stub.steered[0])
+    packet = json.loads(stub.sent[1])
     assert packet['text'] == '第一条排队的技术补充。'
     assert packet['kind'] == 'user_input'
     assert packet['authorization_reference'] == 'user-test'
     assert packet['source_reference'].startswith('delivery:steer-probe:')
-    assert not any('排队的技术补充' in text for text in stub.sent[1:])
     assert record['native_thread_id'] == 'stub-thread'
 
 
 def test_run_delivery_pause_is_sourced_guidance_without_forced_interrupt(tmp_path, monkeypatch):
     stub, result, record = _run_delivery_with_stub(tmp_path, monkeypatch, ['暂停'])
     assert 'interrupt' not in stub.events
-    packet = json.loads(stub.steered[0])
+    packet = json.loads(stub.sent[1])
     assert packet['text'] == '暂停'
     assert 'host_control_result' not in packet
     events = [json.loads(line) for line in (
@@ -460,17 +457,16 @@ def test_run_delivery_pause_is_sourced_guidance_without_forced_interrupt(tmp_pat
     assert not any(entry.get('state') == 'paused' for entry in events)
 
 
-def test_run_delivery_keeps_packet_queued_when_steer_hits_completed_turn(tmp_path, monkeypatch):
+def test_run_delivery_keeps_packet_queued_without_stale_steer(tmp_path, monkeypatch):
     stub, result, record = _run_delivery_with_stub(
         tmp_path, monkeypatch, ['迟到的排队输入。'], steer_failures=1)
-    # The stale steer was attempted exactly once and was not fatal: the packet
-    # stayed queued and was delivered by an ordinary turn/start once idle.
-    assert stub.steer_attempts == 1
+    # No stale steer is attempted: the original packet waits for idle.
+    assert stub.steer_attempts == 0
     assert stub.steered == []
     assert any('迟到的排队输入。' in text for text in stub.sent[1:])
     packet = json.loads(next(text for text in stub.sent[1:] if '迟到的排队输入。' in text))
     assert packet['source_reference'].startswith('delivery:steer-probe:')
-    assert stub.events.index('steer') < stub.events.index('turn_completed')
+    assert 'steer' not in stub.events
 
 
 def test_bound_public_feedback_body_and_retained_response_are_readable(tmp_path):

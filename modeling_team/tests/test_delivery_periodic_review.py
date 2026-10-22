@@ -179,7 +179,7 @@ def test_invalid_followup_is_recoverable_field_feedback(tmp_path, clock, value):
 
 
 @pytest.mark.parametrize("runtime_name", ["codex", "dsh"])
-def test_critical_preempts_old_ordinary_page_and_only_critical_steers(tmp_path, clock, runtime_name):
+def test_critical_is_selected_but_waits_for_natural_completion(tmp_path, clock, runtime_name):
     host = session(tmp_path)
     host.runtime_name = runtime_name
     raw = observation()
@@ -189,7 +189,7 @@ def test_critical_preempts_old_ordinary_page_and_only_critical_steers(tmp_path, 
     host.record_observation(raw)
     old = host._pending_decisions[0]
     old["offset"] = 1  # a known partial ordinary page is still outstanding
-    native = type("Native", (), {"steer": lambda self, text: None})()
+    native = type("Native", (), {"send": lambda self, text: None})()
     assert not host._dispatch_observation(native,
         {"kind": "host_observation", "data": host._model_observation()}, steer=True)
     raw["runs"]["run"]["status"]["data"]["write_phase"] = "unknown"
@@ -197,7 +197,8 @@ def test_critical_preempts_old_ordinary_page_and_only_critical_steers(tmp_path, 
     packet = host._model_observation()
     assert packet["input_id"] != old["input_id"]
     assert packet["trigger"]["kind"] == "critical_event"
-    assert host._dispatch_observation(native, {"kind": "host_observation", "data": packet}, steer=True)
+    assert not host._dispatch_observation(native, {"kind": "host_observation", "data": packet}, steer=True)
+    assert host._dispatch_observation(native, {"kind": "host_observation", "data": packet}, steer=False)
     assert old in host._pending_decisions
     host.record_turn_completion("completed")
     assert old not in host._pending_decisions

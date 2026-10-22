@@ -130,8 +130,8 @@ Delivery 独立进程只装载原 instructions、required skill 与获准 Host �
 构建、bubblewrap 和 Host Messages 代理。工具 schema 全集实际比对，无 shell、编辑器、
 任意读取或动态 subagent；双向桥接保留真实 session/callId 与完整 JSON。Host 输入
 包装中的 host_dispatch_id 只关联派发，payload 保留原 v2 输入／用户文本与来源。
-活跃输入进入底层 Agent.steer 的最近 step；技术 interrupt 调 cancel(keepInbox)，不
-冒称官方 SDK 有这两种接口，也不承诺取消远端 provider 请求。
+全部输入沿 session/prompt 进入原生持久队列，当前活动自然结束后消费下一条；不向活跃
+活动注入 steer 或 interrupt，保留原消息身份与 queued／claimed／settled 证据。
 
 `native/dsh-*.jsonl` 保留构建、原始事件、工具回执和逐派发原文；session／conversation
 账本另记 queued、claimed、settled。accepted_by_native 只表示接收，实际 turn/end、
@@ -203,7 +203,9 @@ evaluation_model_profile: dsh-acceptance-deepseek-flash-low
 
 新启动和显式恢复的 Delivery 默认每90秒批量查看普通变化；Host可在原配置设置正整数
 `status_review_interval_seconds`。程序约2秒持续观察，用户／Host新输入与真实关键事件
-即时send／steer，普通变化不向活跃推理持续steer。忙碌跨周期只合并一次到期检查。
+立即记录并排队；全部输入及控制等当前原生turn/activity自然完成后再投递，不在忙碌时
+steer／interrupt。金额在新回合前检查，当前回合允许自然完成并记录尾差。忙碌跨周期
+只合并一次到期检查。
 
 巡检提供最新工作卡／缺卡、窗口变化／重试、真实活动和原件位置。`yield_delivery`
 可用带时区的`next_review_at`为已查明的正常等待延期，仅抑制无新事实的复查。

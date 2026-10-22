@@ -182,7 +182,7 @@ class DSHDeliveryRuntime:
                 "budget_member_identity_missing",
                 {"runtime_session_id": session_id, "expected": self.runtime_session_id},
             )
-        self._budget.require("send")
+        # Admission is checked by _dispatch before the new activity starts.
 
     def _record_budget_control(self, epoch, status, **metadata):
         """Persist a receipt when possible without blocking physical control."""
@@ -624,7 +624,8 @@ class DSHDeliveryRuntime:
         return self._dispatch(text, False)
 
     def steer(self, text):
-        return self._dispatch(text, True)
+        # session/prompt uses the durable native FIFO; active steer cancels the step.
+        return self._dispatch(text, False)
 
     @staticmethod
     def _process_info(pid):
@@ -769,6 +770,12 @@ class DSHDeliveryRuntime:
         except ValueError as exc:
             raise DeliveryRuntimeError("task-budget control epoch is invalid", category="rejected") from exc
         key = f"{action}:{epoch}"
+        if self.busy:
+            pending = getattr(self, "_queued_budget_controls", {})
+            pending[key] = message
+            self._queued_budget_controls = pending
+            return {"status": "pending", "action": action, "epoch": epoch,
+                    "basis": "queued_until_activity_end", **self.identity}
         if key in self._budget_control_epochs:
             return {
                 **self._budget_control_receipts.get(key, {
@@ -826,6 +833,10 @@ class DSHDeliveryRuntime:
                     raise DeliveryRuntimeError("dsh-event-sequence-unresolved; inspect original session events before resume")
         if self.process and self.process.poll() is not None and not self._closed:
             raise DeliveryRuntimeError("DSH Delivery process exited; preserve original session")
+        controls = getattr(self, "_queued_budget_controls", {})
+        if not self.busy and controls:
+            key = next(iter(controls))
+            self.control_budget(controls.pop(key))
         return result
 
     def close(self):

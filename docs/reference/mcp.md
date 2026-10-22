@@ -390,9 +390,10 @@ Codex fast 继承。operation 请求和新报告绑定 runtime；旧报告缺字
 新启动及显式恢复的Delivery使用本策略；存活进程不热替换。Host配置
 `status_review_interval_seconds`，缺省90，须为正整数；程序仍约2秒观察，普通变化不
 send／steer。到期空闲时发送一次当前窗口，忙碌只保留一次到期；普通变化不重置时钟。
-用户／Host新消息、私有结果的原获准流程投影、关键绑定／就绪、异常及授权控制即时处理。
-空闲send、忙碌steer；原生完成竞态保留原身份，未知投递先对账。程序先执行停止／预算
-控制，预算不允许推理时保留输入并回告限制，不新增付费例外。
+用户／Host新消息、私有结果的原获准流程投影、关键绑定／就绪、异常及授权控制即时记录。
+全部输入及控制先入队，当前原生turn/activity自然结束后再send，不在忙碌时steer或
+interrupt。queued不代表实际送达或消费；未知投递仍按原身份对账。金额按新回合准入
+近似控制，已开始回合的工具后续和用量回执自然完成，尾差照实记入原预算。
 
 `delivery-decision-input/v2`增加`trigger.kind`（initial、recovery、critical_event、
 periodic_review、followup_due；外部原输入为external_input）及`periodic_review`：
@@ -664,7 +665,7 @@ Judge 初始 packet 只传冻结资料清单和题目对应；完整获准副本
 并引用相关原文。平台响应采用无损正文注册表并主动按实际输入体积分组，各组覆盖同一
 冻结完整题集，报告分别披露业务资料和平台响应字节量。
 Delivery 程序持续观察并保留 observation.json；无关日志／心跳增长不启动重复推理，
-有意义变化可 steer 当前活跃 turn，用户控制仍优先。
+有意义变化与用户控制均先入队，等当前活跃turn自然结束后再投递。
 
 详细记录格式见 [同轮计时方法](../../modeling_team/references/efficiency-round-record.md)，
 合同与工程／真实验证边界见 [v4.3 设计](../delivery/designs/2026-10-09-v4-3-modeling-efficiency-design.md)。

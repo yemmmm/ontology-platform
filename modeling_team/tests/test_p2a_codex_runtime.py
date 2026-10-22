@@ -38,6 +38,8 @@ def _agent(tmp_path: Path):
         retrieval_asset_fds=(),
         thread_id="thread-p2a",
         active_turn_id="turn-p2a",
+        queued_deliveries=[],
+        dispatches={},
         process=SimpleNamespace(stdin=StringIO()),
     )
 
