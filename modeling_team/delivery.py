@@ -1987,7 +1987,10 @@ class DeliverySession:
                   "allowed_operations": sorted(self.allowed_operations), **extra}
         temporary = self.session_root / "session.tmp"
         temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2))
-        self._append("session-events.jsonl", record)
+        # The queue is already recorded as immutable decision/dispatch events.
+        # Keep it in session.json, not in every journal state checkpoint.
+        self._append("session-events.jsonl", {key: value for key, value in record.items()
+                                             if key != "delivery_inputs"})
         temporary.replace(self.session_root / "session.json")
         if self.conversation:
             state = {"activity": self.activity, "observed_at": now(), "basis": "delivery_state",
@@ -3852,7 +3855,7 @@ class DeliverySession:
         if packet["input_id"] == self._latest_input_id:
             handoff = self._phase_thread_handoff()
             if handoff:
-                core["phase_thread_handoff"] = handoff
+                core = {"phase_thread_handoff": handoff, **core}
         objective_in_snapshot = "delivery_objective" in core.get("task_context", {})
         if not bootstrap and objective_in_snapshot:
             # The full Host task is supplied at bootstrap/recovery. Later
@@ -3926,14 +3929,29 @@ class DeliverySession:
                 if changed(("runs", run_id, "events")):
                     changes.append({"path": ["runs", run_id, "events"], "change": "updated",
                                     "value": run.get("events", {})})
+        review = copy.deepcopy(packet.get("periodic_review"))
+        if review:
+            # Current cards, retry results and coverage gaps remain visible.
+            # Ordinary activity positions/bodies are available in the retained
+            # packet instead of being reread before every decision's core.
+            counts = {}
+            activity = review.get("activity", [])
+            for row in activity:
+                run_id = row.get("run_id")
+                counts[run_id] = counts.get(run_id, 0) + row.get("count", 0)
+            review["activity"] = [{"run_id": run_id, "count": count}
+                                  for run_id, count in counts.items()]
+            review["activity_index"] = {
+                "total": len(activity), "returned": 0, "complete": not activity,
+                "evidence_ref": "evidence", "packet_path": ["periodic_review", "activity"]}
         payload = {"schema_version": "delivery-decision-input/v2", "input_id": item["input_id"],
-                   "trigger": packet.get("trigger", {"kind": "recovery"}),
-                   "periodic_review": packet.get("periodic_review"),
-                   "source_schema_version": packet.get("schema_version", snapshot.get("schema_version")),
                    "mode": "bootstrap" if bootstrap else "changes", "core": core,
-                   "unresolved": unresolved, "changes": changes, "evidence": reference,
-                   "delivery_status": item["delivery_status"],
+                   "unresolved": unresolved,
                    "request_results": packet.get("request_results", []),
+                   "changes": changes, "trigger": packet.get("trigger", {"kind": "recovery"}),
+                   "periodic_review": review,
+                   "source_schema_version": packet.get("schema_version", snapshot.get("schema_version")),
+                   "evidence": reference, "delivery_status": item["delivery_status"],
                    "raw_observation": snapshot.get("raw_observation"),
                    "coverage": {"complete": True, "source_complete": False,
                        "omitted_sections": ["settled_history"] + omitted_stable + ([] if bootstrap else

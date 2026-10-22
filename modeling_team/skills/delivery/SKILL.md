@@ -409,6 +409,11 @@ including unseen changes and receipts. `historical:true` marks earlier read
 events; current core/unresolved facts govern actions, and changes never authorize replay.
 Settled request/operation history is an index, not a reprinted history. Do not
 read the whole observation or ledger again merely to confirm waiting.
+Current core, phase-thread handoff and unresolved identities precede review activity.
+`periodic_review.activity` gives per-run counts; `activity_index` locates the full
+group detail in the retained packet. Current cards, retry results and coverage gaps
+remain visible. Read ordinary activity detail only for a concrete decision gap;
+do not expand it merely to decide the same wait or to request a ready phase handoff.
 Completed Host results use completed_index once their new result has been
 shown. A completed, qualified evaluation may also be indexed while its members
 remain in standby; process exit is not required. New report/binding changes,

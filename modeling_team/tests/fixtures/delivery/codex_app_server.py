@@ -27,6 +27,7 @@ features = {
 # with marker files inside the private runtime home instead of env vars.
 ignore_overlay = (home / 'ignore_overlay_features').exists()
 hold_turn_for_steer = (home / 'hold_turn_for_steer').exists()
+notification_burst = int((home / 'notification_burst').read_text()) if (home / 'notification_burst').exists() else 0
 
 def emit(value):
     with (home / 'server-events.jsonl').open('a') as handle:
@@ -63,6 +64,8 @@ for line in sys.stdin:
         pending = f'turn-{turn}'
         emit({'id': request_id, 'result': {'turn': {'id': pending}}})
         emit({'method': 'item/agentMessage/delta', 'params': {'delta': 'PRIVATE-HIDDEN-CANARY'}})
+        for _ in range(notification_burst):
+            emit({'method': 'item/agentMessage/delta', 'params': {'delta': 'x'}})
         if not hold_turn_for_steer:
             emit({'id': 700 + turn, 'method': 'item/tool/call', 'params': {
                 'threadId': thread_id, 'turnId': pending,

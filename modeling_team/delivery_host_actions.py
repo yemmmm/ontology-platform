@@ -11,8 +11,12 @@ import hashlib
 import json
 import os
 import re
+import threading
 from collections.abc import Iterator, Mapping, Sequence
+from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from .host_ops import HostOpError
@@ -246,31 +250,66 @@ def read_session_journal(session_root: Path | str) -> bytes:
             ) from exc
 
 
+@dataclass
+class _HostJournalCursor:
+    signature: tuple[int, ...] | None = None
+    offset: int = 0
+    events: list[tuple[dict[str, Any], int, int]] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
+    lock: threading.RLock = field(default_factory=threading.RLock)
+
+
+@lru_cache(maxsize=32)
+def _host_journal_cursor(root: Path) -> _HostJournalCursor:
+    return _HostJournalCursor()
+
+
 def _read_locked(root: Path) -> tuple[list[tuple[dict[str, Any], int, int]], list[str]]:
-    path = root / SESSION_EVENTS_FILENAME
-    try:
-        raw = path.read_bytes()
-    except FileNotFoundError:
-        return [], ["history_not_started"]
-    except OSError as exc:
-        return [], [f"history_unavailable:{exc}"]
-    events, limitations, offset = [], [], 0
-    for line in raw.splitlines(keepends=True):
-        length = len(line)
-        if not line.endswith(b"\n"):
-            limitations.append(f"incomplete_tail:{offset}")
-            break
+    """Read new journal rows under the file lock, retaining only Host actions.
+
+    The journal is append-only. Replacement, truncation or an in-place edit at
+    the same size rebuilds the projection; recovery in another process starts
+    from the original file. A partial tail is retried, never cached as consumed.
+    """
+    cursor = _host_journal_cursor(root)
+    with cursor.lock:
         try:
-            value = json.loads(line)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            limitations.append(f"corrupt_event:{offset}")
-        else:
-            if isinstance(value, dict):
-                events.append((value, offset, length))
-            else:
-                limitations.append(f"non_object_event:{offset}")
-        offset += length
-    return events, limitations
+            with (root / SESSION_EVENTS_FILENAME).open("rb") as handle:
+                stat = os.fstat(handle.fileno())
+                signature = (stat.st_dev, stat.st_ino, stat.st_size,
+                             stat.st_mtime_ns, stat.st_ctime_ns)
+                previous = cursor.signature
+                if previous and (signature[:2] != previous[:2]
+                                 or signature[2] < previous[2]
+                                 or signature[2] == previous[2] and signature != previous):
+                    cursor.offset, cursor.events, cursor.limitations = 0, [], []
+                if signature != previous:
+                    handle.seek(cursor.offset)
+                    for line in handle:
+                        if not line.endswith(b"\n"):
+                            break
+                        length = len(line)
+                        try:
+                            value = json.loads(line)
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            cursor.limitations.append(f"corrupt_event:{cursor.offset}")
+                        else:
+                            if not isinstance(value, dict):
+                                cursor.limitations.append(f"non_object_event:{cursor.offset}")
+                            elif _kind(value) in {HOST_ACTION_REQUEST_EVENT, HOST_ACTION_RESULT_EVENT}:
+                                cursor.events.append((value, cursor.offset, length))
+                        cursor.offset += length
+                    cursor.signature = signature
+        except FileNotFoundError:
+            cursor.signature, cursor.offset = None, 0
+            cursor.events, cursor.limitations = [], []
+            return [], ["history_not_started"]
+        except OSError as exc:
+            return [], [f"history_unavailable:{exc}"]
+        limitations = list(cursor.limitations)
+        if cursor.offset < signature[2]:
+            limitations.append(f"incomplete_tail:{cursor.offset}")
+        return deepcopy(cursor.events), limitations
 
 
 def _kind(event: Mapping[str, Any]) -> str | None:

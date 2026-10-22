@@ -402,6 +402,11 @@ stop/exit/resource/key receipts establish closure; describe each accurately.
 
 Oversized decision inputs explicitly paginate; continue the referenced view or
 collect its input pages before decisions that depend on unreturned collections.
+Current core, phase-thread handoff and unresolved identities precede review activity.
+`periodic_review.activity` contains per-run counts; `activity_index` points to full
+group detail in the retained packet. Current cards, retry results and coverage gaps
+stay visible. Expand ordinary activity only for a concrete decision gap, not merely
+to repeat waiting or request a ready phase handoff.
 Large changed values remain in explicit body pages. Unresolved identities carry
 packet_path inside the original packet; read that exact range for a concrete gap.
 Do not infer absence of pending/unknown writes from a partial page. Old ordinary

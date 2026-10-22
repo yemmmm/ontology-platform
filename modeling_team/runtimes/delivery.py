@@ -584,8 +584,12 @@ class DeliveryRuntime:
             raise
 
     def poll(self, timeout: float = 0) -> list[dict]:
-        value = self._read(timeout)
-        if value is not None:
+        # Drain a bounded burst before the owner does synchronous observation.
+        # Text deltas must not make a tool/completion wait one observer cycle each.
+        for index in range(256):
+            value = self._read(timeout if index == 0 else 0)
+            if value is None:
+                break
             self._handle(value)
         if not self.busy and self._queued_inputs:
             kind, value = self._queued_inputs[0]

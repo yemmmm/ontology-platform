@@ -38,6 +38,12 @@ and optional directory-member path as request_ref; do not retype that request in
 tool arguments. Supply exactly one of request or request_ref, omitting the other key.
 Both enter the same compiler/application path; a candidate_ref selects a candidate,
 not a complete change request. Inline request remains valid for new short changes.
+If native tool arguments fail JSON parsing before the capability is invoked,
+correct your own serialization with the available local JSON parser and submit
+the published prepared-request reference. This error alone is not a platform
+decoder defect and needs no runtime-recovery issue. Preserve your semantic content;
+reconcile any earlier uncertain write before retrying. Escalate only if a valid
+request or the existing material channel actually fails.
 After a static not_written result, use correction.request_ref plus explicitly selected
 request_edits (JSON Patch add/replace/remove/move) rather than regenerating the request.
 Inspect optional suggested_edits and per-resource field_contracts; suggestions never choose
