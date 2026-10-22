@@ -189,6 +189,42 @@ def test_cold_start_exposes_s1_s2_and_delivery_extensions():
         assert schemas_by_name[name].get("required"), name
 
 
+def test_work_board_incremental_filter_is_advertised_and_forwarded(monkeypatch):
+    captured = []
+
+    def board(run_id, **kwargs):
+        captured.append((run_id, kwargs))
+        return {"run_id": run_id, "after_record_seq": kwargs.get("after_record_seq")}
+
+    monkeypatch.setattr(host_ops_mcp, "get_team_work_board", board)
+
+    async def inspect_and_call(client):
+        listing = await client.list_tools()
+        schema = next(tool.inputSchema for tool in listing.tools if tool.name == "get_team_work_board")
+        result = await client.call_tool(
+            "get_team_work_board",
+            {"run_id": "incremental", "view": "history", "after_record_seq": 7},
+        )
+        return schema, _payload(result)
+
+    schema, payload = _session([inspect_and_call])[0]
+    assert "after_record_seq" in schema["properties"]
+    assert captured == [("incremental", {
+        "agent_id": None,
+        "request_id": None,
+        "view": "history",
+        "from_time": None,
+        "to_time": None,
+        "record_seq": None,
+        "after_record_seq": 7,
+        "cursor": None,
+        "source_ref": None,
+        "limit": 25,
+        "include_statistics": False,
+    })]
+    assert payload["data"]["after_record_seq"] == 7
+
+
 def test_production_and_role_surfaces_expose_no_host_only_tool_name():
     """S2-ISO-001 (A07): host-only names stay off production role surfaces.
 

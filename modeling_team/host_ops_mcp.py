@@ -117,18 +117,21 @@ def tool_get_team_work_board(
     run_id: str, agent_id: str | None = None, request_id: str | None = None,
     view: Literal["current", "history", "version"] = "current",
     from_time: str | None = None, to_time: str | None = None, record_seq: int | None = None,
-    cursor: str | None = None, source_ref: dict[str, Any] | None = None,
+    after_record_seq: int | None = None, cursor: str | None = None,
+    source_ref: dict[str, Any] | None = None,
     limit: int = 25, include_statistics: bool = False,
 ) -> dict[str, Any]:
     """Read authorized work reports, shared requests, fixed-prefix history and optional published statistics.
 
-    Times require a timezone and filter history only. The source/cursor fixes a
+    Times require a timezone and filter history only. ``after_record_seq`` is a
+    non-negative history-only incremental filter. The source/cursor fixes a
     retained prefix; source_ref={archive_ref: returned-index} selects an archive.
     Does not dispatch messages, start inference, or recalculate usage.
     """
     return _call(get_team_work_board, run_id, agent_id=agent_id, request_id=request_id,
         view=view, from_time=from_time, to_time=to_time, record_seq=record_seq,
-        cursor=cursor, source_ref=source_ref, limit=limit, include_statistics=include_statistics)
+        after_record_seq=after_record_seq, cursor=cursor, source_ref=source_ref, limit=limit,
+        include_statistics=include_statistics)
 
 
 @mcp.tool(name="get_pending_actions")

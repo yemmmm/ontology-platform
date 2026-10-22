@@ -59,7 +59,8 @@ def test_paged_phase_hint_is_immutable_across_new_observation_and_resume(tmp_pat
     )
     chunks = [first["page"]["text"]]
     while any(item["input_id"] == original_id for item in host._pending_decisions):
-        page = ack(host)
+        original = next(item for item in host._pending_decisions if item["input_id"] == original_id)
+        page = ack(host, item=original)
         assert page["input_id"] == original_id
         assert page["read_original"] == first["read_original"]
         chunks.append(page["page"]["text"])
@@ -123,7 +124,7 @@ def test_historical_page_current_state_reads_the_model_projection(tmp_path, monk
     raw["runs"]["run"]["status"]["data"]["stage"]["phase"] = "LATEST-PHASE"
     host.record_observation(raw)
 
-    historical = host._model_observation()
+    historical = host._model_observation(_item=host._pending_decisions[0])
     current = historical["current_state"]
     assert "/decision-views/" in current["path"]
     data = host.call_tool("read_delivery_artifact", {

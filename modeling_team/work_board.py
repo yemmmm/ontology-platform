@@ -53,6 +53,7 @@ READ_PROPERTIES = {
     "from_time": {"type": "string"},
     "to_time": {"type": "string"},
     "record_seq": {"type": "integer", "minimum": 1},
+    "after_record_seq": {"type": "integer", "minimum": 0},
     "limit": {"type": "integer", "minimum": 1, "maximum": 100},
     "cursor": {"type": "string"},
     "source_ref": {"type": "object"},
@@ -101,7 +102,7 @@ TOOL_SPECS = [
     },
     {
         "name": "get_work_board",
-        "description": "Read permitted work reports/requests or fixed-prefix history. Reports and message receipts are separate facts.",
+        "description": "Read permitted work reports/requests or fixed-prefix history; history may filter records after a non-negative sequence. Reports and message receipts are separate facts.",
         "inputSchema": {
             "type": "object",
             "properties": READ_PROPERTIES,
@@ -611,6 +612,7 @@ class WorkBoard:
         from_time=None,
         to_time=None,
         record_seq=None,
+        after_record_seq=None,
         cursor=None,
         source_ref=None,
         limit=25,
@@ -652,6 +654,13 @@ class WorkBoard:
             raise WorkBoardError(
                 "invalid_work_board_query", "version requires agent_id and record_seq"
             )
+        if after_record_seq is not None and (
+            view != "history" or type(after_record_seq) is not int or after_record_seq < 0
+        ):
+            raise WorkBoardError(
+                "invalid_work_board_query",
+                "after_record_seq requires history view and a non-negative integer",
+            )
         selection = dict(
             agent_id=agent_id,
             request_id=request_id,
@@ -659,6 +668,7 @@ class WorkBoard:
             from_time=from_time,
             to_time=to_time,
             record_seq=record_seq,
+            after_record_seq=after_record_seq,
             include_statistics=_statistics is not None,
         )
         offset = 0
@@ -773,6 +783,8 @@ class WorkBoard:
         else:
             by_seq = {event["record_seq"]: event for event in events}
             for event in events:
+                if after_record_seq is not None and event["record_seq"] <= after_record_seq:
+                    continue
                 kind = event["kind"]
                 if kind == "card":
                     if (

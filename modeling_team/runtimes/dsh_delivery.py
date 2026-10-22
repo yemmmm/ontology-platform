@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import copy
 import os
 import queue
 import shutil
@@ -32,6 +33,84 @@ from .budget import (
 )
 
 
+_DELIVERY_INPUT_POLICY = "delivery-periodic-review/v1"
+_BASELINE_FIELDS = ("build", "tools", "binding", "composition", "instructions_sha256", "input_policy")
+_POLICY_OPTIONAL_PROPERTIES = {
+    "yield_delivery": "next_review_at",
+    "get_team_work_board": "after_record_seq",
+}
+
+
+def _policy_tool_changes(previous_tools, current_tools):
+    """Check the one approved old-session tool-schema transition."""
+
+    previous_by_name = {item["name"]: item for item in previous_tools}
+    current_by_name = {item["name"]: item for item in current_tools}
+    required_names = set(_POLICY_OPTIONAL_PROPERTIES)
+    if set(previous_by_name) != set(current_by_name) or not required_names <= set(current_by_name):
+        return None
+
+    changes = []
+    for name in sorted(current_by_name):
+        old = previous_by_name[name]
+        new = current_by_name[name]
+        if name not in _POLICY_OPTIONAL_PROPERTIES:
+            if old != new:
+                return None
+            continue
+        old_normal = copy.deepcopy(old)
+        new_normal = copy.deepcopy(new)
+        if old.get("description") != new.get("description"):
+            changes.append(f"tools.{name}.description")
+        new_normal["description"] = old.get("description")
+        old_parameters = old.get("parameters")
+        new_parameters = new.get("parameters")
+        old_properties = old_parameters.get("properties")
+        new_properties = new_parameters.get("properties")
+        property_name = _POLICY_OPTIONAL_PROPERTIES[name]
+        if property_name not in new_properties:
+            return None
+        if property_name not in old_properties:
+            if property_name in new_parameters.get("required", []):
+                return None
+            if old_parameters.get("required", []) != new_parameters.get("required", []):
+                return None
+            new_parameters = copy.deepcopy(new_parameters)
+            new_parameters["properties"].pop(property_name)
+            new_normal["parameters"] = new_parameters
+            if old_normal != new_normal:
+                return None
+            changes.append(f"tools.{name}.parameters.properties.{property_name}")
+        elif old_properties[property_name] != new_properties[property_name] or old_normal != new_normal:
+            return None
+    return changes
+
+
+def _policy_upgrade_changes(previous, current):
+    """Return changed fields for the authorized one-time policy upgrade."""
+
+    if "input_policy" in previous or current.get("input_policy") != _DELIVERY_INPUT_POLICY:
+        return None
+    for field in ("build", "binding", "composition"):
+        if previous.get(field) != current.get(field):
+            return None
+    previous_inspect = previous.get("tools")
+    current_inspect = current.get("tools")
+    previous_host = copy.deepcopy(previous_inspect)
+    current_host = copy.deepcopy(current_inspect)
+    previous_host.pop("tools", None)
+    current_host.pop("tools", None)
+    if previous_host != current_host:
+        return None
+    changes = _policy_tool_changes(previous_inspect["tools"], current_inspect["tools"])
+    if changes is None:
+        return None
+    if previous.get("instructions_sha256") != current.get("instructions_sha256"):
+        changes.append("instructions_sha256")
+    changes.append("input_policy")
+    return changes
+
+
 def validate_delivery_runtime(config, binding):
     runtime = config.get("runtime", "codex")
     if runtime not in {"codex", "dsh"}:
@@ -52,10 +131,11 @@ class DSHDeliveryRuntime:
     def __init__(self, *, binding, home, instructions, tools, tool_handler,
                  session_id, profile=None, resume=False, repository_root=None,
                  harness_root=None, provider_factory=MessagesProviderSession,
-                 budget=None, budget_owner_id=None):
+                 budget=None, budget_owner_id=None, input_policy=None):
         self.binding, self.home = binding, Path(home)
         self.instructions, self.tools, self.tool_handler = instructions, tools, tool_handler
         self.session_id, self.profile, self._resume_existing = session_id, profile, resume
+        self.input_policy = input_policy
         self.root = Path(repository_root or Path(__file__).resolve().parents[2])
         self.harness_root = Path(harness_root or "/home/yangxiang/deepseek-harness")
         self.provider_factory = provider_factory
@@ -277,12 +357,24 @@ class DSHDeliveryRuntime:
             baseline = {"build": self.build, "tools": actual, "binding": self.binding.as_dict(),
                 "composition": {name: digest(directory / name) for name in ("entry.mjs", "delivery.mjs", "activity.mjs")},
                 "instructions_sha256": hashlib.sha256(self.instructions.encode()).hexdigest()}
+            if self.input_policy is not None:
+                baseline["input_policy"] = self.input_policy
             baseline_path = self.home / "dsh-baseline.jsonl"
             if self._resume_existing and baseline_path.exists():
                 previous = json.loads(baseline_path.read_text().splitlines()[-1])
-                changed = [key for key in baseline if baseline[key] != previous.get(key)]
-                if changed:
-                    raise DeliveryRuntimeError(f"dsh-recovery-binding-drift: {', '.join(changed)}; no replacement created")
+                migration_fields = None
+                if self.input_policy == _DELIVERY_INPUT_POLICY and "input_policy" not in previous:
+                    migration_fields = _policy_upgrade_changes(previous, baseline)
+                    if migration_fields is not None:
+                        baseline["policy_upgrade"] = {
+                            "prior_instructions_sha256": previous["instructions_sha256"],
+                            "changed_fields": migration_fields,
+                        }
+                if migration_fields is None:
+                    changed = [key for key in _BASELINE_FIELDS
+                               if baseline.get(key) != previous.get(key)]
+                    if changed:
+                        raise DeliveryRuntimeError(f"dsh-recovery-binding-drift: {', '.join(changed)}; no replacement created")
             self._record("baseline", **baseline)
             if self._resume_existing:
                 self._check_tool_recovery()

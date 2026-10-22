@@ -44,6 +44,7 @@ from .delivery_host_actions import (
     append_session_event, request_host_action, host_action_state, read_session_journal,
 )
 from .task_budget import BudgetError, TaskBudget, bind_budget
+from .delivery_review import StatusReview, routine_event
 
 _PUBLIC_KINDS = {"status", "business_question", "decision_request", "final"}
 _READ = {
@@ -506,8 +507,8 @@ def _decision_event_metadata(event: Any) -> Any:
 def _diagnostic_state(event: Any, *, native_operation: str | None = None) -> tuple[str, str, bool] | None:
     """Fold typed diagnostics by current problem state, not append/request identity.
 
-    This is shared by runtimes and unfamiliar plugins. Effectful bindings keep
-    per-record handling; opaque payload changes retain their full content. Only
+    This is shared by runtimes and unfamiliar plugins. Effectful request identities
+    and binding changes stay distinct; opaque payload changes retain their full content. Only
     diagnostic-owned counters/request identities are ignored; business dictionaries
     are untouched.
     """
@@ -563,16 +564,16 @@ def _diagnostic_state(event: Any, *, native_operation: str | None = None) -> tup
             return bool(protected.intersection(value)) or any(has_binding(v) for v in value.values())
         return isinstance(value, list) and any(has_binding(v) for v in value)
 
-    if (has_binding(data) or has_binding(native_values) or "receipt" in source
-            or "control" in source or source.startswith("cq-")):
-        return None
+    bound = has_binding(data) or has_binding(native_values)
     diagnostic = bool({"code", "error", "error_type", "diagnostic", "usage_issues",
                        "provider_error"}.intersection(data)) or _event_needs_action(data)
     volatile = {"recorded_at", "timestamp", "received_at", "seq", "clock_ref",
                 "monotonic_start_ns", "monotonic_end_ns"}
     if diagnostic:
-        volatile.update({"request_id", "provider_request_id", "response_id", "start",
+        volatile.update({"provider_request_id", "response_id", "start",
                          "headers_at", "end", "count", "attempt_index", "time_basis"})
+        if not bound:
+            volatile.add("request_id")
     if data.get("schema_version") == "model-usage-capture/v1":
         volatile.update({"raw_usage", "present_fields", "field_positions", "request_shape"})
     current = {key: value for key, value in data.items() if key not in volatile}
@@ -582,6 +583,9 @@ def _diagnostic_state(event: Any, *, native_operation: str | None = None) -> tup
               "object", "target", "resource_id", "purpose") if key in data}
     if native_operation is not None:
         stream["operation"] = native_operation
+    if bound:
+        stream.update({key: data[key] for key in ("request_id", "operation_id", "issue_id", "delivery_id")
+                       if key in data})
     return (_json_bytes([source, stream]).decode(), _digest_bytes(_json_bytes(current)), diagnostic)
 
 
@@ -630,6 +634,8 @@ def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]])
                         operation = native_calls.pop(key, None)
         noise = _is_decision_event_noise(event)
         problem = _diagnostic_state(event, native_operation=operation)
+        if routine_event(event) and (problem is None or problem[0] not in problems):
+            continue
         if noise and (problem is None or not problem[2]):
             continue
         identity: str | None = None
@@ -919,6 +925,7 @@ _LOCAL_SPECS = [
              "required": ["condition"], "additionalProperties": False}},
          "next_action": {"type": "string", "minLength": 1},
          "reason": {"type": "string", "minLength": 1},
+         "next_review_at": {"type": "string", "description": "Optional ISO timestamp with timezone for rechecking unchanged facts; never delays external inputs, new facts or control deadlines."},
          "active_decisions": {"type": "array", "items": {
              "type": "object", "properties": {
                  "decision_id": {"type": "string", "minLength": 1},
@@ -1034,6 +1041,11 @@ class DeliverySession:
         self.repository_root = repository_root.resolve()
         self.session_root = session_root.resolve()
         self.config = copy.deepcopy(config)
+        interval = config.get("status_review_interval_seconds", 180)
+        if type(interval) is not int or interval <= 0:
+            raise ValueError("status_review_interval_seconds must be a positive integer; correct the configuration and resume")
+        self._status_review = StatusReview(interval, _utc_now())
+        self._resuming = resume
         boundaries = config.get("phase_thread_boundaries", [])
         if not isinstance(boundaries, list) or any(
                 item not in {"production", "acceptance"} for item in boundaries):
@@ -1954,6 +1966,7 @@ class DeliverySession:
                   "operation_kinds": self.operation_kinds,
                   "verification_ids": sorted(self.verification_ids),
                   "event_cursors": self._event_cursors,
+                  "status_review": self._status_review.state(),
                   "delivery_inputs": getattr(self, "_pending_decisions", []),
                   "repair_task_files": sorted(str(x) for x in self.repair_task_files),
                   "model_profile": self.profile.profile_id,
@@ -1994,10 +2007,12 @@ class DeliverySession:
         return list(self._tools.values())
 
     def accept_user_input(self, text: str) -> dict:
-        import uuid
+        message_id = uuid.uuid4().hex
         packet = {"kind": "user_input", "text": text,
+                  "message_id": message_id, "received_at": now(),
+                  "trigger": {"kind": "external_input"},
                   "input_role": self.business_input_role,
-                  "source_reference": f"delivery:{self.session_id}:{self.business_input_role}:{uuid.uuid4().hex}",
+                  "source_reference": f"delivery:{self.session_id}:{self.business_input_role}:{message_id}",
                   "authorization_reference": self.authorization}
         if not self.conversation:
             self._append("user-input.jsonl", packet)
@@ -2005,6 +2020,7 @@ class DeliverySession:
 
     def sourced_packet(self, message: dict) -> dict:
         packet = {**message, "kind": "user_input", "message_kind": message["kind"],
+                  "trigger": {"kind": "external_input", "message_id": message["message_id"]},
                   "input_role": "test-answerer" if message["sender"]["kind"] == "test_answerer" else "user",
                   "authorization_reference": self.authorization,
                   "source_reference": message.get("source_reference") or f"delivery:{self.session_id}:{message['message_id']}"}
@@ -2147,6 +2163,24 @@ class DeliverySession:
                                           owner_id="delivery:" + self.session_id)
         except BudgetError:
             pass  # Keep the original ledger and Host control path available.
+
+    def record_held_inputs(self, packets: list[dict], reason: str) -> None:
+        """Program feedback while inference is disallowed; original inputs stay pending."""
+        recorded = getattr(self, "_held_input_reasons", {})
+        for packet in packets:
+            identity = packet.get("message_id", packet.get("source_reference"))
+            if recorded.get(identity) == reason:
+                continue
+            self._append("session-events.jsonl", {"event": "delivery_input_held",
+                "recorded_at": now(),
+                "message_id": packet.get("message_id"), "source_reference": packet.get("source_reference"),
+                "reason": reason, "budget_ref": self.budget_ref, "status": "pending"})
+            if self.conversation and packet.get("message_id"):
+                self.conversation.append("dispatch_result", message_id=packet["message_id"],
+                    status="pending", reason=reason)
+            print("Delivery input retained: " + reason, flush=True)
+            recorded[identity] = reason
+        self._held_input_reasons = recorded
 
     def _read_artifact(self, value: str, *, source_ref: dict | None = None,
                        selection: dict | None = None, max_bytes: int = 16384,
@@ -2998,6 +3032,13 @@ class DeliverySession:
     def _yield_delivery(self, arguments: dict) -> dict:
         if arguments["input_id"] not in self._input_ids:
             raise ValueError("input_id is outside this session's retained decision inputs")
+        # Validate before persisting a continuation; a bad time is recoverable.
+        next_review = arguments.get("next_review_at")
+        try:
+            StatusReview(self._status_review.interval, _utc_now()).defer(next_review)
+        except ValueError as exc:
+            raise HostOpError("delivery_next_review_invalid", str(exc), obj="next_review_at",
+                retryable=True, next_action="correct next_review_at using an ISO timestamp with timezone and retry") from None
         actions = host_action_state(self.session_root)
         for waiting in arguments["waiting_for"]:
             run_id = waiting.get("run_id")
@@ -3061,6 +3102,8 @@ class DeliverySession:
                   "recorded_at": now(), **copy.deepcopy(arguments)}
         offset, length = append_session_event(self.session_root, record)
         self.last_yield = record
+        self._status_review.defer(next_review)
+        self._save("active")
         if "thread_boundary" in arguments:
             self.pending_thread_handoff = record if arguments["thread_boundary"] else None
         return {"ok": True, "data": {"status": "waiting_recorded", "end_current_turn": True,
@@ -3334,6 +3377,7 @@ class DeliverySession:
         self._last_received_input_id = None
         self.last_yield = None
         self.pending_thread_handoff = None
+        review_records = []
         path = self.session_root / "session-events.jsonl"
         if not path.exists():
             return
@@ -3344,13 +3388,22 @@ class DeliverySession:
             except ValueError:
                 raise ValueError(f"session journal is corrupt at byte {offset}; preserve and repair it")
             event = record.get("event")
+            if "status_review" in record:
+                self._status_review = StatusReview(self._status_review.interval, _utc_now(), record["status_review"])
+            if event == "delivery_review_observation":
+                record["journal_offset"], record["journal_length"] = offset, len(line)
+                review_records.append(record)
+            elif event == "delivery_review_confirmed":
+                self._status_review.confirm(record["window"])
             if "event_cursors" in record:
                 self._event_cursors.update(record["event_cursors"])
             if event == "delivery_decision_input":
                 self._latest_input_id = record["input_id"]
                 self._input_ids.add(record["input_id"])
                 self._pending_decisions.append({"input_id": record["input_id"], "byte_offset": offset,
-                    "byte_length": len(line), "offset": 0, "delivery_status": "pending"})
+                    "byte_length": len(line), "offset": 0, "delivery_status": "pending",
+                    "trigger": record.get("trigger", {"kind": "recovery"}),
+                    "review_window": record.get("periodic_review", {}).get("window")})
                 self._last_current = record["fingerprint_state"]
                 self._last_decision_digest = record["decision_digest"]
                 self._event_cursors.update(record.get("event_cursors", {}))
@@ -3363,7 +3416,7 @@ class DeliverySession:
                 self.last_yield = record
                 if "thread_boundary" in record:
                     self.pending_thread_handoff = record if record["thread_boundary"] else None
-            elif event == "delivery_inputs_coalesced":
+            elif event in {"delivery_inputs_coalesced", "delivery_review_superseded"}:
                 replaced = set(record["input_ids"])
                 self._pending_decisions = [item for item in self._pending_decisions
                                            if item["input_id"] not in replaced]
@@ -3392,8 +3445,113 @@ class DeliverySession:
         for item in self._pending_decisions:
             if item["delivery_status"] == "attempted":
                 item["delivery_status"] = "unknown"
+        self._status_review.records = [row for row in review_records
+            if row["seq"] > self._status_review.confirmed_seq]
+        # An interrupted process cannot confirm a previous activity by ending a
+        # later one. Unconfirmed source ranges remain in the next overview.
+        self._status_review.inflight = {}
 
-    def record_observation(self, observation: dict, *, force_delivery: bool = False) -> bool:
+    def _periodic_review(self, *, bootstrap: bool = False) -> dict:
+        review = self._status_review.summary()
+        records = self._status_review.records
+        if records:
+            start = records[0]["journal_offset"]
+            end = records[-1]["journal_offset"] + records[-1]["journal_length"]
+            review["read_observations"] = self._journal_reference(start, end - start)
+        roles = []
+        for run_id in sorted(self.run_ids):
+            current = self.call_tool("get_team_work_board", {"run_id": run_id}, _model_view=False)
+            if current.get("ok") is not True:
+                roles.append({"run_id": run_id, "report_status": "unavailable", "error": current.get("error")})
+                review["window"]["complete"] = False
+                continue
+            board = current["data"]
+            source = board.get("source_ref")
+            cards = list(board.get("cards", []))
+            coverage = [{"view": "current", "limitations": board["limitations"]}]
+            current_complete = not (set(board.get("limitations", [])) - {"work_board_not_recorded"})
+            # Keep the same immutable prefix across all pages of this view.
+            cursor = board.get("continuation")
+            while cursor:
+                page = self.call_tool("get_team_work_board", {"run_id": run_id, "cursor": cursor}, _model_view=False)
+                if page.get("ok") is not True:
+                    current_complete = False
+                    coverage.append({"view": "current", "error": page.get("error"),
+                        "read_remaining": {"run_id": run_id, "cursor": cursor}})
+                    break
+                if set(page["data"].get("limitations", [])) - {"work_board_not_recorded"}:
+                    current_complete = False
+                    coverage.append({"view": "current", "limitations": page["data"]["limitations"]})
+                cards.extend(page["data"].get("cards", []))
+                cursor = page["data"].get("continuation")
+            current_cursor = cursor
+            after = self._status_review.confirmed_sources.get("work_board:" + run_id, {}).get("max_record_seq", 0)
+            arguments = {"run_id": run_id, "view": "history", "after_record_seq": after}
+            if source:
+                arguments["source_ref"] = source
+            history = self.call_tool("get_team_work_board", arguments, _model_view=False)
+            counts = {}
+            transitions = []
+            history_complete = True
+            while True:
+                if history.get("ok") is not True:
+                    history_complete = False
+                    coverage.append({"error": history.get("error"), "read_remaining": arguments})
+                    break
+                data = history["data"]
+                for row in data.get("history", []):
+                    actor = row.get("actor_id", "unknown")
+                    facts = counts.setdefault(actor, {"count": 0, "changed_fields": {}})
+                    facts["count"] += 1
+                    for field in row.get("changed_fields") or []:
+                        facts["changed_fields"][field] = facts["changed_fields"].get(field, 0) + 1
+                    # Only short typed transitions, never peer/private bodies.
+                    if row.get("kind") != "card":
+                        transitions.append({key: row[key] for key in (
+                            "record_seq", "actor_id", "kind", "request_id", "requester_state",
+                            "assignee_report", "recorded_at") if key in row})
+                if set(data.get("limitations", [])) - {"work_board_not_recorded"}:
+                    history_complete = False
+                    coverage.append({"limitations": data["limitations"]})
+                cursor = data.get("continuation")
+                if not cursor:
+                    break
+                arguments = {**arguments, "cursor": cursor}
+                history = self.call_tool("get_team_work_board", arguments, _model_view=False)
+            if not history_complete or not current_complete:
+                review["window"]["complete"] = False
+            if source and history_complete and current_complete and not cursor:
+                review["window"]["through_sources"]["work_board:" + run_id] = source
+            if not bootstrap:
+                cards = [{**{key: value for key, value in card.items() if key != "card"},
+                          "unchanged": True,
+                          "read_version": {"run_id": run_id, "view": "version",
+                              "agent_id": card["agent_id"], "record_seq": card["record_seq"],
+                              "source_ref": source}}
+                         if card.get("card") and card.get("record_seq", after + 1) <= after else card
+                         for card in cards]
+            roles.append({"run_id": run_id, "cards": cards, "changes_by_actor": counts,
+                "transitions": transitions, "coverage": coverage,
+                "source_ref": source, "current_continuation": current_cursor,
+                "read_history": {"run_id": run_id, "view": "history",
+                                 "after_record_seq": after, "source_ref": source}})
+        review["roles"] = roles
+        review["coverage"]["complete"] = review["window"]["complete"]
+        review["review_id"] = uuid.uuid4().hex
+        return review
+
+    def _next_decision(self) -> dict | None:
+        uncertain = next((item for item in self._pending_decisions
+            if item["delivery_status"] in {"attempted", "unknown"}), None)
+        if uncertain:
+            return uncertain
+        critical = [item for item in self._pending_decisions
+            if item.get("trigger", {}).get("kind") in {"initial", "recovery", "critical_event"}]
+        return next((item for item in critical if not item["offset"]),
+            critical[0] if critical else self._pending_decisions[0] if self._pending_decisions else None)
+
+    def record_observation(self, observation: dict, *, force_delivery: bool = False,
+                           allow_periodic: bool = True) -> bool:
         path = self.session_root / "observation.json"
         previous = json.loads(path.read_text()) if path.exists() else {}
         projected = copy.deepcopy(observation)
@@ -3423,8 +3581,43 @@ class DeliverySession:
                         item[key].pop("source_ref", None)
         for run in decision.get("runs", {}).values():
             remove_source_identity(run.get("requests", {}))
+        events = [(run_id, event) for run_id, run in observation.get("runs", {}).items()
+                  for event in run.get("events", {}).get("data", {}).get("events", [])]
+        # The aggregate retains field transitions and exact original positions.
+        # No raw dialogue, private review body or second model summary is copied.
+        ordinary = copy.deepcopy(decision)
+        for run_id, run in ordinary.get("runs", {}).items():
+            run.pop("events", None)
+            run.get("status", {}).get("data", {})["semantic_progress"] = copy.deepcopy(
+                observation["runs"][run_id].get("status", {}).get("data", {}).get("semantic_progress"))
+        changes = _value_changes(getattr(self, "_review_previous", {}), ordinary)
+        self._review_previous = ordinary
+        runtime_facts = {key: {field: value for field, value in run.get("status", {}).get("data", {}).items()
+                              if field in {"last_verifiable_activity", "liveness", "current_role"}}
+                         for key, run in observation.get("runs", {}).items()}
+        row = self._status_review.record(changes, events, runtime_facts,
+            {"events:" + key: value for key, value in self._event_cursors.items()},
+            _digest_bytes(_json_bytes(ordinary)), _utc_now())
+        if row:
+            offset, length = append_session_event(self.session_root, row)
+            row["journal_offset"], row["journal_length"] = offset, length
+        gaps = {_json_bytes(item): item for record in self._status_review.records
+                for item in record.get("limitations", [])}
+        if gaps:
+            projected["observation_gaps"] = list(gaps.values())
+            decision["observation_gaps"] = list(gaps.values())
         digest = _digest_bytes(_json_bytes(decision))
-        changed = force_delivery or digest != getattr(self, "_last_decision_digest", None)
+        critical = digest != getattr(self, "_last_decision_digest", None)
+        trigger = ("recovery" if self._resuming else "initial") if force_delivery or not self._last_current else (
+            "critical_event" if critical else self._status_review.due(_utc_now()) if allow_periodic else None)
+        if trigger in {"periodic_review", "followup_due"} and self._completed_observations_are_quiet():
+            trigger = None
+        # One outstanding ordinary overview is sufficient while paging or busy.
+        if trigger in {"periodic_review", "followup_due"} and any(
+                item.get("trigger", {}).get("kind") in {"periodic_review", "followup_due"}
+                for item in self._pending_decisions):
+            trigger = None
+        changed = trigger is not None
         record = {"observation_count": previous.get("observation_count", 0) + 1,
                   "wake_count": previous.get("wake_count", 0) + int(changed),
                   "decision_digest": digest, "data": observation}
@@ -3468,7 +3661,11 @@ class DeliverySession:
                             **{key: value for key, value in item.get("result", {}).get("data", {}).items()
                                if key in _STATUS_FIELDS}})
             input_id = uuid.uuid4().hex
+            review = self._periodic_review(bootstrap=trigger in {"initial", "recovery"})
+            self._status_review.scheduled(_utc_now())
             packet = {"event": "delivery_decision_input", "input_id": input_id,
+                "recorded_at": now(),
+                "trigger": {"kind": trigger}, "periodic_review": review,
                 "mode": "bootstrap" if force_delivery or not self._last_current else "changes",
                 "continuation": copy.deepcopy(self.last_yield),
                 "recovery_context": self._recovery_context() if force_delivery or not self._last_current else None,
@@ -3482,11 +3679,12 @@ class DeliverySession:
                     for key, value in self._decision_event_state.items()}}
             offset, byte_length = append_session_event(self.session_root, packet)
             self._pending_decisions.append({"input_id": input_id, "byte_offset": offset,
-                "byte_length": byte_length, "offset": 0, "delivery_status": "pending"})
+                "byte_length": byte_length, "offset": 0, "delivery_status": "pending",
+                "trigger": {"kind": trigger}, "review_window": review["window"]})
             self._input_ids.add(input_id)
             self._latest_input_id = input_id
-            self._last_current = decision
-            self._last_decision_digest = digest
+        self._last_current = decision
+        self._last_decision_digest = digest
         # Persist the cursor only after the full raw observation and change
         # packet have been saved; recovery can also read the journal first.
         self._save("active")
@@ -3513,6 +3711,10 @@ class DeliverySession:
         merged.update(input_id=uuid.uuid4().hex, mode="bootstrap" if bootstrap else "changes",
                       recovery_context=self._recovery_context() if bootstrap else None,
                       coalesced_input_ids=[item["input_id"] for item in pending])
+        critical_packet = next((packet for packet in reversed(packets)
+            if packet.get("trigger", {}).get("kind") in {"initial", "recovery", "critical_event"}), None)
+        if critical_packet:
+            merged["trigger"] = critical_packet["trigger"]
         for key in ("changes", "request_results"):
             values = {}
             for packet in packets:
@@ -3547,7 +3749,9 @@ class DeliverySession:
         self._pending_decisions = [item for item in self._pending_decisions
                                    if item["input_id"] not in replaced]
         self._pending_decisions.append({"input_id": merged["input_id"], "byte_offset": offset,
-            "byte_length": length, "offset": 0, "delivery_status": "pending"})
+            "byte_length": length, "offset": 0, "delivery_status": "pending",
+            "trigger": merged.get("trigger", {}),
+            "review_window": merged.get("periodic_review", {}).get("window")})
         if getattr(self, "_bootstrap_input_id", None) in replaced:
             self._bootstrap_input_id = merged["input_id"]
         self._input_ids.add(merged["input_id"])
@@ -3563,8 +3767,7 @@ class DeliverySession:
         self._coalesce_pending_decisions()
         if _item not in self._pending_decisions:
             _item = None
-        item = _item or next((item for item in self._pending_decisions
-            if item["input_id"] == getattr(self, "_bootstrap_input_id", None)), self._pending_decisions[0])
+        item = _item or self._next_decision()
         journal = self.session_root / "session-events.jsonl"
         with journal.open("rb") as handle:
             raw = handle.read(item["byte_offset"] + item["byte_length"])
@@ -3722,6 +3925,8 @@ class DeliverySession:
                     changes.append({"path": ["runs", run_id, "events"], "change": "updated",
                                     "value": run.get("events", {})})
         payload = {"schema_version": "delivery-decision-input/v2", "input_id": item["input_id"],
+                   "trigger": packet.get("trigger", {"kind": "recovery"}),
+                   "periodic_review": packet.get("periodic_review"),
                    "source_schema_version": packet.get("schema_version", snapshot.get("schema_version")),
                    "mode": "bootstrap" if bootstrap else "changes", "core": core,
                    "unresolved": unresolved, "changes": changes, "evidence": reference,
@@ -3785,6 +3990,7 @@ class DeliverySession:
             return False
         if (self._phase_thread_run_blocker()
                 or self._last_current.get("deadline_events")
+                or self._last_current.get("observation_gaps")
                 or any(item["delivery_status"] in {"unknown", "attempted"}
                        for item in self._pending_decisions)):
             return False
@@ -3824,6 +4030,7 @@ class DeliverySession:
         with self._state_lock:
             reads, self._decision_read_ranges = self._decision_read_ranges, []
             if status != "completed":
+                self._status_review.inflight = {}
                 return
             for item in list(self._pending_decisions):
                 if item["delivery_status"] in {"attempted", "unknown"}:
@@ -3850,10 +4057,38 @@ class DeliverySession:
                     "next_offset": end, "complete": complete, "source_ref": ref,
                 })
                 self._last_received_input_id = item["input_id"]
+                if item.get("review_window"):
+                    self._status_review.received(item["input_id"], item["review_window"], len(raw), intervals)
                 if complete:
                     self._pending_decisions.remove(item)
                 else:
                     item.update(offset=end, delivery_status="pending")
+            for input_id in list(self._status_review.inflight):
+                window = self._status_review.complete_reception(input_id)
+                if window:
+                    self._confirm_review(window, input_id)
+            self._save("active")
+
+    def _confirm_review(self, window: dict, input_id: str) -> None:
+        if window.get("complete") is False:
+            self._append("session-events.jsonl", {"event": "delivery_review_incomplete",
+                "input_id": input_id, "window": window,
+                "note": "native overview received; source coverage has gaps, confirmation positions retained"})
+            return
+        self._append("session-events.jsonl", {"event": "delivery_review_confirmed",
+            "recorded_at": now(),
+            "input_id": input_id, "window": window, "basis": "normal_native_completion"})
+        self._status_review.confirm(window)
+        superseded = [item["input_id"] for item in self._pending_decisions
+            if item["input_id"] != input_id
+            and item.get("trigger", {}).get("kind") in {"periodic_review", "followup_due"}
+            and item["delivery_status"] not in {"attempted", "unknown"}
+            and item.get("review_window", {}).get("through_seq", self._status_review.seq + 1) <= window["through_seq"]]
+        if superseded:
+            self._append("session-events.jsonl", {"event": "delivery_review_superseded",
+                "input_ids": superseded, "confirmed_by": input_id,
+                "note": "overview coverage only; original pages are retained, not marked read"})
+            self._pending_decisions = [item for item in self._pending_decisions if item["input_id"] not in superseded]
 
     def record_native_consumption(self, rows: list[dict]) -> None:
         """Reception offsets and native consumption are separate durable facts."""
@@ -3888,6 +4123,19 @@ class DeliverySession:
                         key: value for key, value in row.items() if key != "payload"},
                     "view_schema_version": data["schema_version"], **received})
                 self._last_received_input_id = item["input_id"]
+                if item.get("review_window"):
+                    # Queue/claim proves native receipt only. A recovered
+                    # settled activity may confirm its own complete overview.
+                    start = data.get("page", {}).get("offset", 0)
+                    self._status_review.received(item["input_id"], item["review_window"],
+                        len(self._input_view_path(item["input_id"]).read_bytes()),
+                        [(start, received["next_offset"])])
+                    reason = row.get("reason")
+                    kind = reason.get("kind") if isinstance(reason, dict) else reason
+                    if row["state"] == "settled" and kind == "completed":
+                        window = self._status_review.complete_reception(item["input_id"])
+                        if window:
+                            self._confirm_review(window, item["input_id"])
                 if received["complete"]:
                     self._pending_decisions.remove(item)
                 else:
@@ -3900,24 +4148,23 @@ class DeliverySession:
                             key: value for key, value in row.items() if key != "payload"})
 
     def _dispatch_observation(self, runtime: DeliveryRuntimeProtocol, payload: dict, *, steer: bool) -> bool:
-        if steer and self.runtime_name == "codex":
-            # Automatic state changes remain queued until the active turn
-            # finishes. Codex steering cancels an in-flight provider response;
-            # explicit user input and budget controls use their own paths.
-            return False
         data = payload.get("observed_state") if payload.get("kind") in {"delivery_start", "delivery_resume"} else payload.get("data")
         data = data or payload
         item = next((item for item in self._pending_decisions
                      if item["input_id"] == data.get("input_id")), None)
         if item is None:
             return True
+        if item["delivery_status"] in {"attempted", "unknown"}:
+            return False  # reconcile the original attempt; never blindly replay
+        if steer and (item["offset"] or item.get("trigger", {}).get("kind") in {"periodic_review", "followup_due"}):
+            return False
         if self.budget:
             try:
                 self.budget.require_available(operation="supervise")
             except BudgetError:
                 return True  # The unchanged input remains pending on this session.
         self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
-            "input_id": item["input_id"], "status": "attempted"})
+            "recorded_at": now(), "input_id": item["input_id"], "status": "attempted"})
         item["delivery_status"] = "attempted"
         try:
             receipt = (runtime.steer if steer else runtime.send)(json.dumps(payload, ensure_ascii=False))
@@ -3931,15 +4178,19 @@ class DeliverySession:
             status = "rejected" if exc.category == "rejected" else "unknown"
             item["delivery_status"] = status
             self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
-                "input_id": item["input_id"], "status": status})
+                "recorded_at": now(), "input_id": item["input_id"], "status": status})
             self._save("active")
             return False
         received = data["delivery_range"]
         self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
-            "input_id": item["input_id"], "status": "accepted",
+            "recorded_at": now(), "input_id": item["input_id"], "status": "accepted",
             **({"native_receipt": receipt} if receipt else {}),
             "view_schema_version": data["schema_version"], **received})
         self._last_received_input_id = item["input_id"]
+        if item.get("review_window"):
+            self._status_review.received(item["input_id"], item["review_window"],
+                len(self._input_view_path(item["input_id"]).read_bytes()),
+                [(item["offset"], received["next_offset"])])
         if received["complete"]:
             self._pending_decisions.remove(item)
         else:
@@ -4010,6 +4261,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                 instructions=instructions, tools=session.tool_specs(), tool_handler=session.call_tool,
                 session_id=session.session_id, profile=session.profile,
                 resume=resume and (session_root / "native/dsh-session.json").exists(),
+                input_policy="delivery-periodic-review/v1",
                 repository_root=repository_root)
         else:
             runtime = DeliveryRuntime(
@@ -4082,7 +4334,9 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         session.record_turn_completion("completed" if kind == "completed" else None)
             if session.runtime_name == "dsh":
                 session.runtime_identity = runtime.identity
-                session.record_native_consumption(runtime.dispatch_status())
+                native_inputs = runtime.dispatch_status()
+                session.record_native_consumption(native_inputs)
+                session.reconcile_native_inputs(native_inputs)
             if failed:
                 if session.budget and not session.budget.show()["admission_open"]:
                     session._append("session-events.jsonl", {"event": "native_turn_failed_during_budget_pause",
@@ -4156,9 +4410,10 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                                                     action="stop", status="effective", basis="bound_owners_exited")
                 continue
             if session.sync_budget_control(runtime):
+                session.record_held_inputs(pending_input, "task budget does not permit new inference; awaiting authorized resume")
                 if time.monotonic() >= next_observation:
                     next_observation = time.monotonic() + 2
-                    session.record_observation(session.observe())
+                    session.record_observation(session.observe(), allow_periodic=False)
                 continue
             if runtime.busy and pending_input and steer_blocked_turn != runtime.turn_id:
                 # An active turn must not starve later sourced input: deliver
@@ -4197,13 +4452,28 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
             if runtime.busy and time.monotonic() >= next_observation:
                 observation = session.observe()
                 next_observation = time.monotonic() + 2
-                session.record_observation(observation)
+                session.record_observation(observation, allow_periodic=False)
             if (runtime.busy and not pending_input and session._pending_decisions
+                    and not session._next_decision()["offset"]
+                    and session._next_decision().get("trigger", {}).get("kind")
+                        not in {"periodic_review", "followup_due"}
                     and steer_blocked_turn != runtime.turn_id):
                 packet = {"kind": "host_observation", "data": session._model_observation()}
                 if not session._dispatch_observation(runtime, packet, steer=True):
                     steer_blocked_turn = runtime.turn_id
             if not runtime.busy:
+                uncertain = session._next_decision()
+                if uncertain and uncertain["delivery_status"] in {"attempted", "unknown"}:
+                    session.record_held_inputs(pending_input, "native input receipt unknown; reconcile the original attempt")
+                    # Keep all new messages and apply controls above, while the
+                    # original native attempt is reconciled. No second activity.
+                    if time.monotonic() >= next_observation:
+                        next_observation = time.monotonic() + 2
+                        session.record_observation(session.observe(), allow_periodic=False)
+                    if eof and server is None:
+                        session._save("supervision_interrupted", reason="native input receipt unknown; reconcile before resume")
+                        return 2
+                    continue
                 try:
                     session.maybe_switch_phase_thread(runtime, pending_inputs=pending_input)
                 except BudgetError as exc:
@@ -4220,20 +4490,31 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         session._hold_budget_refusal(exc)
                         pending_input.insert(0, current)
                         continue
-                    except DeliveryRuntimeError:
+                    except DeliveryRuntimeError as exc:
+                        rejected = exc.category == "rejected"
+                        if rejected:
+                            pending_input.insert(0, current)
                         if session.conversation:
-                            session.conversation.append("dispatch_result", message_id=current["message_id"], status="unknown", reason="native_receipt_unknown")
-                        else:
+                            session.conversation.append("dispatch_result", message_id=current["message_id"],
+                                status="pending" if rejected else "unknown",
+                                reason="native_rejected; retry the original packet" if rejected else "native_receipt_unknown")
+                        elif not rejected:
                             raise
                     else:
                         if session.conversation:
                             session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native",
                                 **({"native_receipt": receipt} if receipt else {}))
                     steer_blocked_turn = None
-                elif session._pending_decisions and not session._completed_observations_are_quiet():
+                elif (session._pending_decisions and not session._completed_observations_are_quiet()
+                      and time.monotonic() >= getattr(session, "_dispatch_retry_at", 0)):
                     packet = {"kind": "host_observation", "data": session._model_observation()}
                     if not session._dispatch_observation(runtime, packet, steer=False):
-                        raise DeliveryRuntimeError("Delivery observation receipt unknown")
+                        status = session._next_decision()["delivery_status"]
+                        session._save("native_input_" + status, reason="preserve and reconcile the original input receipt")
+                        session._dispatch_retry_at = time.monotonic() + 2
+                        if eof and server is None:
+                            return 2
+                        continue
                     steer_blocked_turn = None
                 elif time.monotonic() >= next_observation:
                     observation = session.observe()
@@ -4242,7 +4523,11 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                             and not session._completed_observations_are_quiet()):
                         packet = {"kind": "host_observation", "data": session._model_observation()}
                         if not session._dispatch_observation(runtime, packet, steer=False):
-                            raise DeliveryRuntimeError("Delivery observation receipt unknown")
+                            status = session._next_decision()["delivery_status"]
+                            session._save("native_input_" + status, reason="preserve and reconcile the original input receipt")
+                            session._dispatch_retry_at = time.monotonic() + 2
+                            if eof and server is None:
+                                return 2
                     elif eof and server is None:
                         session._save("supervision_interrupted", reason="business input closed", observation=observation)
                         return 2

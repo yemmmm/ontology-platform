@@ -296,7 +296,7 @@ def test_paged_facts_stay_stable_across_unknown_receipt_and_newer_state(tmp_path
     raw["runs"]["run"]["pending"]["data"]["items"][0]["description"] = "正文" * 20000
     host.record_observation(raw)
     original = host._pending_decisions[0]
-    first = ack(host)
+    ack(host)
     offset = original["offset"]
     original["delivery_status"] = "unknown"
     raw["runs"]["run"]["status"]["data"]["write_phase"] = "unknown"
@@ -304,10 +304,12 @@ def test_paged_facts_stay_stable_across_unknown_receipt_and_newer_state(tmp_path
     page = host._model_observation()
     assert page["page"]["offset"] == offset and page["delivery_status"] == "unknown"
     assert page["current_state"]["input_id"] != original["input_id"]
-    chunks = [first["page"]["text"]]
-    while host._pending_decisions and host._pending_decisions[0] is original:
-        chunks.append(ack(host)["page"]["text"])
-    decoded = json.loads("".join(chunks))
+    # R4.4-003: an uncertain native submission cannot be retried merely to
+    # advance pages. The frozen projection remains readable without replay.
+    assert not host._dispatch_observation(type("Native", (), {})(),
+        {"kind": "host_observation", "data": page}, steer=False)
+    decoded = json.loads(host._input_view_path(original["input_id"]).read_text())
+    assert original["delivery_status"] == "unknown" and original["offset"] == offset
     assert decoded["runs"]["run"]["pending"]["data"]["items"][0]["description"] == "正文" * 20000
 
 

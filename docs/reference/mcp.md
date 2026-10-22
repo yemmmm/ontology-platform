@@ -14,9 +14,10 @@
 回执分别报告 record／message 状态；`runtime_accepted` 只表示 Adapter 接受，不表示对方完成。
 
 Host MCP 新增只读 `get_team_work_board(run_id,agent_id?,request_id?,view?,from_time?,to_time?,
-record_seq?,cursor?,source_ref?,limit=25,include_statistics=false)`。默认 current；history
+record_seq?,after_record_seq?,cursor?,source_ref?,limit=25,include_statistics=false)`。默认 current；history
 返回获准变化；version 需要 agent_id 与准确的卡片 record_seq。时间须带时区，按半开
-区间筛选历史。页先按权限过滤，返回各集合 total／returned／complete 及统一 continuation；
+区间筛选历史。`after_record_seq` 仅用于 history，要求非负整数，并返回固定来源前缀内
+严格大于该序号的记录。页先按权限过滤，返回各集合 total／returned／complete 及统一 continuation；
 续读保持原选择并传 cursor。source_ref 绑定 path／byte_length／sha256／末序号，来源变化
 报 source_changed。Delivery 由会话绑定流程投影，模型不能选择 viewer 权限。
 请求内较长反馈及消息列表仅展示最近5条，完整数量、覆盖与原 history 定位一并返回。
@@ -28,10 +29,11 @@ record_seq?,cursor?,source_ref?,limit=25,include_statistics=false)`。默认 cur
 backend/.venv/bin/python -m modeling_team work-board --run-id RUN
 backend/.venv/bin/python -m modeling_team work-board --run-id RUN --agent AGENT --history --with-statistics --json
 backend/.venv/bin/python -m modeling_team work-board --run-id RUN --agent AGENT --record-seq 42
+backend/.venv/bin/python -m modeling_team work-board --run-id RUN --agent AGENT --history --after-record-seq 42 --json
 backend/.venv/bin/python -m modeling_team work-board --run-id RUN --history --archive-ref evidence/work-board-retrospectives/snapshot-FINGERPRINT/index.json
 ```
 
-CLI 还支持 `--from`、`--to`、`--cursor`、`--source-ref`（返回的 JSON）及 `--limit`。
+CLI 还支持 `--from`、`--to`、`--after-record-seq`、`--cursor`、`--source-ref`（返回的 JSON）及 `--limit`。
 统计直接引用019／036已发布结果，按真实成员／会话列一次；历史时间过滤不改统计窗口，
 不分摊每卡精确token，不返回隐藏成员的总量或占比。关闭发布后附属生成私有历史快照及
 统计版本索引，查询旧索引不混入最新统计。归档失败不改变原关闭、清理或统计 ready。
@@ -383,10 +385,34 @@ Codex fast 继承。operation 请求和新报告绑定 runtime；旧报告缺字
 不能匹配 DSH 请求。Delivery 用 `evaluation_runtime`／`evaluation_model_profile` 固定所选
 验收绑定，模型工具不能自行改选。权限、冻结、治理读回、完整分母和独立语义裁决保持原合同。
 
+### R4.4-003：即时关键输入与普通批量巡检
+
+新启动及显式恢复的Delivery使用本策略；存活进程不热替换。Host配置
+`status_review_interval_seconds`，缺省180，须为正整数；程序仍约2秒观察，普通变化不
+send／steer。到期空闲时发送一次当前窗口，忙碌只保留一次到期；普通变化不重置时钟。
+用户／Host新消息、私有结果的原获准流程投影、关键绑定／就绪、异常及授权控制即时处理。
+空闲send、忙碌steer；原生完成竞态保留原身份，未知投递先对账。程序先执行停止／预算
+控制，预算不允许推理时保留输入并回告限制，不新增付费例外。
+
+`delivery-decision-input/v2`增加`trigger.kind`（initial、recovery、critical_event、
+periodic_review、followup_due；外部原输入为external_input）及`periodic_review`：
+固定序号窗口、角色当前卡／缺卡、变化字段及次数、失败计数和最新结果、实际活动与准确
+证据引用。旧卡不推断卡死；未变卡片正文用版本引用替代，详情沿原权限及固定分页补读。
+普通历史页不阻塞关键输入。概况必要页连续送达且原生正常结束后才确认来源位置；
+失败／unknown、缺序号或坏页保留位置和具体覆盖缺口。概况接收不等于原件全文已读、
+问题已解决或写入已消费。实际完成且无未决工作后停止普通巡检，仍保留新输入和异常通路。
+原用量账本、触发类别及原生接收／完成记录用于统计；工程通过不证明真实净降耗或语义质量。
+
+DSH显式恢复对旧无标记基线支持一次`delivery-periodic-review/v1`兼容更新：仅新增上述
+两个可选工具参数及对应提示／描述，原session、模型／构建／插件和未决工具／事件屏障
+保持。原JSONL中追加完整新基线及旧SHA证据；其他schema漂移、后续策略标记漂移仍拒绝。
+
 ### R4.3-030 首批：按需决策与 v2 模型视图
 
 Delivery 本地新增 `yield_delivery`，必填 `input_id`、`phase`、`waiting_for`、
-`next_action`、`reason`、`active_decisions`；可附 `evidence_references`。
+`next_action`、`reason`、`active_decisions`；可附 `evidence_references` 及带时区ISO时间
+`next_review_at`。后者仅延期相同事实下的重复复查，新事实、用户／Host输入及原期限仍生效；
+省略则按常规周期，格式错误返回可纠正的 `delivery_next_review_invalid`。
 等待对象用当前 session 的 `run_id`、`operation_id`、`host_request_id` 或
 `run_id`＋`request_id`，另附 `condition`。有效决定逐项带 `decision_id`、`text`、
 `source_references` 与显式 `replaces` 列表。工具只向原 session journal 追加
@@ -411,8 +437,8 @@ Delivery 本地新增 `yield_delivery`，必填 `input_id`、`phase`、`waiting_
 
 DSH正常排队回执、已接收地图以及公开输入的queued／claimed／settled记录保留原件，
 不单独触发模型决策；pending、错误／unknown、损坏或不识别的形状继续可见。
-原生`tool/result.message.isError=true`始终作为错误，元数据带`tool_error=true`，
-即使正文碰巧为成功形状JSON，也不会按普通成功过滤。
+原生`tool/result.message.isError=true`始终保留为错误；已明确可纠正且无控制／写入不确定性
+的反馈在003批量窗口中记录错误次数及最新结果，其余异常沿即时路径提供最小诊断。
 
 `get_run_status`、`get_pending_actions`、`get_evaluation_status`、`get_request_result`
 仅在 Delivery 模型边界返回 `delivery-tool-view/v1` 简明结果；原始结果先存入

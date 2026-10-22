@@ -199,6 +199,21 @@ evaluation_model_profile: dsh-acceptance-deepseek-flash-low
 [开发测试记录](../docs/delivery/records/2026-10-18-r4-3-034-implementation-test-record.md)
 分别跟踪工程、真实运行、独立质量、切换、净效果和账单，不互作证明。
 
+## R4.4-003：Delivery 批量巡检
+
+新启动和显式恢复的 Delivery 默认每180秒批量查看普通变化；Host可在原配置设置正整数
+`status_review_interval_seconds`。程序约2秒持续观察，用户／Host新输入与真实关键事件
+即时send／steer，普通变化不向活跃推理持续steer。忙碌跨周期只合并一次到期检查。
+
+巡检提供最新工作卡／缺卡、窗口变化／重试、真实活动和原件位置。`yield_delivery`
+可用带时区的`next_review_at`为已查明的正常等待延期，仅抑制无新事实的复查。
+按角色／操作定向补读；卡片未变不自动判死、催办或修模。历史详情可用
+`work-board --run-id <run_id> --history --after-record-seq <序号>`，并沿固定source／cursor续读。
+
+窗口仅在必要页接收且原生正常完成后确认；覆盖缺口或unknown保留原位置。
+恢复承接原约束、预算、窗口和待办，不自动重开生产或热改活跃进程。工程验证与真实
+全链降耗、完整4题质量及独立语义验收分别判断，后者须另有运行授权。
+
 ### Recoverable issue control feedback
 
 A foreground/FIFO `issue_resolution` with a complete issue binding received while

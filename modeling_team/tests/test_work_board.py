@@ -160,6 +160,77 @@ def test_history_versions_frozen_paging_and_time_filter(broker):
         )
 
 
+def test_history_incremental_filter_is_frozen_and_cursor_bound(broker):
+    from modeling_team.host_ops import HostOpError, get_team_work_board
+
+    root, repository = host_setup(broker)
+    for text in ("理解资料", "分析业务", "核对成果"):
+        call(broker, "a", "update_work_card", card={"current_work": text})
+
+    first = get_team_work_board(
+        root.name,
+        agent_id="a",
+        view="history",
+        after_record_seq=1,
+        limit=1,
+        repository_root=repository,
+    )
+    assert [row["card"]["current_work"] for row in first["history"]] == ["分析业务"]
+    assert first["source_ref"]["max_record_seq"] == 3
+
+    # Appends after the first page stay outside the fixed source prefix.
+    call(broker, "a", "update_work_card", card={"current_work": "新追加"})
+    page = first
+    rows = first["history"][:]
+    while page["continuation"]:
+        page = get_team_work_board(
+            root.name,
+            agent_id="a",
+            view="history",
+            after_record_seq=1,
+            limit=1,
+            cursor=page["continuation"],
+            repository_root=repository,
+        )
+        rows.extend(page["history"])
+    assert [row["card"]["current_work"] for row in rows] == ["分析业务", "核对成果"]
+
+    with pytest.raises(HostOpError) as error:
+        get_team_work_board(
+            root.name,
+            agent_id="a",
+            view="history",
+            after_record_seq=0,
+            limit=1,
+            cursor=first["continuation"],
+            repository_root=repository,
+        )
+    assert error.value.code == "invalid_work_board_cursor"
+
+
+@pytest.mark.parametrize(
+    "view, after_record_seq",
+    [("current", 0), ("version", 0), ("history", -1), ("history", True)],
+)
+def test_incremental_history_filter_is_non_negative_and_history_only(
+    broker, view, after_record_seq
+):
+    from modeling_team.host_ops import HostOpError, get_team_work_board
+
+    root, repository = host_setup(broker)
+    call(broker, "a", "update_work_card", card={"current_work": "一条记录"})
+    with pytest.raises(HostOpError) as error:
+        get_team_work_board(
+            root.name,
+            agent_id="a",
+            view=view,
+            record_seq=1 if view == "version" else None,
+            after_record_seq=after_record_seq,
+            repository_root=repository,
+        )
+    assert error.value.code == "invalid_work_board_query"
+
+
 def test_record_failure_does_not_send_or_poison_normal_transport(broker, monkeypatch):
     def failed(*args, **kwargs):
         raise OSError("disk unavailable")
@@ -593,6 +664,33 @@ def test_cli_history_version_and_archive_read_without_inference(broker, monkeypa
     assert cli.main() == 0
     result = json.loads(capsys.readouterr().out)
     assert result["statistics_groups"][0]["usage"]["tokens"]["input_tokens"] == 100
+
+
+def test_cli_history_after_record_seq_reads_only_the_increment(broker, monkeypatch, capsys):
+    from modeling_team import __main__ as cli
+
+    root, repository = host_setup(broker)
+    first = call(broker, "a", "update_work_card", card={"current_work": "第一版"})
+    call(broker, "a", "update_work_card", card={"current_work": "第二版"})
+    monkeypatch.setattr(cli, "repository_root", lambda: repository)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "modeling_team",
+            "work-board",
+            "--run-id",
+            root.name,
+            "--agent",
+            "a",
+            "--history",
+            "--after-record-seq",
+            str(first["record_seq"]),
+            "--json",
+        ],
+    )
+    assert cli.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert [row["card"]["current_work"] for row in result["history"]] == ["第二版"]
 
 
 def test_minimal_chain_roles_are_read_from_the_frozen_actual_roster(broker):

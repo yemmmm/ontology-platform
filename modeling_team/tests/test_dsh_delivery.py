@@ -1,4 +1,6 @@
 """Pinned DSH process and SDK, deterministic local Messages server, no external LLM."""
+import copy
+import hashlib
 import json
 import threading
 import time
@@ -270,6 +272,107 @@ def test_persisted_resume_keeps_original_session_and_queued_input(runtime, phase
         settle(restored)
     finally:
         restored.close()
+
+
+def test_dsh_resume_migrates_periodic_review_policy_without_inference(tmp_path):
+    from modeling_team.delivery import DeliverySession
+
+    config = {"session_id": "policy-migration", "runtime": "dsh",
+              "model_profile": "dsh-deepseek-flash-low", "authorization_reference": "engineering",
+              "allowed_operations": ["read"]}
+    host = DeliverySession(repository_root=ROOT, session_root=tmp_path / "session", config=config)
+    current_tools = host.tool_specs()
+    old_tools = copy.deepcopy(current_tools)
+    optional = {"yield_delivery": "next_review_at", "get_team_work_board": "after_record_seq"}
+    by_name = {tool["name"]: tool for tool in old_tools}
+    assert set(optional) <= set(by_name)
+    for name, property_name in optional.items():
+        assert property_name in by_name[name]["inputSchema"]["properties"]
+        by_name[name]["inputSchema"]["properties"].pop(property_name)
+    previous_instructions = "previous approved Delivery instructions"
+    current_instructions = (ROOT / "modeling_team/agent-packages/delivery/instructions.md").read_text()
+    current_instructions += "\n" + (ROOT / "modeling_team/skills/delivery/SKILL.md").read_text()
+    home = host.session_root / "native"
+    old_runtime = DSHDeliveryRuntime(binding=host.binding, home=home, instructions=previous_instructions,
+        tools=old_tools, tool_handler=host.call_tool, session_id=host.session_id,
+        provider_factory=LocalMessagesProvider)
+    restored = None
+    try:
+        old_runtime.start()
+        old_runtime.provider.tool_calls = False
+        old_runtime.send(json.dumps({"message_id": "original", "text": "ORIGINAL_POLICY_CONSTRAINT"}))
+        settle(old_runtime)
+        original = old_runtime.runtime_session_id
+        old_runtime._rpc("host/checkpoint", {"sessionId": original})
+        old_runtime.close()
+        restored = DSHDeliveryRuntime(binding=host.binding, home=home, instructions=current_instructions,
+            tools=current_tools, tool_handler=host.call_tool, session_id=host.session_id,
+            provider_factory=LocalMessagesProvider, resume=True,
+            input_policy="delivery-periodic-review/v1")
+        restored.start()
+        assert restored.runtime_session_id == original
+        assert not restored.provider.requests
+        restored.provider.tool_calls = False
+        restored.send(json.dumps({"text": "NEXT_POLICY_INPUT"}))
+        settle(restored)
+        request = json.dumps(restored.provider.requests[-1])
+        assert "ORIGINAL_POLICY_CONSTRAINT" in request and "NEXT_POLICY_INPUT" in request
+        assert "next_review_at" in request and "after_record_seq" in request
+        records = [json.loads(line) for line in (home / "dsh-baseline.jsonl").read_text().splitlines()]
+        upgrade = records[-1]["policy_upgrade"]
+        assert upgrade["prior_instructions_sha256"] == hashlib.sha256(previous_instructions.encode()).hexdigest()
+        assert {"input_policy", "instructions_sha256",
+                "tools.yield_delivery.parameters.properties.next_review_at",
+                "tools.get_team_work_board.parameters.properties.after_record_seq"} <= set(upgrade["changed_fields"])
+        assert "input_policy" not in records[0]
+        assert records[-1]["input_policy"] == "delivery-periodic-review/v1"
+        assert records[-1]["instructions_sha256"] == hashlib.sha256(current_instructions.encode()).hexdigest()
+    finally:
+        old_runtime.close()
+        if restored is not None:
+            restored.close()
+
+
+def test_dsh_policy_migration_rejects_unapproved_schema_drift(tmp_path):
+    from modeling_team.delivery import DeliverySession
+
+    config = {"session_id": "policy-drift", "runtime": "dsh",
+              "model_profile": "dsh-deepseek-flash-low", "authorization_reference": "engineering",
+              "allowed_operations": ["read"]}
+    host = DeliverySession(repository_root=ROOT, session_root=tmp_path / "session", config=config)
+    current_tools = host.tool_specs()
+    old_tools = copy.deepcopy(current_tools)
+    optional = {"yield_delivery": "next_review_at", "get_team_work_board": "after_record_seq"}
+    for name, property_name in optional.items():
+        by_name = next(tool for tool in old_tools if tool["name"] == name)
+        by_name["inputSchema"]["properties"].pop(property_name)
+    old_runtime = DSHDeliveryRuntime(binding=host.binding, home=host.session_root / "native",
+        instructions="previous approved Delivery instructions", tools=old_tools,
+        tool_handler=host.call_tool, session_id=host.session_id, provider_factory=LocalMessagesProvider)
+    try:
+        old_runtime.start()
+        old_runtime.provider.tool_calls = False
+        old_runtime.send(json.dumps({"text": "persist before incompatible drift"}))
+        settle(old_runtime)
+        original = old_runtime.runtime_session_id
+        old_runtime._rpc("host/checkpoint", {"sessionId": original})
+        old_runtime.close()
+        drifted = copy.deepcopy(current_tools)
+        target = next(tool for tool in drifted if tool["name"] not in optional)
+        target["inputSchema"]["properties"]["unexpected"] = {"type": "string"}
+        restored = DSHDeliveryRuntime(binding=host.binding, home=host.session_root / "native",
+            instructions="previous approved Delivery instructions", tools=drifted,
+            tool_handler=host.call_tool, session_id=host.session_id, provider_factory=LocalMessagesProvider,
+            resume=True, input_policy="delivery-periodic-review/v1")
+        try:
+            with pytest.raises(DeliveryRuntimeError, match="dsh-recovery-binding-drift"):
+                restored.start()
+            assert restored.runtime_session_id == original
+            assert not restored.provider.requests
+        finally:
+            restored.close()
+    finally:
+        old_runtime.close()
 
 
 def test_process_exit_is_failure_never_idle(runtime):

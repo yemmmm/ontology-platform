@@ -1178,18 +1178,19 @@ def _process_observation(run_root: Path, runs_root: Path) -> dict[str, Any]:
 def get_team_work_board(
     run_id: str, *, agent_id: str | None = None, request_id: str | None = None,
     view: str = "current", from_time: str | None = None, to_time: str | None = None,
-    record_seq: int | None = None, cursor: str | None = None, source_ref: dict | None = None,
+    record_seq: int | None = None, after_record_seq: int | None = None,
+    cursor: str | None = None, source_ref: dict | None = None,
     limit: int = 25, include_statistics: bool = False, repository_root: Path | None = None,
     _projection: str = "host",
 ) -> dict[str, Any]:
-    """Bound, read-only current/history/version view; no model or queue work."""
+    """Bound, read-only current/history/version view; history supports sequence increments."""
     from .work_board import WorkBoardError, read_team_work_board
     root, _ = resolve_run_root(run_id, repository_root=repository_root)
     try:
         return read_team_work_board(root, run_id, projection=_projection, agent_id=agent_id,
             request_id=request_id, view=view, from_time=from_time, to_time=to_time,
-            record_seq=record_seq, cursor=cursor, source_ref=source_ref, limit=limit,
-            include_statistics=include_statistics)
+            record_seq=record_seq, after_record_seq=after_record_seq, cursor=cursor,
+            source_ref=source_ref, limit=limit, include_statistics=include_statistics)
     except (WorkBoardError, OSError) as exc:
         raise HostOpError(getattr(exc, "code", "work_board_unavailable"), str(exc),
             obj=run_id, retryable=True, next_action="correct the selection or inspect the original source; do not replay messages") from None

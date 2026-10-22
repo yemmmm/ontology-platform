@@ -163,16 +163,16 @@ def test_observation_tool_failures_are_decisions(tmp_path):
     assert host.record_observation(before)
 
 
-def test_actionable_host_observation_waits_for_natural_turn_boundary(tmp_path, monkeypatch):
+def test_critical_host_observation_steers_before_natural_turn_boundary(tmp_path, monkeypatch):
     import importlib
     from modeling_team.tests.test_delivery_session import _run_delivery_with_stub
     module = importlib.import_module("modeling_team.delivery")
     monkeypatch.setattr(module.DeliverySession, "observe", observe_after_bootstrap())
     runtime, result, _ = _run_delivery_with_stub(tmp_path, monkeypatch, [], run_ids=["bound"])
     assert result == 2
-    assert runtime.steered == []
-    assert json.loads(runtime.sent[1])["kind"] == "host_observation"
-    assert runtime.events.index("turn_completed") < runtime.events.index("send", 2)
+    assert len(runtime.steered) == 1
+    assert json.loads(runtime.steered[0])["kind"] == "host_observation"
+    assert runtime.events.index("steer") < runtime.events.index("turn_completed")
 
 
 def test_automatic_observation_keeps_decision_for_next_turn(tmp_path, monkeypatch):
@@ -182,7 +182,7 @@ def test_automatic_observation_keeps_decision_for_next_turn(tmp_path, monkeypatc
     monkeypatch.setattr(module.DeliverySession, "observe", observe_after_bootstrap())
     runtime, result, _ = _run_delivery_with_stub(tmp_path, monkeypatch, [], run_ids=["bound"], steer_failures=1)
     assert result == 2
-    assert runtime.steer_attempts == 0
+    assert runtime.steer_attempts == 1
     assert json.loads(runtime.sent[1])["kind"] == "host_observation"
 
 
@@ -457,7 +457,7 @@ def test_resume_persists_full_observation_then_delivers_filtered_state(tmp_path,
     assert state["runs"]["run"]["events"]["data"]["next_cursor"] == "cursor-9"
     assert state["raw_observation"]["excluded_noise_event_records"] == 1
     # The deferred automatic input uses the same filtered view.
-    steered = json.loads(stub.sent[1])
+    steered = json.loads(stub.steered[0])
     assert steered["kind"] == "host_observation"
     assert _HUGE_DELTA not in json.dumps(steered, ensure_ascii=False)
     # The complete record was persisted before delivery, at the referenced path.
@@ -476,7 +476,7 @@ def test_deferred_payload_excludes_only_raw_app_server_records(tmp_path, monkeyp
     runtime, result, _record = _run_delivery_with_stub(
         tmp_path, monkeypatch, [], run_ids=["bound"])
     assert result == 2
-    steered = json.loads(runtime.sent[1])
+    steered = json.loads(runtime.steered[0])
     assert steered["kind"] == "host_observation"
     delivered = json.dumps(steered, ensure_ascii=False)
     assert _HUGE_DELTA not in delivered
@@ -499,7 +499,7 @@ def test_turn_boundary_send_carries_no_raw_app_server_records(tmp_path, monkeypa
     runtime, result, _record = _run_delivery_with_stub(
         tmp_path, monkeypatch, [], run_ids=["bound"], steer_failures=1)
     assert result == 2
-    assert runtime.steered == [] and runtime.steer_attempts == 0
+    assert runtime.steered == [] and runtime.steer_attempts == 1
     sent = json.loads(runtime.sent[1])
     assert sent["kind"] == "host_observation"
     delivered = json.dumps(sent, ensure_ascii=False)
@@ -582,7 +582,6 @@ def test_r4329_known_routine_activity_does_not_wake(tmp_path, source, data):
     {"source": "dynamic-tool-calls.jsonl", "data": {"tool": "read_handoff_material", "result": "accepted", "status": "unknown"}},
     {"source": "capability-calls.jsonl", "data": {"operation": "modeling_apply_batch", "ok": True}},
     {"source": "dynamic-tool-calls.jsonl", "data": {"tool": "read_handoff_material", "result": "accepted", "data": {"write_state": "unknown"}}},
-    {"source": "unknown-new-event.jsonl", "data": {"event": "unrecognized"}},
 ])
 def test_r4329_anomalies_and_ambiguous_write_success_remain_visible(tmp_path, event):
     host = session(tmp_path)
@@ -720,7 +719,8 @@ def test_successful_dsh_dispatch_ack_and_idle_do_not_wake_delivery(tmp_path, fra
     host = session(tmp_path)
     host.record_observation(observation())
     raw = observation()
-    event = {'source': 'dsh-wire.jsonl', 'data': {'agent_id': 'modeling', 'frame': frame}}
+    event = {'source': 'dsh-wire.jsonl', 'byte_offset': 0,
+             'data': {'agent_id': 'modeling', 'frame': frame}}
     raw['runs']['run']['events'] = _events_page([event], next_cursor='next')
     assert not host.record_observation(raw)
     assert json.loads((host.session_root / 'observation.json').read_text())['data'] == raw
@@ -950,14 +950,17 @@ def test_diagnostic_dedup_survives_delivery_restore(tmp_path):
 
 @pytest.mark.parametrize("binding", ["write_state", "mutation_state", "control_epoch",
                                      "authorization_reference", "review_id", "operation_id"])
-def test_problem_folding_preserves_effectful_request_bindings(tmp_path, binding):
+def test_problem_folding_preserves_binding_changes_without_repeating_same_problem(tmp_path, binding):
     host = session(tmp_path)
     host.record_observation(observation())
-    assert host.record_observation(_diagnostic_update(1, **{binding: "unknown"}))
-    assert host.record_observation(_diagnostic_update(2, **{binding: "unknown"}))
+    fields = {binding: "unknown", "request_id": "same-request"}
+    assert host.record_observation(_diagnostic_update(1, **fields))
+    assert not host.record_observation(_diagnostic_update(2, **fields))
+    assert host.record_observation(_diagnostic_update(3, **{**fields, binding: "changed-binding"}))
+    assert host.record_observation(_diagnostic_update(4, **{**fields, "request_id": "another-request"}))
 
 
-def test_unfamiliar_ordinary_record_repeats_fold_but_opaque_content_changes_wake(tmp_path):
+def test_unfamiliar_ordinary_records_remain_in_review_without_waking(tmp_path):
     host = session(tmp_path)
     host.record_observation(observation())
     def update(index, value):
@@ -968,6 +971,7 @@ def test_unfamiliar_ordinary_record_repeats_fold_but_opaque_content_changes_wake
                      "recorded_at": str(index), "opaque": {"value": value}}}],
             next_cursor=str(index))
         return raw
-    assert host.record_observation(update(1, "first"))
+    assert not host.record_observation(update(1, "first"))
     assert not host.record_observation(update(2, "first"))
-    assert host.record_observation(update(3, "changed"))
+    assert not host.record_observation(update(3, "changed"))
+    assert sum(row["count"] for row in host._status_review.summary()["activity"]) == 3

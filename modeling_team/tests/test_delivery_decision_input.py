@@ -15,8 +15,8 @@ def read(host, path, **args):
     return host.call_tool("read_delivery_artifact", {"path": str(path), **args})
 
 
-def ack(host):
-    data = host._model_observation()
+def ack(host, *, item=None):
+    data = host._model_observation(_item=item)
     assert host._dispatch_observation(_StubNativeRuntime(), {"kind": "host_observation", "data": data}, steer=False)
     return data
 
@@ -260,7 +260,7 @@ def test_partial_and_unknown_inputs_keep_their_original_identity(tmp_path):
     assert original["offset"] > 0
     raw["runs"]["run"]["pending"]["data"]["items"] = []
     host.record_observation(raw)
-    data = host._model_observation()
+    data = host._model_observation(_item=original)
     assert data["input_id"] == first["input_id"]
     assert host._pending_decisions[0] == original
     host._pending_decisions[0]["delivery_status"] = "unknown"

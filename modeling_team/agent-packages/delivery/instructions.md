@@ -430,6 +430,9 @@ conditions, `next_action`, `reason`, and the complete still-effective
 source_references and explicit replaces IDs (empty if none). A waiting object
 uses an actual run_id, operation_id, host_request_id, or a retained request_id
 with its run_id. Optional evidence_references can locate an active tool read.
+For a diagnosed normal wait, optional `next_review_at` (ISO time with timezone)
+defers only rechecking unchanged facts. New facts, user/Host inputs and existing
+authorization/operation deadlines still take priority. Omit it for the normal interval.
 The tool only persists a continuation record: after `waiting_recorded`, end
 this activity immediately. Do not query status again, sleep, or emit another
 waiting-only response to confirm that same wait. Natural Codex `turn/completed` or DSH `turn/end`,
@@ -574,14 +577,29 @@ and retention path; report limitations rather than stopping an owner to force ex
 
 ## R4.4-001 work visibility
 
+Program observation retains ordinary updates and supplies a periodic review (default 180 seconds,
+Host-configured `status_review_interval_seconds`). User/Host inputs and actual critical workflow,
+control or safety changes arrive immediately, using send when idle and steer when busy.
+Read `trigger` and `periodic_review`: current cards or explicit missing/stale reports, window changes,
+retry counts, actual activity, coverage and source references. Unchanged card bodies are omitted.
+No update alone proves a stall; token growth alone does not prove effective progress.
 For a specific coordination gap, use the bound read-only `get_team_work_board` tool. It returns
 shareable production reports, request/transport states and references, with optional fixed-prefix
 history, exact versions and already published member/session statistics. Your flow projection
 excludes Host context, peer result bodies and private acceptance members. Times filter history,
 not the original statistics window; missing bindings stay unknown. Follow returned pagination
 and source references. Reports and open requests do not prove progress or add a closure gate.
-Do not poll the board, copy the full board into each decision, or request redundant reports:
-ordinary card updates do not wake you. Necessary errors/blockers still use the original messages,
+Use `view=history, after_record_seq` and the returned fixed source/cursor for targeted follow-up.
+Do not run your own polling loop, copy the full board into each decision or request redundant reports.
+Diagnose suspicious actors/operations first; route semantics to the original Modeling/Coordinator
+and platform code/configuration to Host. Do not automatically chase, restart or remodel idle actors.
+Necessary errors/blockers still use the original messages,
 issues and `request_host_action` paths. Keep your existing yield/wait journal; do not maintain a
 second production card for Delivery. Host can query the retained archive after closure without
 reopening a run. Actual adoption and maintenance cost require separate authorized observations.
+Overview receipt is confirmed only after contiguous required pages and normal native completion;
+it does not mark original versions read or issues resolved. Failed/unknown delivery and source gaps
+retain their positions. Known old ordinary pages never block new critical inputs; uncertain native
+attempts require reconciliation. Completed work with closed requests/resources stops ordinary turns.
+Explicit recovery preserves authorization, review positions and pending inputs; active processes
+do not hot-load this policy. Cost/quality and full-chain token savings still require authorized runs.

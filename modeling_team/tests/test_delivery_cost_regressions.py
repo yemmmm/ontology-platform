@@ -112,7 +112,7 @@ def test_historical_page_keeps_current_authorization_visible(tmp_path):
     host.record_observation(raw)
     # This is the current binding snapshot, independent of the old page's bytes.
     host._last_current["session"]["budget_control"] = {"authorized_amount": "6", "epoch": 4}
-    page = host._model_observation()
+    page = host._model_observation(_item=host._pending_decisions[0])
     assert page["current_state"]["budget_control"]["authorized_amount"] == "6"
     assert page["current_state"]["runs"]["run"]["write_phase"] == "read-only"
 

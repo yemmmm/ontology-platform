@@ -107,15 +107,16 @@ def test_same_native_problem_not_native_call_identity_drives_wakeup(tmp_path, va
     assert observe_event(host, 6, native_result(6, changed, error=error))
 
 
-def test_native_business_bindings_and_opaque_changes_are_not_folded(tmp_path):
+def test_native_binding_changes_and_opaque_changes_remain_immediate(tmp_path):
     host = session(tmp_path)
     host.record_observation(observation())
-    for index in (1, 2):
-        assert observe_event(host, index, native_result(index, {
-            "ok": False, "write_state": "unknown", "operation_id": "apply-1",
+    for index in (1, 2, 3):
+        changed = observe_event(host, index, native_result(index, {
+            "ok": False, "write_state": "unknown", "operation_id": "apply-1" if index < 3 else "apply-2",
             "error": {"code": "unconfirmed"}}))
-    assert observe_event(host, 3, native_result(3, "opaque payload A", error=True))
-    assert observe_event(host, 4, native_result(4, "opaque payload B", error=True))
+        assert changed == (index != 2)
+    assert observe_event(host, 4, native_result(4, "opaque payload A", error=True))
+    assert observe_event(host, 5, native_result(5, "opaque payload B", error=True))
 
 
 def test_unrelated_success_does_not_recover_the_current_native_problem(tmp_path):

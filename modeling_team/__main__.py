@@ -4024,6 +4024,7 @@ def main() -> int:
     board.add_argument("--request", dest="request_id")
     board.add_argument("--history", action="store_true")
     board.add_argument("--record-seq", type=int)
+    board.add_argument("--after-record-seq", type=int)
     board.add_argument("--from", dest="from_time")
     board.add_argument("--to", dest="to_time")
     board.add_argument("--cursor")
@@ -4289,6 +4290,7 @@ def main() -> int:
             result = get_team_work_board(args.run_id, agent_id=args.agent_id, request_id=args.request_id,
                 view="version" if args.record_seq is not None else "history" if args.history else "current",
                 from_time=args.from_time, to_time=args.to_time, record_seq=args.record_seq,
+                after_record_seq=args.after_record_seq,
                 cursor=args.cursor, source_ref=source, limit=args.limit, include_statistics=args.with_statistics,
                 repository_root=repository_root())
             print(json.dumps(result, ensure_ascii=False) if args.json else render_board(result))

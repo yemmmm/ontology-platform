@@ -340,7 +340,7 @@ class _StubNativeRuntime:
         self.steer_attempts += 1
         if self.steer_attempts <= self._steer_failures:
             self._hold = False
-            raise DeliveryRuntimeError('Delivery native RPC failed: turn/steer')
+            raise DeliveryRuntimeError('Delivery native RPC failed: turn/steer', category='rejected')
         self.steered.append(text)
         if len(self.steered) >= self._steers_to_complete:
             self._hold = False
