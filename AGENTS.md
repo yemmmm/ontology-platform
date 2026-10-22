@@ -141,6 +141,12 @@ versioned requirements.
 
 ## 工作流与按需读取
 
+- 2026-10-22 用户确认后续建模启动默认采用：通用建模方法
+  （`modeling_team/profiles/unified-modeling.yaml`）＋最小业务链
+  （`modeling_team/tasks/r4-3-026-minimal-installation-chain.yaml`），全部托管角色含 Delivery
+  和独立验收使用 Codex／`glm-5.3-flash`／`low`（`glm-flash-low`），每个新任务采用独立
+  3 元人民币金额预算。新指令显式覆盖时以新指令为准；默认方案不自行启动任务、追加预算
+  或恢复旧任务，实际启动仍绑定当次用户授权和稳定 `budget_ref`。此默认优先于历史分时调度。
 - 宿主推进建模使用 [modeling-dev-loop](skills/modeling-dev-loop/SKILL.md)；Team 内部技能集中在
   [modeling_team/skills/](modeling_team/skills/README.md)，Modeling 角色的方法为其中的 `ontology-modeling`。
   当前 Team 执行以选定的 `modeling_team/tasks/`、`profiles/` 和 `agent-packages/` 合同为准。
