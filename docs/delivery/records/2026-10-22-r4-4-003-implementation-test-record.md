@@ -104,3 +104,42 @@ R4.3-030与R4.4-002原有未验证边界及历史结果保持。
 以及新提示在下一本地Provider请求采用。变更Python文件Ruff、接口同步与diff检查通过；
 日志留存`workspaces/requirement-tests/r4.4-003-20261022/default90-tests.log`。
 未运行真实付费建模或语义验收；原全量验证和真实效果边界不改写。
+
+## 2026-10-23 Codex普通工具纠错分类修复
+
+用户在151612复盘指出F3／A5反例后要求“请修复该问题”。本次沿现有事件过滤、诊断状态和巡检摘要窄修，
+没有扩大业务范围、启动新建模或改动原运行证据。
+
+- 识别Codex完整的`item/completed → mcpToolCall`信封，不将一次工具调用failed当作
+  整个原生turn失败。只把Team Transport的明确参数拒绝、材料未按接收通道发布及
+  卡片字段错误纳入普通窗口；材料能力不可用、其他未知错误、写入工具仍走关键路径。
+- 普通纠错不因此前同工具成功／恢复而重新升级；窗口保留actor、server/tool、失败
+  次数、最新恢复状态和准确原件位置。原材料授权及参数拒绝保持，不执行权限放宽。
+- 对其他Codex工具诊断去除原生call／turn身份和耗时噪声，按actor、原线程及server/tool
+  归并同态；保留实际错误、失败操作参数、原生上下文与保护性绑定。首次不明错误、
+  状态改变、恢复和复发仍可及时入队，显式恢复后承接原去重状态。
+- 关键事件紧凑元数据增加item类型、server与tool，仍不携带完整参数或业务正文。
+  所有输入继续按用户最新口径等待当前原生回合自然结束，不引入steer／interrupt。
+
+新增回归使用151612原生信封形状及通用内容，修前重现三类误触发和缺失工具类型；
+修后覆盖成功之后再纠错、恢复后再纠错、同态重试／显式恢复、错误变化／恢复／复发、
+未知server／非MCP失败／写入工具／能力不可用，以及参数、结构化结果、JSON文本结果、
+原事件与原生params中的保护性写入身份变化。巡检专项44项通过。
+
+最终覆盖25个Delivery／DSH／Host／工作卡与预算测试文件：**721 passed，2 skipped，
+112.05秒**，包括上述专项，不重复相加。执行仍从`backend/`使用
+`env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest`；文件清单保存在
+`regression-scope.json`，输出为`regression.log`。变更Python文件Ruff及diff／链接检查通过。
+
+另只读重放原始`:1952／2002／7841／7982`四个Codex失败事件：全部判为普通窗口，
+关键事件链未增长，四次失败仍完整计入重试摘要，原文件未变。这是确定性合同重放，
+不是新生产运行或修后净token／语义验收。日志、回归范围及重放标量结果保留在
+`workspaces/requirement-tests/r4.4-003-codex-tool-errors-20261023/`。
+
+GitNexus对`routine_event`及`_diagnostic_state`返回target-not-found；已直接核对调用点：
+`DeliverySession.record_observation → _decision_observation → _decision_events`及
+`StatusReview.record`，影响仅为Delivery过滤、去重与窗口摘要。不宣称图覆盖。
+提交前detect_changes识别4个暂存文件、0个已索引符号，返回low；未收录不代表无影响，
+本次影响结论以直接调用点及上述调用链回归为准。
+未修改backend／frontend或服务配置，不重启应用服务，也不热改保留中的Team进程。
+151612原A5未通过、修后真实采用待证、净降耗／10M未达及原独立非盲4/4结论分别保留。

@@ -21,6 +21,23 @@ def _has_control(value):
     return isinstance(value, list) and any(_has_control(item) for item in value)
 
 
+def codex_tool_result(event):
+    """Recognize a completed MCP invocation, separately from a failed native turn."""
+    if not isinstance(event, dict) or event.get("corrupt") or event.get("truncated"):
+        return None
+    data = event.get("data")
+    if (event.get("source") != "app-server-events.jsonl" or not isinstance(data, dict)
+            or data.get("method") != "item/completed"):
+        return None
+    params = data.get("params")
+    item = params.get("item") if isinstance(params, dict) else None
+    if (isinstance(item, dict) and item.get("type") == "mcpToolCall"
+            and item.get("status") in {"completed", "failed"}
+            and all(isinstance(item.get(key), str) and item[key] for key in ("server", "tool"))):
+        return item
+    return None
+
+
 def routine_event(event):
     """Only protocol facts classify events; unfamiliar anomalies stay immediate."""
     if not isinstance(event, dict) or event.get("corrupt") or event.get("truncated"):
@@ -32,6 +49,30 @@ def routine_event(event):
         return False
     if data.get("category") in {"terminal_report_accepted", "runtime_input_pending"}:
         return False
+    if source == "app-server-events.jsonl":
+        item = codex_tool_result(event)
+        if item is None or item["status"] != "failed" or item["server"] != "team_transport":
+            return False
+        # These feedback codes reject local communication/card input before the
+        # operation takes effect. Unfamiliar errors and write tools stay immediate.
+        result = item.get("result")
+        if isinstance(result, dict):
+            for block in result.get("content") or []:
+                if isinstance(block, dict) and isinstance(block.get("text"), str):
+                    try:
+                        if _has_control(json.loads(block["text"])):
+                            return False
+                    except ValueError:
+                        pass
+        error = item.get("error")
+        message = error.get("message") if isinstance(error, dict) else None
+        if not isinstance(message, str):
+            return False
+        detail = message.partition("Mcp error: -32000: ")[2]
+        if item["tool"] == "send_team_message":
+            return (detail == "invalid Team Transport arguments"
+                    or detail == "material_forbidden: ref is not published for this channel")
+        return item["tool"] == "update_work_card" and detail.startswith("invalid_work_card:")
     if source == "dsh-wire.jsonl":
         frame = data.get("frame")
         params = frame.get("params") if isinstance(frame, dict) else None
@@ -193,6 +234,11 @@ class StatusReview:
             data = event.get("data")
             if not isinstance(data, dict):
                 data = {}
+            item = codex_tool_result(event)
+            if item is not None:
+                data = {**data, "operation": f"{item['server']}/{item['tool']}",
+                        "ok": item["status"] == "completed" and not item.get("error"),
+                        "status": item["status"], "error": item.get("error")}
             if source == "dsh-wire.jsonl":
                 frame = data.get("frame")
                 params = frame.get("params") if isinstance(frame, dict) else None

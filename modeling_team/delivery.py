@@ -44,7 +44,7 @@ from .delivery_host_actions import (
     append_session_event, request_host_action, host_action_state, read_session_journal,
 )
 from .task_budget import BudgetError, TaskBudget, bind_budget
-from .delivery_review import StatusReview, routine_event
+from .delivery_review import StatusReview, codex_tool_result, routine_event
 
 _PUBLIC_KINDS = {"status", "business_question", "decision_request", "final"}
 _READ = {
@@ -481,7 +481,7 @@ def _decision_event_metadata(event: Any) -> Any:
         for key in ("item", "turn"):
             if isinstance(params.get(key), dict):
                 anomaly[key] = {field: value for field, value in params[key].items()
-                                if field in {"error", "status", "id"}}
+                                if field in {"error", "status", "id", "type", "server", "tool"}}
         if anomaly:
             projected["runtime_state"] = anomaly
     if source == "settled.jsonl" and isinstance(data.get("results"), dict):
@@ -527,6 +527,22 @@ def _diagnostic_state(event: Any, *, native_operation: str | None = None) -> tup
         return (_json_bytes([source, data["delivery_id"], data["recipient_id"]]).decode(),
                 _digest_bytes(_json_bytes(current)), True)
     native_values = None
+    item = codex_tool_result(event)
+    if item is not None:
+        params = data["params"]
+        native_values = {key: item[key] for key in ("arguments", "result") if key in item}
+        # Fold only native call/turn identities and timings. Error payloads and
+        # failed operation arguments keep their business/protective bindings.
+        failed = _event_needs_action(item)
+        native_operation = f"{item['server']}/{item['tool']}"
+        data = {key: value for key, value in data.items()
+                if key not in {"params", "param_keys", "has_request_id", "method"}}
+        data["params"] = {key: value for key, value in params.items()
+                          if key not in {"item", "turnId", "threadId", "completedAtMs"}}
+        data.update(event="native-tool-result", runtime_session_id=params.get("threadId"),
+                    operation=native_operation, diagnostic=(
+                        {"failed": True, "error": item.get("error"), **native_values}
+                        if failed else {"status": "recovered"}))
     if source == "dsh-wire.jsonl":
         if native_operation is None:
             return None
@@ -634,7 +650,8 @@ def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]])
                         operation = native_calls.pop(key, None)
         noise = _is_decision_event_noise(event)
         problem = _diagnostic_state(event, native_operation=operation)
-        if routine_event(event) and (problem is None or problem[0] not in problems):
+        if routine_event(event) and (codex_tool_result(event) is not None
+                                    or problem is None or problem[0] not in problems):
             continue
         if noise and (problem is None or not problem[2]):
             continue

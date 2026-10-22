@@ -7,7 +7,7 @@ import pytest
 
 from modeling_team.delivery import DeliverySession
 from modeling_team.tests.test_delivery_session import ROOT, session
-from modeling_team.tests.test_delivery_wakeups import observation, _events_page
+from modeling_team.tests.test_delivery_wakeups import changed_events, observation, _events_page
 
 
 @pytest.fixture
@@ -385,6 +385,114 @@ def test_native_retries_preserve_latest_recovery_and_exact_references(tmp_path, 
     assert retry["failure_count"] == 3
     assert retry["latest_result"]["status"] == "completed"
     assert retry["latest_result"]["latest"]["byte_offset"] == 400
+
+
+def codex_result(index, *, tool="send_team_message", message="invalid Team Transport arguments",
+                 arguments=None, result=None):
+    """Codex item shape retained from 151612, without business material."""
+    return {"source": "app-server-events.jsonl", "byte_offset": index * 100, "data": {
+        "agent_id": "modeling", "method": "item/completed", "has_request_id": False,
+        "param_keys": ["completedAtMs", "item", "threadId", "turnId"], "params": {
+            "completedAtMs": index * 1000, "threadId": "modeling-thread", "turnId": f"turn-{index}",
+            "item": {"type": "mcpToolCall", "id": f"call-{index}", "durationMs": index,
+                     "server": "team_transport", "tool": tool,
+                     "arguments": arguments or {}, "status": "failed" if message else "completed",
+                     "error": {"message": f"tool call error: tool call failed for `team_transport/{tool}`"
+                               f"\n\nCaused by:\n    Mcp error: -32000: {message}"} if message else None,
+                     "result": result}}}}
+
+
+def observe_codex(host, event):
+    raw = observation()
+    raw["runs"]["run"]["events"] = _events_page([event], next_cursor=str(event["byte_offset"]))
+    return host.record_observation(raw)
+
+
+@pytest.mark.parametrize("tool,message", [
+    ("send_team_message", "invalid Team Transport arguments"),
+    ("send_team_message", "material_forbidden: ref is not published for this channel"),
+    ("update_work_card", "invalid_work_card: waiting_note must be text"),
+])
+def test_codex_local_tool_corrections_are_batched_with_retry_and_recovery(
+    tmp_path, clock, tool, message
+):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    finish(host)
+    assert not observe_codex(host, codex_result(0, tool=tool, message=None))
+    for index in range(1, 4):
+        event = codex_result(index, tool=tool, message=message, arguments={"text": str(index)})
+        assert not observe_codex(host, event)
+    assert not observe_codex(host, codex_result(4, tool=tool, message=None))
+    clock[0] += timedelta(seconds=90)
+    assert host.record_observation(observation())
+    packet = host._model_observation()
+    assert packet["trigger"]["kind"] == "periodic_review"
+    retry = next(row for row in packet["periodic_review"]["retries"]
+                 if row["operation"] == f"team_transport/{tool}")
+    assert retry["actor"] == "modeling" and retry["failure_count"] == 3
+    assert retry["latest_result"]["status"] == "completed"
+    assert retry["latest_result"]["latest"]["byte_offset"] == 400
+    finish(host)
+    assert not observe_codex(host, codex_result(5, tool=tool, message=message))
+
+
+def test_codex_unfamiliar_tool_diagnostic_dedups_native_ids_and_tracks_recovery(tmp_path, clock):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    finish(host)
+    assert observe_codex(host, codex_result(1, message="unclassified failure"))
+    packet = finish(host)
+    event = changed_events(packet)["data"]["events"][0]
+    item = event["data"]["runtime_state"]["item"]
+    assert item["type"] == "mcpToolCall" and item["tool"] == "send_team_message"
+    assert item["server"] == "team_transport" and "arguments" not in item
+    assert not observe_codex(host, codex_result(2, message="unclassified failure"))
+    restored = DeliverySession(repository_root=ROOT, session_root=host.session_root,
+                               config=host.config, resume=True)
+    assert not observe_codex(restored, codex_result(3, message="unclassified failure"))
+    assert observe_codex(restored, codex_result(4, message="different failure"))
+    finish(restored)
+    assert observe_codex(restored, codex_result(5, message=None))
+    finish(restored)
+    assert not observe_codex(restored, codex_result(6))
+    assert observe_codex(restored, codex_result(7, message="different failure"))
+
+
+@pytest.mark.parametrize("location", ["arguments", "structuredContent", "content", "event", "params"])
+def test_codex_tool_control_bindings_stay_immediate_and_distinct(tmp_path, clock, location):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    finish(host)
+    for index in range(1, 3):
+        binding = {"write_state": "unknown", "operation_id": f"write-{index}"}
+        result = None
+        if location == "structuredContent":
+            result = {"structuredContent": binding}
+        elif location == "content":
+            result = {"content": [{"type": "text", "text": json.dumps(binding)}]}
+        event = codex_result(index, arguments=binding if location == "arguments" else {},
+                             result=result)
+        if location == "event":
+            event["data"].update(binding)
+        elif location == "params":
+            event["data"]["params"].update(binding)
+        assert observe_codex(host, event)
+        finish(host)
+
+
+@pytest.mark.parametrize("patch", [
+    {"server": "unknown-server"}, {"tool": "modeling_apply_batch"},
+    {"type": "commandExecution"},
+    {"error": {"message": "Mcp error: -32000: material_forbidden: material capability is unavailable"}},
+])
+def test_codex_failure_outside_known_local_correction_stays_immediate(tmp_path, clock, patch):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    finish(host)
+    event = codex_result(1)
+    event["data"]["params"]["item"].update(patch)
+    assert observe_codex(host, event)
 
 
 def test_idle_external_rejection_retries_original_identity(tmp_path, monkeypatch):
