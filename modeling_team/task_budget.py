@@ -894,6 +894,17 @@ class TaskBudget:
             (row.get("sources") or [{}])[0].get("source_id", ""),
             (row.get("sources") or [{}])[0].get("byte_offset", 0),
         ))
+        # Independent files may publish/read native usage before its activity
+        # boundary. Reconcile retained receipts after all sources are read;
+        # otherwise that exact turn falsely enters missing-usage settlement.
+        for row in cumulative:
+            if row.get("runtime") != "codex":
+                continue
+            for ref in row.get("sources", []):
+                source = state.get("sources", {}).get(ref["source_id"])
+                if source is not None:
+                    self._update_attempt(state, {**row, "event": "thread_usage"}, source,
+                                         ref.get("byte_offset", 0), now or _iso(), parsed=row)
         ordinary = [row for row in records if row not in cumulative]
         try:
             accounted = account_usage_units(ordinary, cumulative=cumulative, native=native)
@@ -2276,6 +2287,7 @@ class TaskBudget:
 
         def update(state):
             replay_targets = _copy(state.get("_replay_targets") or {})
+            attempt_count = len(state.get("_attempts", {}))
             if monitor_id is not None:
                 self._touch_monitor(state, monitor_id, now_value)
             had_source_issues = any(
@@ -2352,6 +2364,7 @@ class TaskBudget:
                     or
                     new_records
                     or new_native
+                    or len(state.get("_attempts", {})) != attempt_count
                     or state.get("pending_settlement")
                     or state.get("inflight_count")
                     or not state.get("units")

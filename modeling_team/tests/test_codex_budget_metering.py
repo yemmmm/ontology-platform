@@ -348,6 +348,28 @@ def test_transport_waits_for_its_active_native_turn_without_missing_usage_pause(
     assert not budget.tick(now=LATE)["pause_reasons"]
 
 
+@pytest.mark.parametrize("matching_turn", [True, False])
+def test_native_usage_arriving_before_activity_is_reconciled_by_exact_turn(
+    tmp_path, matching_turn,
+):
+    budget, writer, _ = setup_native(tmp_path)
+    snapshot(writer, 100, END)
+    # The numeric source can be consumed before the independent activity file
+    # publishes this turn, including across ticks and a budget reload.
+    assert budget.tick(now=END)["charged_estimate"] == "0.00028"
+    native_activity(budget, tmp_path, ended=True)
+    if not matching_turn:
+        path = tmp_path / "native-activity.jsonl"
+        path.write_text(path.read_text().replace('"turn-a"', '"other-turn"'))
+    budget = TaskBudget(budget.ref)
+    state = budget.tick(now="2026-10-20T00:00:30+00:00")
+    assert state["charged_estimate"] == "0.00028"
+    assert bool(state["coverage"]["issues"]) is not matching_turn
+    assert bool(state["pause_reasons"]) is not matching_turn
+    attempt = next(iter(budget._load_state()["_attempts"].values()))
+    assert attempt["has_usage"] is matching_turn
+
+
 @pytest.mark.parametrize("first_turn,notification_first", [(False, False), (False, True),
                                                           (True, True)])
 def test_turn_dispatch_precedes_proxy_even_when_start_notice_arrives_late(
