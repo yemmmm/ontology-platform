@@ -10,6 +10,7 @@ delivery evidence. Use the following locations for new documentation.
 | [`requirements/`](requirements/) | Versioned product requirements. Select the version that owns the task; older versions apply through its declared baseline links. |
 | [`reference/`](reference/) | Current public interface and terminology references: HTTP API, MCP tools, and glossary. |
 | [`guides/`](guides/) | Operator and UI usage guides. |
+| [`research/llm-ontology-kg/`](research/llm-ontology-kg/) | Source-backed research on open-source ontology learning, knowledge graph construction, and agent workflows; external-project descriptions, not product requirements. |
 | [`architecture/`](architecture/) | Current architecture overview, ADRs, and semantic-platform architecture history. |
 | [`delivery/designs/`](delivery/designs/) | Requirement or initiative designs that freeze an intended solution. |
 | [`delivery/implementation-plans/`](delivery/implementation-plans/) | Historical execution plans and implementation-status plans. |

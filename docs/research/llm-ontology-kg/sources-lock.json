@@ -1,0 +1,245 @@
+{
+  "research_date": "2026-10-23",
+  "analysis_mode": "Static inspection of cloned source snapshots; no model inference, database deployment, or benchmark reproduction",
+  "scope_note": "referenced_source_paths lists fixed-commit links in project documents; it is not a claim that every file in those repositories was audited",
+  "projects": [
+    {
+      "repository": "HKUST-KnowComp/AutoSchemaKG",
+      "url": "https://github.com/HKUST-KnowComp/AutoSchemaKG",
+      "commit": "d0a1666ae6621806faf814504c73678de4e809f2",
+      "commit_url": "https://github.com/HKUST-KnowComp/AutoSchemaKG/commit/d0a1666ae6621806faf814504c73678de4e809f2",
+      "commit_date": "2026-01-14T15:14:40+08:00",
+      "license_observation": "MIT",
+      "documents": [
+        "01-autoschemakg.md"
+      ],
+      "referenced_source_paths": [
+        "atlas_rag/kg_construction/concept_generation.py",
+        "atlas_rag/kg_construction/concept_to_csv.py",
+        "atlas_rag/kg_construction/triple_config.py",
+        "atlas_rag/kg_construction/triple_extraction.py",
+        "atlas_rag/kg_construction/utils/json_processing/json_to_csv.py",
+        "atlas_rag/llm_generator/llm_generator.py",
+        "atlas_rag/llm_generator/prompt/triple_extraction_prompt.py"
+      ]
+    },
+    {
+      "repository": "clear-nus/edc",
+      "url": "https://github.com/clear-nus/edc",
+      "commit": "02aad17e2fc1e9845c84746b384e7fd3160edc1a",
+      "commit_url": "https://github.com/clear-nus/edc/commit/02aad17e2fc1e9845c84746b384e7fd3160edc1a",
+      "commit_date": "2024-08-13T14:55:59+08:00",
+      "license_observation": "MIT",
+      "documents": [
+        "02-edc.md"
+      ],
+      "referenced_source_paths": [
+        "README.md",
+        "edc/edc_framework.py",
+        "edc/schema_canonicalization.py",
+        "edc/schema_definition.py",
+        "edc/schema_retriever.py",
+        "edc/utils/llm_utils.py",
+        "prompt_templates/sc_template.txt",
+        "run.py"
+      ]
+    },
+    {
+      "repository": "schwallergroup/ontorag",
+      "url": "https://github.com/schwallergroup/ontorag",
+      "commit": "4d54c8aa08c3e22958e3dab7c0a28e04162261da",
+      "commit_url": "https://github.com/schwallergroup/ontorag/commit/4d54c8aa08c3e22958e3dab7c0a28e04162261da",
+      "commit_date": "2025-10-15T17:07:42+02:00",
+      "license_observation": "MIT",
+      "documents": [
+        "03-ontogen.md"
+      ],
+      "referenced_source_paths": [
+        "src/OntoGen/ElementKG/eval_reconstruction.py",
+        "src/OntoGen/README.md",
+        "src/OntoGen/extract_plain_text.py",
+        "src/OntoGen/generate_categories.py",
+        "src/OntoGen/generate_taxonomy.py",
+        "src/OntoGen/termo/termo.py",
+        "src/OntoGen/tree.py"
+      ]
+    },
+    {
+      "repository": "monarch-initiative/ontogpt",
+      "url": "https://github.com/monarch-initiative/ontogpt",
+      "commit": "9224d33f84cce7097c3519e1d9f0e2be46cec056",
+      "commit_url": "https://github.com/monarch-initiative/ontogpt/commit/9224d33f84cce7097c3519e1d9f0e2be46cec056",
+      "commit_date": "2026-09-10T12:35:58-04:00",
+      "license_observation": "BSD-3-Clause",
+      "documents": [
+        "04-ontogpt.md"
+      ],
+      "referenced_source_paths": [
+        "src/ontogpt/clients/llm_client.py",
+        "src/ontogpt/engines/knowledge_engine.py",
+        "src/ontogpt/engines/spires_engine.py",
+        "src/ontogpt/io/owl_exporter.py",
+        "src/ontogpt/io/rdf_exporter.py",
+        "src/ontogpt/templates/drug.yaml",
+        "src/ontogpt/validation/term_validator.py",
+        "tests"
+      ]
+    },
+    {
+      "repository": "brains-group/towards_automated_ontology_generation",
+      "url": "https://github.com/brains-group/towards_automated_ontology_generation",
+      "commit": "aa2fb01f56574e1fc36420318bb86f0364c72945",
+      "commit_url": "https://github.com/brains-group/towards_automated_ontology_generation/commit/aa2fb01f56574e1fc36420318bb86f0364c72945",
+      "commit_date": "2026-03-29T14:31:57-04:00",
+      "license_observation": "No LICENSE found at repository root in this snapshot",
+      "documents": [
+        "05-multi-agent-ontology-generation.md"
+      ],
+      "referenced_source_paths": [
+        "README.md",
+        "agents/eval.py",
+        "agents/multi_agent.py",
+        "tools/file_management.py",
+        "tools/syntax_checks.py"
+      ]
+    },
+    {
+      "repository": "OpenSPG/KAG",
+      "url": "https://github.com/OpenSPG/KAG",
+      "commit": "fdab15b3929d2ee40dfcdd388f90233096a6afc9",
+      "commit_url": "https://github.com/OpenSPG/KAG/commit/fdab15b3929d2ee40dfcdd388f90233096a6afc9",
+      "commit_date": "2026-01-28T21:30:54+08:00",
+      "license_observation": "Apache-2.0",
+      "documents": [
+        "06-kag.md"
+      ],
+      "referenced_source_paths": [
+        "kag/builder/component/aligner/kag_aligner.py",
+        "kag/builder/component/extractor",
+        "kag/builder/component/extractor/schema_constraint_extractor.py",
+        "kag/builder/component/extractor/schema_free_extractor.py",
+        "kag/builder/component/postprocessor/kag_postprocessor.py",
+        "kag/builder/component/writer/kg_writer.py",
+        "kag/builder/default_chain.py",
+        "kag/builder/prompt/spg_prompt.py",
+        "kag/interface/common/model/sub_graph.py",
+        "kag/solver/pipeline/kag_static_pipeline.py",
+        "kag/solver/pipelineconf/deep_thought.yaml"
+      ]
+    },
+    {
+      "repository": "getzep/graphiti",
+      "url": "https://github.com/getzep/graphiti",
+      "commit": "345e73161a61b0a4400f80c64e5bba6a584acb7b",
+      "commit_url": "https://github.com/getzep/graphiti/commit/345e73161a61b0a4400f80c64e5bba6a584acb7b",
+      "commit_date": "2026-10-22T13:17:33-07:00",
+      "license_observation": "Apache-2.0",
+      "documents": [
+        "07-graphiti.md"
+      ],
+      "referenced_source_paths": [
+        "graphiti_core/edges.py",
+        "graphiti_core/graphiti.py",
+        "graphiti_core/nodes.py",
+        "graphiti_core/search/search_config.py",
+        "graphiti_core/utils/maintenance/community_operations.py",
+        "graphiti_core/utils/maintenance/dedup_helpers.py",
+        "graphiti_core/utils/maintenance/edge_operations.py",
+        "graphiti_core/utils/maintenance/node_operations.py",
+        "graphiti_core/utils/maintenance/temporal_edge_utils.py"
+      ]
+    },
+    {
+      "repository": "AuvaLab/itext2kg",
+      "url": "https://github.com/AuvaLab/itext2kg",
+      "commit": "840aba2c89d2f00c84c6b1da4c1c0b6637fa8d5d",
+      "commit_url": "https://github.com/AuvaLab/itext2kg/commit/840aba2c89d2f00c84c6b1da4c1c0b6637fa8d5d",
+      "commit_date": "2026-09-04T18:24:44+02:00",
+      "license_observation": "Apache-2.0",
+      "documents": [
+        "08-itext2kg-atom.md"
+      ],
+      "referenced_source_paths": [
+        "itext2kg/atom/atom.py",
+        "itext2kg/atom/graph_matching/matcher.py",
+        "itext2kg/atom/models",
+        "itext2kg/c_unseen/c_unseen.py",
+        "itext2kg/c_unseen/rare_elements_detector/detector.py",
+        "itext2kg/c_unseen/weak_signal_alerter/alerter.py",
+        "itext2kg/documents_distiller/documents_distiller.py",
+        "itext2kg/itext2kg_star/graph_matching/matcher.py",
+        "itext2kg/itext2kg_star/irelations_extraction/irelations_extractor.py",
+        "itext2kg/itext2kg_star/itext2kg.py",
+        "itext2kg/itext2kg_star/itext2kg_star.py",
+        "itext2kg/llm_output_parsing/langchain_output_parser.py"
+      ]
+    },
+    {
+      "repository": "microsoft/graphrag",
+      "url": "https://github.com/microsoft/graphrag",
+      "commit": "c600ff80b77b9b62c47d539a3ac9569e95d8949b",
+      "commit_url": "https://github.com/microsoft/graphrag/commit/c600ff80b77b9b62c47d539a3ac9569e95d8949b",
+      "commit_date": "2026-10-20T08:21:20-07:00",
+      "license_observation": "MIT",
+      "documents": [
+        "09-microsoft-graphrag.md"
+      ],
+      "referenced_source_paths": [
+        "packages/graphrag/graphrag/config/defaults.py",
+        "packages/graphrag/graphrag/index/operations/build_noun_graph/build_noun_graph.py",
+        "packages/graphrag/graphrag/index/operations/cluster_graph.py",
+        "packages/graphrag/graphrag/index/operations/extract_covariates/claim_extractor.py",
+        "packages/graphrag/graphrag/index/operations/extract_graph/extract_graph.py",
+        "packages/graphrag/graphrag/index/operations/extract_graph/graph_extractor.py",
+        "packages/graphrag/graphrag/index/operations/summarize_communities/summarize_communities.py",
+        "packages/graphrag/graphrag/index/update/entities.py",
+        "packages/graphrag/graphrag/index/workflows/create_community_reports.py",
+        "packages/graphrag/graphrag/index/workflows/extract_graph.py",
+        "packages/graphrag/graphrag/index/workflows/factory.py",
+        "packages/graphrag/graphrag/prompts/index/community_report.py",
+        "packages/graphrag/graphrag/prompts/index/extract_graph.py",
+        "packages/graphrag/graphrag/query/structured_search"
+      ]
+    },
+    {
+      "repository": "HKUDS/LightRAG",
+      "url": "https://github.com/HKUDS/LightRAG",
+      "commit": "aaebfe1bb8d55deb6a4304d357a3bf4c92fcd40a",
+      "commit_url": "https://github.com/HKUDS/LightRAG/commit/aaebfe1bb8d55deb6a4304d357a3bf4c92fcd40a",
+      "commit_date": "2026-10-14T22:55:37+08:00",
+      "license_observation": "MIT",
+      "documents": [
+        "10-lightrag.md"
+      ],
+      "referenced_source_paths": [
+        "lightrag/base.py",
+        "lightrag/lightrag.py",
+        "lightrag/operate.py",
+        "lightrag/prompt.py",
+        "tests"
+      ]
+    },
+    {
+      "repository": "HamedBabaei/LLMs4OL",
+      "url": "https://github.com/HamedBabaei/LLMs4OL",
+      "commit": "a0bca35d22dd31d37d2ee1ae1150a561a7d256c5",
+      "commit_url": "https://github.com/HamedBabaei/LLMs4OL/commit/a0bca35d22dd31d37d2ee1ae1150a561a7d256c5",
+      "commit_date": "2024-09-27T19:12:31+02:00",
+      "license_observation": "MIT",
+      "documents": [
+        "11-llms4ol.md"
+      ],
+      "referenced_source_paths": [
+        "README.md",
+        "TaskA",
+        "TaskA/src/answer_set_generator.py",
+        "TaskA/src/evaluation.py",
+        "TaskB/src/evaluate.py",
+        "TaskB/src/models.py",
+        "TaskC/src/models.py",
+        "datasets/TaskB/templates.txt",
+        "tuning/trainer.py"
+      ]
+    }
+  ]
+}
