@@ -1,0 +1,152 @@
+[
+  {
+    "title": "本体论如何帮助 Agent 理解与处理业务",
+    "duration": "0.5 分钟",
+    "text": "今天关注 Agent 如何获得业务依据。先认识 Agent 与本体，再看项目如何把业务知识组织起来，最后用一张服务工单说明实际应用路径。"
+  },
+  {
+    "title": "目录",
+    "duration": "0.5 分钟",
+    "text": "五个章节：Agent 的业务理解难题，本体的概念与应用，项目设计与能力，工业服务案例，实践与讨论。前两章沿“困难、方法、优势、概念、应用”的顺序展开。"
+  },
+  {
+    "title": "第1章 Agent 的业务理解难题",
+    "duration": "0.1 分钟",
+    "text": "沿着同一个 SLA 问题，认识业务理解困难、可用方法与本体的特点。"
+  },
+  {
+    "title": "Agent 怎样完成一个任务",
+    "duration": "1.5 分钟",
+    "text": "可把 Agent 理解为一个会使用工具的工作助手。它可以先查询工单，再读取合同信息，遇到缺失内容时继续查询或提问。工具调用次数和执行步骤因任务而异。\n\n概念来源：[Anthropic：Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)。\n\n承接下一页：从同一个“这张工单满足 SLA 吗”的请求出发。Agent 可以取得工单和合同，但要判断是否达标，还需明确时限含义、适用目标和计时口径。"
+  },
+  {
+    "title": "Agent 的困难：数据有了，口径还不清楚",
+    "duration": "2 分钟",
+    "text": "SLA 是服务水平协议，通常约定服务质量或时间目标。例如，同样写着“4 小时”，可能指首次响应，也可能指恢复服务。计时和适用条件不同，最终结论就可能不同。这里的问题来自案例中需要业务确认的内容，不预设实际口径。\n\n案例来源：[工业服务场景摘要](../evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md)。\n\n承接上一页取得的工单和合同，把难点收敛到业务含义。转向下一页：我们可以怎样把这些缺失的依据交给 Agent？"
+  },
+  {
+    "title": "帮助 Agent 理解业务的六种方法",
+    "duration": "2 分钟",
+    "text": "依次介绍图中的六种方法。提示词与示例解释任务怎么做，文档 RAG 按问题查资料，微调用样本适配任务。新增的业务工具提供实时事实与确定性计算，专家澄清用于消除歧义和确认缺失口径。本体组织可共享的定义和关系。\n\n微调在模型训练阶段发生，图中连线表示对任务能力的贡献，并不表示每次提问都进行训练。业务工具也可能承载已确认的业务规则；它们的接口说明仍要表达适用条件。方法可以组合，RAG 也可检索本体。\n\n来源：[Anthropic：Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)、[RAG 原始论文](https://arxiv.org/abs/2005.11401)、[LoRA 论文](https://arxiv.org/abs/2106.09685)、[W3C OWL 2 Primer](https://www.w3.org/TR/owl2-primer/)。\n\n配图：为本演示生成的概念示意。"
+  },
+  {
+    "title": "几种方法怎样配合完成同一个任务",
+    "duration": "1.5 分钟",
+    "text": "读取本体也是一次工具或检索操作。任务需要什么，Agent 就获取什么；简单任务可以省去不必要的步骤。正式接入自动推理后，推理结论也需要通过明确的读取接口供 Agent 使用。\n\n专家确认歧义，微调通过训练改善任务适配。图中展示运行时直接进入上下文的知识与工具结果。过渡：当同一份业务含义被多个任务反复使用，能否把它作为共享知识单独维护？"
+  },
+  {
+    "title": "本体的优势：让业务含义可以共同复用",
+    "duration": "1 分钟",
+    "text": "这里比较方法的侧重点，不声称本体在所有任务上更优。共享定义、显式关系和外置知识是本次设计分析归纳出的潜在收益，需要实际任务验证。维护本体仍要投入业务确认与治理。\n\n“新兴”指将本体用于 LLM Agent 的共享业务语义层这一应用思路。本体本身是成熟的知识表示技术。已有实践将 LLM、本体、文档和工具结合，例如 Palantir AIP Chatbot Studio；其实现不等于本项目实现，也不表示所有本体都采用 OWL。\n\n来源：[W3C OWL 2 Primer](https://www.w3.org/TR/owl2-primer/)、[Palantir AIP Chatbot Studio](https://www.palantir.com/docs/foundry/chatbot-studio/overview/)。\n\n下一章先回答“本体是什么”，再看工单概念关系图。"
+  },
+  {
+    "title": "第2章 本体的概念与应用",
+    "duration": "0.1 分钟",
+    "text": "先理解本体是什么，再看业务关系图，以及这些知识怎样帮助 Agent 工作。"
+  },
+  {
+    "title": "什么是本体（Ontology）",
+    "duration": "1 分钟",
+    "text": "先用业务语言介绍本体，避免直接展示复杂关系图。概念回答“是什么”，关系回答“怎样关联”，语义约定说明含义与适用范围。这里的工单、故障和合同只是教学例子，正式定义需要业务确认。采用 OWL 等形式语言时，还可以明确表达分类、公理并支持形式推理，相关边界在后面展开。\n\n承接下一页：把工单、故障、设备资产、合同和 SLA 连接起来。\n\n来源：[W3C OWL 2 Primer](https://www.w3.org/TR/owl2-primer/)、[工业服务场景摘要](references/scenario-brief.md)。"
+  },
+  {
+    "title": "用本体描述工业服务中的概念与关系",
+    "duration": "1.5 分钟",
+    "text": "这里讨论计算机领域的本体。业务概念地图只是入门比喻；采用形式化语言表达公理时，本体还可以支持逻辑推理。清晰的自然语言解释与明确的结构关系可以共同帮助使用者理解业务。\n\n概念来源：[W3C OWL 2 Primer](https://www.w3.org/TR/owl2-primer/)。\n\n本页承接上一页的本体定义。顺着工单处理故障、故障关联设备、合同覆盖设备与 SLA 目标的路径讲解。图是概念关系示意，不能直接代替具体工单的事实查询和业务计算。"
+  },
+  {
+    "title": "本体中的几种基本表达",
+    "duration": "2 分钟",
+    "text": "分类和普通关联需要区分。“泵属于设备类别”与“工单处理故障”表达的关系不同。业务条件可以先以普通业务知识保存；是否采用可执行规则或形式公理，取决于实际需要。项目中的每个名词也不必都成为正式 Class。\n\n项目依据：[v4.0 需求 R4.0-002](../requirements/requirements-v4.0.md)。以上例子为教学示意。"
+  },
+  {
+    "title": "本体、知识图谱与数据库的分工",
+    "duration": "1.5 分钟",
+    "text": "本体和知识图谱可以结合，数据库结构也可以成为建模线索。需要同时区分一般技术能力和本项目的选择：本体技术可以表达具体个体，但当前关系型业务场景把实际业务行保留在源数据库。\n\n来源：[W3C RDF 1.1 Concepts](https://www.w3.org/TR/rdf11-concepts/)、[工业服务场景摘要](../evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md)。"
+  },
+  {
+    "title": "本体怎样帮助 Agent 工作",
+    "duration": "1.5 分钟",
+    "text": "例如，一个 Agent 负责解释 SLA，另一个负责组织 SQL。它们应当引用同一份已确认口径。共享模型提供共同依据，仍需要检验 Agent 是否正确理解和使用。表中描述应用方式，不代表本项目所有端到端场景均已验收。\n\n这一页并入本体基础与应用章节：把前面的定义、关系和映射落到具体 Agent 工作。后面再区分当前的显式知识使用与未来形式推理。"
+  },
+  {
+    "title": "自动推理识别知识中的隐含结论",
+    "duration": "2 分钟",
+    "text": "这里的“推理”指由形式公理和事实得到逻辑蕴含。它与大模型生成分析不同。它也不能直接代替业务服务计算 SLA、金额或聚合指标。OWL 通常采用开放世界语义，缺少某个结论并不意味着它为假。后续接入推理器时，需要实际建模、正确公理和推理验证。\n\n来源：[W3C OWL 2 Overview](https://www.w3.org/TR/owl2-overview/)。当前平台状态依据：[R4.0-025](../requirements/requirements-v4.0.md)；“后续能力”为本次演示要求的方向标记。"
+  },
+  {
+    "title": "第3章 项目设计与能力",
+    "duration": "0.1 分钟",
+    "text": "了解平台如何组织业务知识，以及知识写入和读取的边界。"
+  },
+  {
+    "title": "Ontology Platform 的整体定位",
+    "duration": "1.5 分钟",
+    "text": "消费 Agent 指使用模型完成任务的 Agent。平台返回模型内容和状态，Agent 负责解释业务问题。API 可以简单解释为软件访问其他服务的入口。项目中的业务数据库与平台控制状态数据库是不同职责，图上需要标清。\n\n项目依据：[v4.0 需求的范围与边界](../requirements/requirements-v4.0.md)、[v3.0 关系型语义场景要求](../requirements/requirements-v3.0.md)。"
+  },
+  {
+    "title": "同一业务模型的七个视角",
+    "duration": "2 分钟",
+    "text": "七个视角是分析业务的关注点，不要求七个 Agent，也不要求七个 Ontology。具体角色和流程名称只是教学示意，以真实业务确认结果为准。同名内容只有在含义和范围一致时才共享定义。\n\n项目依据：[R4.0-002、003、004、010、011](../requirements/requirements-v4.0.md)。"
+  },
+  {
+    "title": "业务知识怎样进入平台",
+    "duration": "2 分钟",
+    "text": "dry-run 可解释为写入前的预检查，apply 是正式应用。它们检查请求、引用和资源完整性，不能证明业务含义正确。平台给出可修正反馈后，Agent 应能继续同一目标。独立语义验收需要依据真实读取与问题回答另外判断。\n\n项目依据：[R4.0-007、009、025](../requirements/requirements-v4.0.md)。"
+  },
+  {
+    "title": "消费 Agent 如何读取相关业务知识",
+    "duration": "2 分钟",
+    "text": "受治理读取可以理解为“按身份和权限取得可见内容”。平台返回结构化上下文，由消费 Agent 组织最终回答。当前页面未返回某项知识，可能与范围、分页或模型内容有关，需要根据读取状态继续判断。完成读取也不等于业务知识已经完整。\n\n项目依据：[R4.0-008](../requirements/requirements-v4.0.md)、[R4.3-008—012](../requirements/requirements-v4.3.md)。"
+  },
+  {
+    "title": "当前能力与后续能力",
+    "duration": "1.5 分钟",
+    "text": "当前能力描述功能范围，各项真实业务效果仍按实际验收范围判断。后续自动推理需要形式化建模与正确公理，并验证推理结果和读取方式。业务计算、脚本执行和实际动作仍由适当的外部系统承担。这一页的未来标记来自本次演示要求，不表示已开始接入推理功能。\n\n当前状态依据：[R4.0-025](../requirements/requirements-v4.0.md)、[v4.3 范围与验证状态](../requirements/requirements-v4.3.md)。"
+  },
+  {
+    "title": "第4章 工业服务案例",
+    "duration": "0.1 分钟",
+    "text": "沿一张服务工单的业务链，理解 SLA 知识如何支持判断。"
+  },
+  {
+    "title": "案例背景：工业设备售后服务",
+    "duration": "1.5 分钟",
+    "text": "本项目已有这一模拟业务场景的资料、术语、数据库结构和样例数据。本次讲解只展开与 SLA 判断有关的业务链，避免同时解释整个售后体系。下文模型和问答为教学示意。\n\n案例来源：[场景摘要](../evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md)、[初始业务术语](../evaluation-scenarios/industrial-service-v3/modeling-input/business-terms.md)。"
+  },
+  {
+    "title": "建模前需要确认的业务口径",
+    "duration": "2 分钟",
+    "text": "不在本页写死“暂停必须扣除”或“缺失时间就是超时”。这些都是需要业务确认的决定。对未确认内容保留未知，Agent 可以追问或说明当前无法判断的原因。\n\n案例来源：[场景摘要的待确认内容](../evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md)。"
+  },
+  {
+    "title": "把确认后的业务知识连接起来",
+    "duration": "2 分钟",
+    "text": "节点和连接要足够让 Agent 获得判断所需的业务依据。结构清楚的同时，仍需保存适用范围和自然语言解释。这里展示的是依据场景整理的模型示意，具体运行模型以实际读取结果为准。\n\n项目依据：[R4.0-002、008、010](../requirements/requirements-v4.0.md)；案例来源：[初始术语](../evaluation-scenarios/industrial-service-v3/modeling-input/business-terms.md)。"
+  },
+  {
+    "title": "Agent 怎样依据模型回答问题",
+    "duration": "1.5 分钟",
+    "text": "这里只展示回答过程与结构，不虚构一张实际工单的数值结论。独立验收应核对 Agent 是否取得了相关定义、是否正确解释、是否处理信息缺口，而不是只看回答是否流畅。"
+  },
+  {
+    "title": "语义知识怎样连接 SQL 和 API",
+    "duration": "1.5 分钟",
+    "text": "SQL 用来向数据库查询数据，API 用来访问外部服务。语义映射告诉 Agent 数据或能力如何对应业务含义。语义知识权限与数据库行列权限分别由各自系统控制。模型描述动作不会自动获得外部执行授权。\n\n项目依据：[v3.0 关系型语义场景要求](../requirements/requirements-v3.0.md)、[R4.0-003、010、011](../requirements/requirements-v4.0.md)。"
+  },
+  {
+    "title": "第5章 实践与讨论",
+    "duration": "0.1 分钟",
+    "text": "结合实际业务，判断适用场景、维护成本与落地原则。"
+  },
+  {
+    "title": "适用场景与落地原则",
+    "duration": "1.5 分钟",
+    "text": "简单、单一且知识变化少的任务可以先从清晰提示词与资料检索开始。引入本体要解决已经观察到的语义问题，并承担维护成本。自动推理的后续价值也要通过具体任务和正确公理验证。"
+  },
+  {
+    "title": "讨论",
+    "duration": "3—5 分钟",
+    "text": "优先回答观众的具体问题。面对“是不是上本体就能自动正确回答”的问题，回到资料确认、模型质量、读取完整性和 Agent 使用这几个实际环节。"
+  }
+]

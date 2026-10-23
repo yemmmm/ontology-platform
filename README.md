@@ -33,6 +33,8 @@ scripts/                  # local startup and documentation synchronization
 docs/                     # requirements, contracts, architecture, and operations
 ```
 
+本体与 Agent 演示的方案、制作源码、演讲稿和版本产物统一从[演示任务工作目录](docs/presentations/ontology-agent/README.md)进入。
+
 ## Local Startup
 
 推荐的一键启动方式：
