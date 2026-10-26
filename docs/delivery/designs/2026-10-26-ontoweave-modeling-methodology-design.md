@@ -471,6 +471,8 @@ Modeling 明确业务含义及变更意图，确定性程序补足执行字段�
 
 ### 17.1 路由总图
 
+详细图片版：[建模流程全景图](assets/2026-10-26-ontoweave-modeling-workflow.png)，展开各步骤的输入、处理、输出，以及澄清、对账和持续维护分支。图片通过内置绘图接口生成；[生成与修订提示词](assets/2026-10-26-ontoweave-modeling-workflow-prompts.md)随图保留，精确跳转条件见下文。
+
 ~~~mermaid
 flowchart TD
     S0["S0 目标、范围与基线"] --> S1["S1 双向业务拆解"]
