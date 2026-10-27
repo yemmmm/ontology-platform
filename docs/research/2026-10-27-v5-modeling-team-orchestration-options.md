@@ -1,20 +1,22 @@
 # v5 建模 Team 编排与执行层选型：LangGraph 与替代方案
 
-日期：2026-10-27。状态：**源码核对与官方资料调研完成；两项风险已完成隔离框架实验与独立机制测试。未做性能对照、真实模型协作或平台建模验证，未经过完整技术设计的独立审阅。** 证据见[两项风险测试记录](../delivery/test-docs/2026-10-27-v5-langgraph-risk-validation.md)。
+日期：2026-10-27。状态：**LangGraph 编排选型已获用户确认；Agent 执行层五方案比较完成，尚未选定。两项编排风险已完成隔离框架实验与独立机制测试。未做性能对照、真实模型协作或平台建模验证，未经过完整技术设计的独立审阅。** 证据见[两项风险测试记录](../delivery/test-docs/2026-10-27-v5-langgraph-risk-validation.md)；执行层见[五种 Agent 方案比较](2026-10-27-v5-agent-runtime-comparison.md)。
 
-本轮依据是用户要求评估 LangGraph、调研替代实现，并启动以建模 Team 重写和方法调整为主要目标的 v5。用户随后明确：**允许一并替换 Codex／DSH，优先更简单、可控的执行方式。** 这允许重新设计执行层，不等于已选定某个框架、模型或新运行预算。
+本轮依据是用户要求评估 LangGraph、调研替代实现，并启动以建模 Team 重写和方法调整为主要目标的 v5。用户随后明确：**允许一并替换 Codex／DSH，优先更简单、可控的执行方式。** 完成两项风险验证后，用户确认 LangGraph，并要求横向比较 Codex、DSH、OpenAI Agents SDK、Deep Agents 与 `create_agent`。该确认没有选定具体 Agent／模型，也不创建运行预算。
 
 方法依据：[语义工作空间与分层认知驱动的建模流程](../delivery/designs/2026-10-26-ontoweave-modeling-methodology-design.md)，特别是 §3、§5.3、§11—12、§17—18。版本范围登记在 [v5.0 需求](../requirements/requirements-v5.0.md)。原方法设计的独立 PASS 不自动覆盖本次技术选型。
 
 ## 1. 结论
 
-**建议以 LangGraph 作为 v5 首选编排框架，Agent 直接调用模型 API；业务认知放在独立的语义工作空间，继续复用现有模型应用和受治理读取能力。**
+**v5 已确认使用 LangGraph 编排；Agent 执行层继续比较五种方案。业务认知放在独立的语义工作空间，继续复用现有模型应用和受治理读取能力。**
 
-首选组合是：LangGraph `StateGraph` 表达业务工作单元的循环；确实需要工具循环的节点使用 LangChain 的最小 `create_agent` 能力；Pydantic 定义边界输入输出；PostgreSQL 保存业务工作空间及独立命名空间中的流程检查点。简单确定性节点直接用 Python 函数。LangGraph 本身不要求使用 LangChain；这里选择其现成 Agent 循环，是为了避免再自行维护一套模型／工具循环。[LangGraph 定位](https://docs.langchain.com/oss/python/langgraph/overview)、[Agent 循环与结构化输出](https://docs.langchain.com/oss/python/langchain/agents)。
+建议组合是：LangGraph `StateGraph` 表达业务工作单元的循环；有界语义工作交给所选 Agent 执行器；Pydantic 定义边界输入输出；PostgreSQL 保存业务工作空间及独立命名空间中的流程检查点。简单确定性节点直接用 Python 函数。LangGraph 不要求使用 LangChain，也不要求替换 Codex／DSH。[LangGraph 定位](https://docs.langchain.com/oss/python/langgraph/overview)。
+
+Agent 执行层建议优先验证 DSH，以 Deep Agents 为主要对照，Codex 保留现有基线，OpenAI Agents SDK 与 `create_agent` 保留候选。此前“默认直连＋`create_agent`”推荐已被本次比较取代；不能仅因内部会话或一层 SDK 就排除完整运行时，也不能将优化政策的组装工作视为零成本。详见[执行层比较](2026-10-27-v5-agent-runtime-comparison.md)。
 
 这个推荐针对本项目当前目标，不是通用框架排名，也不是已经测出的维护成本或降耗效果。关键收益来自职责调整：程序承担已明确的调度、等待与控制，模型承担有边界的语义判断，跨会话状态来自业务记录。仅更换框架不能保证这些收益。
 
-**最值得保留的备选是 PydanticAI＋DBOS。** 若后续验证表明主要复杂性是异步任务队列、持久通知和普通 Python 接续，而显式执行图带来的价值有限，该组合可能更合适。当前更偏向 LangGraph，是因为目标设计已有明确的循环、重入点和隔离边界，适合直接成为可检查的流程代码。
+早期比较中 PydanticAI＋DBOS 是主要备选。下文保留当时的比较依据；当前 LangGraph 已确认，不继续并行评估另一套编排引擎。明确的循环、重入点和隔离边界仍是选择 LangGraph 的理由。
 
 ## 2. 当前实现说明了哪些问题
 
@@ -23,7 +25,7 @@
 | 当前入口 | 本轮核对到的事实 | v5 的处理建议 |
 | --- | --- | --- |
 | [runner.py](../../modeling_team/runner.py) | 14,239 行；`prepare`、`start`、`receive_outer`、`_drain_current_work` 等同时涉及角色启动、消息派发、CQ 依赖、预算、暂停、候选、应用、问题处理和收尾。 | 拆清业务工作、流程运行、模型调用、平台操作；不要把完整 Runner 塞进一个图节点。 |
-| [Codex adapter](../../modeling_team/runtimes/codex.py)、[RuntimeAdapter](../../modeling_team/runtimes/base.py) | Codex 适配器 8,757 行；公共合同包含 native 身份、start／steer／enqueue、派发状态和进程控制。 | v5 的主执行合同直接围绕一次有界 Agent 工作及其工具结果设计；原生会话兼容不再是必需条件。 |
+| [Codex adapter](../../modeling_team/runtimes/codex.py)、[RuntimeAdapter](../../modeling_team/runtimes/base.py) | Codex 适配器 8,757 行；公共合同包含 native 身份、start／steer／enqueue、派发状态和进程控制。 | v5 的主执行合同围绕一次有界 Agent 工作及其工具结果设计；不继承旧适配器全部职责，也不据此排除 Codex 的新接入。 |
 | [统一 Profile](../../modeling_team/profiles/unified-modeling.yaml)、[Coordinator 指令](../../modeling_team/agent-packages/coordinator/instructions.md) | 当前 Profile 固定启用 Coordinator、Modeling、CQ；指令同时包含统一图新路径和被其覆盖的旧执行要求。 | 将方法、工具权限和执行计划分别配置，减少靠长提示解释“旧规则在什么情况下失效”。 |
 | [直接编译](../../modeling_team/direct_modeling.py)、[直接执行](../../modeling_team/direct_execution.py) | 已有明确变更编译、实际绑定、稳定提交身份、应用回执和不确定写入对账。 | 保留可验证的确定性核心，解开其与旧 Runner 的绑定；不重建应用／恢复框架。 |
 | [业务阶段 checkpoint](../../modeling_team/checkpoints.py) | 保存不可变阶段材料、私有证据和平台状态引用；不是某个 Python 函数的指令位置。 | 与框架 checkpoint 分开：前者保留业务／交接证据，后者帮助执行接续。 |
@@ -35,12 +37,12 @@
 
 ## 3. 候选方案比较
 
-下表中的能力来自链接的官方文档；“适配判断”是结合本仓库作出的推断。资料访问日期均为 2026-10-27，在线文档会变化。LangGraph 隔离实验已固定依赖，见 §8.1；其他组合尚未实测。
+下表保留 LangGraph 确认前的编排比较；其他编排引擎不是当前待选项。能力来自链接的官方文档；“适配判断”是结合本仓库作出的推断。资料访问日期均为 2026-10-27，在线文档会变化。LangGraph 隔离实验已固定依赖，见 §8.1；其他组合尚未实测。
 
 | 方案 | 已有能力与长处 | 当前需要承担的代价／边界 | 本项目适配判断 |
 | --- | --- | --- | --- |
-| **LangGraph＋直接模型 API** | 显式状态、条件路由、循环、子图、动态分派和检查点；节点可混合确定性程序与 Agent。 | 需要正确设计工作单元、状态大小、并发合并及外部副作用；开源库的检查点不等于完整任务服务。 | **首选。** 与目标方法的回退和接续结构最直接对应。[Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api) |
-| **PydanticAI＋DBOS** | 类型化 Agent；普通 Python 工作流、持久队列、消息与步骤恢复。DBOS 可使用 PostgreSQL，无须另外部署编排服务器。 | 工作流需要确定性重放；有 I/O 的普通函数工具要明确放入持久步骤；工具注册、流式返回和版本升级有约束。 | **强备选。** 偏好普通 Python 控制流时有吸引力。[DBOS 架构](https://docs.dbos.dev/architecture)、[PydanticAI 集成](https://pydantic.dev/docs/ai/capabilities/durable_execution/dbos/) |
+| **LangGraph＋待选 Agent 执行层** | 显式状态、条件路由、循环、子图、动态分派和检查点；节点可混合确定性程序与 Agent。 | 需要正确设计工作单元、状态大小、并发合并及外部副作用；开源库的检查点不等于完整任务服务。 | **已确认。** 与目标方法的回退和接续结构最直接对应。[Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api) |
+| **PydanticAI＋DBOS** | 类型化 Agent；普通 Python 工作流、持久队列、消息与步骤恢复。DBOS 可使用 PostgreSQL，无须另外部署编排服务器。 | 工作流需要确定性重放；有 I/O 的普通函数工具要明确放入持久步骤；工具注册、流式返回和版本升级有约束。 | **当时主要备选。** 偏好普通 Python 控制流时有吸引力。[DBOS 架构](https://docs.dbos.dev/architecture)、[PydanticAI 集成](https://pydantic.dev/docs/ai/capabilities/durable_execution/dbos/) |
 | **Temporal＋直接模型／Agent SDK** | 持久 Workflow、Activity、消息、子工作流及版本管理，适合跨进程长期执行。 | 增加 Temporal Service／Worker 的部署与运维；外部 Activity 仍需幂等和对账。 | 当跨机器恢复、长期后台服务成为实际需求时更有优势；当前不因假设规模引入。[Python SDK](https://docs.temporal.io/develop/python) |
 | **Pydantic Graph** | 用 Python 类型表达状态、分支和图，可独立于 PydanticAI 使用。 | 单独采用图表达并不直接完成本项目的任务调度、持久等待和恢复设计；仍需选择持久执行方案。 | 若团队非常重视类型驱动的流程定义，可作为局部选择；不同时引入两套图 DSL。[官方图说明](https://pydantic.dev/docs/ai/graph/graph/) |
 | **Microsoft Agent Framework Workflows** | 函数／图工作流、Agent 集成、checkpoint 和人工输入能力；提供多种 checkpoint 存储。 | 仍需接入本项目工作空间、应用和隔离；也采用 superstep 检查点，不能直接解决独立工作单元的持续推进。 | 能实现目标，但当前未发现相对 LangGraph 足以改变选择的特有收益。[概览](https://learn.microsoft.com/en-us/agent-framework/overview/)、[checkpoint](https://learn.microsoft.com/en-us/agent-framework/workflows/checkpoints) |
@@ -53,7 +55,7 @@
 
 这是可落地的竞争方案，不是陪衬。它的模型调用和 MCP 通信可以成为持久步骤；直接注册的普通函数工具、动态工具装载、实时事件及取消需要按集成约束处理。框架升级时还须保持工作流版本与恢复代码相容。所需改动不一定比 LangGraph 更少，也不能把 `agent.run()` 外面加一个装饰器当作全部恢复设计。[集成边界](https://pydantic.dev/docs/ai/capabilities/durable_execution/dbos/)、[代码升级](https://docs.dbos.dev/python/tutorials/upgrading-workflows)。
 
-若实测 LangGraph 为独立单元调度补出的外围代码明显更多，或它的执行图让日常方法修改更难读，应重新比较 DBOS。比较对象是同一小场景的完整实现和故障路径，不是“hello world”代码行数。
+只有后续出现会改变已确认选择的实际障碍时，才重新提出编排取舍。比较对象应是同一小场景的完整实现和故障路径，不是“hello world”代码行数；当前继续聚焦 Agent 执行层。
 
 ## 4. LangGraph 对方法设计的具体映射
 
@@ -83,7 +85,7 @@
 flowchart TB
     U[用户目标、澄清、控制] --> O[应用入口与任务控制]
     O --> G[LangGraph：工作单元循环与恢复]
-    G --> A[有界 Agent：直接模型 API]
+    G --> A[有界 Agent：五种候选执行方案]
     A --> W[语义工作空间服务]
     G --> W
     G --> X[确定性编译、应用与对账]
@@ -117,9 +119,9 @@ flowchart TB
 
 Agent 接收本单元目标、获准资料引用、相关定义、必要父层约束和本次变化，使用显式授权的读取／建模工具，返回结构化结果与自然语言理由。角色可以随工作承担；生产与独立评价仍隔离。
 
-默认不再让普通建模步骤承担 CLI 进程、原生会话消息队列、任意 shell 或全仓库上下文的管理。若某任务确需文件处理，以已获准的材料／产物能力承接，不从“可替换 Codex／DSH”推导新增业务权限。
+普通建模步骤不承担运行时进程和消息队列的管理；所选 SDK／接入层负责这些技术细节。运行时内部会话可以保留，跨 Agent 的业务认知仍以工作空间为准。工具与文件处理按获准范围配置，不从采用现成 harness 推导新增业务权限。
 
-模型 SDK 的标准兼容不证明现有模型配置等价。[当前模型路由](../../modeling_team/model_routing.py)区分 Responses／Messages、实际模型与 effort；新直连路径必须核对工具调用、结构化输出、推理参数和真实 usage。现有获准模型不能因为 SDK 默认映射而被静默改名、降档或换端点。PydanticAI 等 SDK 已提供 Z.AI 接入，但其默认端点和 effort 映射仍需与本任务配置逐项对齐。[Z.AI 接入说明](https://pydantic.dev/docs/ai/models/zai/)。
+模型 SDK 的标准兼容不证明现有模型配置等价。[当前模型路由](../../modeling_team/model_routing.py)区分 Responses／Messages、实际模型与 effort；所选执行器必须核对工具调用、结构化输出、推理参数和真实 usage。现有获准模型不能因为 SDK 默认映射而被静默改名、降档或换端点。执行器的压缩、重试及子 Agent 调用也纳入实际计量，见[比较与验证条件](2026-10-27-v5-agent-runtime-comparison.md#7-下一步应如何验证)。
 
 ### 5.3 Delivery 的目标形态
 
@@ -154,7 +156,7 @@ LangGraph 的 `interrupt` 恢复会重新进入节点，调用前的代码可能
 | 阶段 | 最小交付 | 完成证据 |
 | --- | --- | --- |
 | 选型验证 | 锁定依赖，完成一个有两个工作单元、共享定义、局部等待和应用对账的最小执行路径。 | 下节 V1—V8 的工程证据；不先开发完整双框架实现。 |
-| 第一条完整业务链 | 工作空间最小对象＋直连 Agent＋流程循环＋直接应用／真实读取＋独立交接。 | 方法 S0—S8 的真实有界证据；获准真实启动后遵循仓库 20 分钟启动要求。 |
+| 第一条完整业务链 | 工作空间最小对象＋所选 Agent 执行器＋流程循环＋直接应用／真实读取＋独立交接。 | 方法 S0—S8 的真实有界证据；获准真实启动后遵循仓库 20 分钟启动要求。 |
 | 分层与增量 | 递归责任、共享修改、S9 重入、来源变化及分层总览。 | 方法 A1—A23 对应范围逐项验证，局部通过不能冒充全版本完成。 |
 | 切换默认入口 | 新任务使用 v5；旧 run、预算、应用与验收原件保持可读；旧运行在原合同下收口。 | 新入口真实采用、迁移读取及暂停／恢复验证；无长期双写。 |
 
@@ -164,7 +166,7 @@ LangGraph 的 `interrupt` 恢复会重新进入节点，调用前的代码可能
 
 ## 8. 选型验证应验证什么
 
-以下为选型验证的完整判据。V1 的核心并行／局部等待／成果交换机制与 V2 已完成隔离实验，V3 仅验证超时和对账分流；具体边界见 §8.1。V4—V8 尚未执行。先验证主选方案；只有发现会改变选型的具体障碍，才用同一场景验证 DBOS 备选。
+以下为执行方案验证的完整判据。V1 的核心并行／局部等待／成果交换机制与 V2 已完成隔离实验，V3 仅验证超时和对账分流；具体边界见 §8.1。V4—V8 尚未执行。LangGraph 已确认，后续在这组边界内验证所选 Agent 接入，不重复已完成的机制实验。
 
 | 编号 | 场景 | 可观察判据 |
 | --- | --- | --- |
@@ -196,19 +198,19 @@ V1—V7 可以先用确定性夹具证明机制，不能称为真实 Agent 或�
 | R2／R4：原操作身份与已完成接续 | 操作身份来自崩溃前 checkpoint；应用侧幂等处理后，节点重执行但效果保持 1 条。已完成图再次接续不重新进入节点。 |
 | R3：真实节点超时与结果分流 | 节点内提交后超时可读回；结果仍未知时不盲目执行；明确未写入分支使用可信测试夹具。超时图随后接续到完成未测，V3 不算完整通过。 |
 
-因此保留 LangGraph 首选：使用工作单元图表达局部循环，独立身份隔离长等待；应用负责跨单元调度、工作空间与反馈归属；复用已有平台能力完成原操作幂等和对账。框架 checkpoint 不自动提供外部写入与执行状态的全局事务。
+这些结果支持随后获用户确认的 LangGraph 选择：使用工作单元图表达局部循环，独立身份隔离长等待；应用负责跨单元调度、工作空间与反馈归属；复用已有平台能力完成原操作幂等和对账。框架 checkpoint 不自动提供外部写入与执行状态的全局事务。
 
 本轮未验证真实模型自主协作、共同问题自动归并、权限治理、现有 application／RDF、PostgreSQL checkpointer、多机调度或成本／维护性收益；不能据此关闭完整 V1、V3 或任何一项 v5 需求。保留具体未验证项，下一阶段按获准范围接入真实执行路径。
 
 ## 9. 实质决策表
 
-本表是本轮主记录。用户确认的是目标与重写空间；下列推荐不冒称已逐项批准或通过独立审阅。
+本表记录最新选择状态。用户已确认目标、重写空间和 LangGraph；Agent 执行层尚待比较验证，其余推荐不冒称已逐项批准或通过独立审阅。
 
 | 编号 | 决策／推荐 | 理由与状态 |
 | --- | --- | --- |
-| D1 | 开启 v5，以 Team 重写、可控／可维护及采用指定方法为主要目标。 | **用户明确目标**；原方法作为语义目标基线，框架选择另行评估。 |
-| D2 | 允许替换 Codex／DSH；推荐以模型 API 直接执行有界 Agent 工作。 | **用户明确允许替换**；直连是本轮建议，可减少原生会话管理层，实际 provider 等价待验证。 |
-| D3 | LangGraph 为首选；PydanticAI＋DBOS 为主要备选；首版只选一个恢复引擎。 | **两项风险的有界机制验证支持保留首选**；真实模型、平台接入与维护性仍未验证，不把该子集当作全部选型验收。 |
+| D1 | 开启 v5，以 Team 重写、可控／可维护及采用指定方法为主要目标。 | **用户明确目标**；原方法作为语义目标基线，Agent 执行层另行比较。 |
+| D2 | 比较 Codex、DSH、OpenAI Agents SDK、Deep Agents 与 `create_agent`；允许替换，也允许薄接入现成运行时。 | **用户明确要求横向比较，尚未选定**；优先验证 DSH、以 Deep Agents 为主要对照是当前建议，取代默认直连推荐。 |
+| D3 | 使用 LangGraph 组织业务工作单元；首版只选一个业务流程恢复引擎。 | **用户已确认**；两项机制验证提供局部支持，真实 Agent、平台接入与维护性仍未验证。内部 Agent 会话不等于第二个业务流程权威。 |
 | D4 | 工作空间保存长期业务认知；执行图保存控制位置；实际平台保存已应用语义。 | **沿用方法设计的权威边界**；实现方式建议使用现有 PostgreSQL／RDF 基础。 |
 | D5 | 按工作单元推进；方法步骤可合并；机械 Delivery 程序化，语义整合按需调用 Agent。 | **本轮架构建议**；保留局部等待、递归责任及可修正反馈，减少无意义往返。 |
 | D6 | 复用直接应用／对账／治理读取；独立验收使用单独输入、工具和运行边界。 | **沿用现行硬约束与目标方法**；图结构不能替代授权或语义评价。 |
