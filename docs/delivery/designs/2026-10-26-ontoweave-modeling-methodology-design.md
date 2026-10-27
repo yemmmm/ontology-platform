@@ -1,8 +1,8 @@
 # OntoWeave：语义工作空间与分层认知驱动的建模流程
 
-日期：2026-10-26；最近修订：2026-10-27。当前状态：已按大型业务持续建模专项复审的 H1—H3、M2／M3／M4 六项意见修订，主 Agent 设计自查与文档检查完成；尚未取得新的独立复审结论。见[专项评审意见](../records/2026-10-26-ontoweave-modeling-methodology-design-review.md#large-business-review-2026-10-27)与[逐项修订记录](../records/2026-10-26-ontoweave-modeling-methodology-design-review.md#large-business-revision-2026-10-27)。本轮不纳入已排除的 M1、M5，不启动实现或真实建模。
+日期：2026-10-26；最近审阅：2026-10-27。当前状态：两位独立子 Agent 对 `1c35fba` 设计全文完成大小业务适配、递归推进与长程上下文专项复审，均为 **设计 PASS，0 Critical／0 High／0 Medium**，见[本轮独立审阅](../records/2026-10-26-ontoweave-modeling-methodology-design-review.md#scale-long-horizon-independent-review-2026-10-27)。此前 H1—H3、M2／M3／M4 的[专项意见](../records/2026-10-26-ontoweave-modeling-methodology-design-review.md#large-business-review-2026-10-27)与[修订记录](../records/2026-10-26-ontoweave-modeling-methodology-design-review.md#large-business-revision-2026-10-27)保留；已排除的 M1、M5 未纳入本轮完成门。未实施，未运行真实建模或效果实验。
 
-历史边界：基础目标架构曾独立复审 PASS（提交 2216ff8）；其后增补的第 17 节尚未作独立复审。本次专项复审由主 Agent 完成，不冒充新的独立复审。未实施，未运行真实建模或效果实验。
+历史边界：基础目标架构曾独立复审 PASS（提交 2216ff8）；其后第 17 节及大型业务修订在本轮前仅完成主 Agent 自查。本轮独立审阅覆盖当前全文，保留初步意见与证据校准过程；审阅后只更新首页状态，不改变方法正文。设计充分性结论不证明实际上下文成本、长程运行或真实语义验收通过。
 
 本轮直接依据：用户要求综合本轮外部项目研究、业务建模方法及 GraphRAG 分层摘要讨论，设计完整建模流程；允许重新划分任何现有架构边界，不以实现 effort 决定取舍。本文件落实该设计授权，不代表用户逐条批准了文中的架构选择，也不启动开发、收费模型调用、业务变更或模型验收。
 
