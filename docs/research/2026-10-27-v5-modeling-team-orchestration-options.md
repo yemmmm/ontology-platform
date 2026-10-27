@@ -12,7 +12,7 @@
 
 建议组合是：LangGraph `StateGraph` 表达业务工作单元的循环；有界语义工作交给所选 Agent 执行器；Pydantic 定义边界输入输出；PostgreSQL 保存业务工作空间及独立命名空间中的流程检查点。简单确定性节点直接用 Python 函数。LangGraph 不要求使用 LangChain，也不要求替换 Codex／DSH。[LangGraph 定位](https://docs.langchain.com/oss/python/langgraph/overview)。
 
-Agent 执行层建议优先验证 DSH，以 Deep Agents 为主要对照，Codex 保留现有基线，OpenAI Agents SDK 与 `create_agent` 保留候选。此前“默认直连＋`create_agent`”推荐已被本次比较取代；不能仅因内部会话或一层 SDK 就排除完整运行时，也不能将优化政策的组装工作视为零成本。详见[执行层比较](2026-10-27-v5-agent-runtime-comparison.md)。
+Agent 执行层综合 DSH 早期版本风险后，建议优先验证 OpenAI Agents SDK 与当前模型的接入，以 Deep Agents 为主要对照；Codex 保留现有基线，DSH 保留定制备选，`create_agent` 保留按需组装基线。此前“默认直连＋`create_agent`”与初始 DSH 优先建议均以当前评估为准；不预设 SDK 的全部能力可用于 GLM，也不把建议当作用户已确认选择。详见[执行层比较](2026-10-27-v5-agent-runtime-comparison.md)及 [SDK 方案评估](2026-10-27-v5-openai-agents-sdk-assessment.md)。
 
 这个推荐针对本项目当前目标，不是通用框架排名，也不是已经测出的维护成本或降耗效果。关键收益来自职责调整：程序承担已明确的调度、等待与控制，模型承担有边界的语义判断，跨会话状态来自业务记录。仅更换框架不能保证这些收益。
 
@@ -209,7 +209,7 @@ V1—V7 可以先用确定性夹具证明机制，不能称为真实 Agent 或�
 | 编号 | 决策／推荐 | 理由与状态 |
 | --- | --- | --- |
 | D1 | 开启 v5，以 Team 重写、可控／可维护及采用指定方法为主要目标。 | **用户明确目标**；原方法作为语义目标基线，Agent 执行层另行比较。 |
-| D2 | 比较 Codex、DSH、OpenAI Agents SDK、Deep Agents 与 `create_agent`；允许替换，也允许薄接入现成运行时。 | **用户明确要求横向比较，尚未选定**；优先验证 DSH、以 Deep Agents 为主要对照是当前建议，取代默认直连推荐。 |
+| D2 | 比较 Codex、DSH、OpenAI Agents SDK、Deep Agents 与 `create_agent`；允许替换，也允许薄接入现成运行时。 | **用户明确要求横向比较，并追加 SDK 方案评估，尚未选定**；当前建议优先验证 SDK 与现有模型接入，以 Deep Agents 为主要对照。 |
 | D3 | 使用 LangGraph 组织业务工作单元；首版只选一个业务流程恢复引擎。 | **用户已确认**；两项机制验证提供局部支持，真实 Agent、平台接入与维护性仍未验证。内部 Agent 会话不等于第二个业务流程权威。 |
 | D4 | 工作空间保存长期业务认知；执行图保存控制位置；实际平台保存已应用语义。 | **沿用方法设计的权威边界**；实现方式建议使用现有 PostgreSQL／RDF 基础。 |
 | D5 | 按工作单元推进；方法步骤可合并；机械 Delivery 程序化，语义整合按需调用 Agent。 | **本轮架构建议**；保留局部等待、递归责任及可修正反馈，减少无意义往返。 |

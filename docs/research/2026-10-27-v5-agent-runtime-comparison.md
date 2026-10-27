@@ -2,11 +2,11 @@
 
 日期：2026-10-27。状态：**官方资料与本地源码比较完成，尚未执行五方案的同条件运行对照；没有成本、质量或最终选型 PASS。**
 
-用户已确认 LangGraph 编排选型，要求比较 Codex、DSH、OpenAI SDK、Deep Agents、`create_agent`，并指出 DSH 的轻量核心与定制空间值得期待，`create_agent` 可能留下较多优化工作。本记录承接 [R5.0-001](../requirements/requirements-v5.0.md#r5-0-001) 和[编排选型记录](2026-10-27-v5-modeling-team-orchestration-options.md)。这里的 OpenAI SDK 指 **OpenAI Agents SDK**，不是普通 `openai` API 客户端、Codex SDK 或托管 Agents API。
+用户已确认 LangGraph 编排选型，要求比较 Codex、DSH、OpenAI SDK、Deep Agents、`create_agent`，并指出 DSH 的轻量核心与定制空间值得期待，`create_agent` 可能留下较多优化工作；随后补充 DSH 的早期版本风险，要求重点评估 SDK 方案。本记录承接 [R5.0-001](../requirements/requirements-v5.0.md#r5-0-001) 和[编排选型记录](2026-10-27-v5-modeling-team-orchestration-options.md)。这里的 OpenAI SDK 指 **OpenAI Agents SDK**，不是普通 `openai` API 客户端、Codex SDK 或托管 Agents API。
 
 ## 1. 当前判断
 
-**优先验证 DSH，以 Deep Agents 作为主要对照；Codex 保留现有基线，OpenAI Agents SDK 保留独立候选，`create_agent` 作为按需组装的基线。** 这是验证优先级建议，Agent 执行层尚未选定。
+**综合版本风险与 Python 接入结构，建议优先验证 OpenAI Agents SDK，以 Deep Agents 作为主要对照；Codex 保留现有基线，DSH 保留定制备选，`create_agent` 作为按需组装的基线。** 初始 DSH 优先建议据补充评估调整；Agent 执行层尚未选定。关键条件是当前 GLM 路由能承接所需上下文与控制能力，详见 [SDK 构建方案评估](2026-10-27-v5-openai-agents-sdk-assessment.md)。
 
 DSH 的优势有源码依据：运行核心、模型适配、工具、上下文处理和持久化可以按插件组合；不必先写完整 Agent 循环才获得定制能力。Deep Agents 的竞争力则在于已组合好的上下文与委派能力，以及与 Python／LangGraph 的直接衔接。两者值得比较“完成同一业务工作实际还要维护多少代码”，不能用核心大小直接推导成本或质量。
 
@@ -19,8 +19,8 @@ DSH 的优势有源码依据：运行核心、模型适配、工具、上下文�
 | 方案 | 已有能力 | 需要选择、定制或补齐的部分 | v5 适配判断 |
 | --- | --- | --- | --- |
 | **Codex，通过官方 SDK／app-server** | 完整运行时；工具执行、会话接续、流式事件、Skills、压缩；公开 turn 启动、steer、interrupt 控制。Python SDK 已提供稳定发布并绑定运行时版本。 | 收窄实际工具与输入；映射事件、用量及控制结果；深改循环与上下文策略受公开扩展面约束。不能整体沿用旧适配器。 | **现有基线，仍可竞争。** 重新用官方接口评估薄接入层，不把旧适配器的历史职责当作 Codex 的必然代价。[SDK](https://learn.chatgpt.com/docs/codex-sdk)、[app-server](https://learn.chatgpt.com/docs/app-server) |
-| **DSH，通过 SDK＋profile／插件** | 可组合运行核心；自动压缩、会话日志与恢复、工具管线；完整 profile 可组合 Skills、子 Agent、结果外置等能力。 | 选择最小插件集合；当前公开 SDK 缺少单会话 cancel／pause；模型路由、调用准入和完整用量接入需验证。上游仍为开发预览。 | **优先验证。** 定制空间最贴近当前诉求，但不能把可插拔等同于无需集成或稳定兼容。[架构][dsh-architecture]、[Python SDK][dsh-sdk]、[发布状态][dsh-readme] |
-| **OpenAI Agents SDK** | 工具循环、handoff、会话与可恢复运行状态；当前 `SandboxAgent` 默认提供文件、shell、compaction，并可加 Skills／Memory。 | 选择普通 Agent 或 SandboxAgent；接入工作目录、工具与存储；核对非 OpenAI 路由及所选高级能力，不能只验证普通文本调用。 | **独立候选。** 当前能力比“基础工具循环库”更完整，不应根据早期印象排除。[运行](https://developers.openai.com/api/docs/guides/agents/running-agents)、[SandboxAgent](https://developers.openai.com/api/docs/guides/agents/sandboxes) |
+| **DSH，通过 SDK＋profile／插件** | 可组合运行核心；自动压缩、会话日志与恢复、工具管线；完整 profile 可组合 Skills、子 Agent、结果外置等能力。 | 选择最小插件集合；当前公开 SDK 缺少单会话 cancel／pause；模型路由、调用准入和完整用量接入需验证。上游仍为开发预览。 | **定制备选。** 可插拔有价值，版本跟随与控制接入成本需要纳入比较。[架构][dsh-architecture]、[Python SDK][dsh-sdk]、[发布状态][dsh-readme] |
+| **OpenAI Agents SDK** | 工具循环、handoff、会话与可恢复运行状态；当前 `SandboxAgent` 默认提供文件、shell、compaction，并可加 Skills／Memory。 | 选择普通 Agent 或 SandboxAgent；接入工作目录、工具与存储；核对非 OpenAI 路由及所选高级能力，不能只验证普通文本调用。 | **优先验证建议。** Python 接入可减少独立运行时桥接；GLM 的原生压缩等能力尚未证实。[运行](https://developers.openai.com/api/docs/guides/agents/running-agents)、[SandboxAgent](https://developers.openai.com/api/docs/guides/agents/sandboxes) |
 | **Deep Agents** | 基于 LangChain／LangGraph 的预组装 Agent；历史摘要、大结果外置、文件工具和独立上下文子 Agent；可配置 Skills、Memory，任务规划可选。 | 选择 backend 和持久化；裁剪工具及默认指令；接入业务状态、预算和中断合同；核对内外层图的运行身份。 | **主要对照。** 有望少写通用 Agent 工程，Python 接入直接；默认能力是否适合建模须实测。[概览](https://docs.langchain.com/oss/python/deepagents/overview)、[定制](https://docs.langchain.com/oss/python/deepagents/customization) |
 | **LangChain `create_agent`** | 已有模型／工具循环、结构化输出和 LangGraph 运行基础；可用官方摘要、工具错误处理、重试、调用上限、文件和子 Agent 等中间件。 | 自己确定中间件集合、顺序、阈值、模型和错误政策，并验证组合效果。 | **按需组装基线。** 简单有界工作可能最省事；若多数工作都要长上下文、文件和委派，应先比较现成 harness。[Agent](https://docs.langchain.com/oss/python/langchain/agents)、[中间件](https://docs.langchain.com/oss/python/langchain/middleware/built-in) |
 
@@ -85,7 +85,7 @@ OpenAI Agents SDK 则允许应用掌握运行与存储。当前 `SandboxAgent` �
 
 本轮只做比较与记录，未新建收费任务、预算或生产接入。已有 [9 项 LangGraph 机制测试](../delivery/test-docs/2026-10-27-v5-langgraph-risk-validation.md) 只支持编排机制，不作为任一候选 Agent 的成绩。
 
-建议先用 DSH 与 Deep Agents 做同一个有界执行单元，Codex 提供基线；其余两项在相同输入／输出合同下补齐比较。每项先验证最小可用接入，再在获准范围内做真实运行，不先重写整个 Team。
+结合补充评估，建议先验证 OpenAI Agents SDK 与当前模型的一个有界执行单元，Deep Agents 为主要对照，Codex 提供现有基线；DSH 和 `create_agent` 保留同合同下的备选。先验证实际会改变选择的最小接入，不先重写整个 Team，也不把五套完整实现作为首次真实建模的前置门。
 
 | 比较项 | 需要留下的证据 |
 | --- | --- |
@@ -96,7 +96,7 @@ OpenAI Agents SDK 则允许应用掌握运行与存储。当前 `SandboxAgent` �
 | 完整成本 | 统计全部角色、子 Agent、压缩、重试和恢复补读；记录输入／输出、往返、墙钟与人工介入，外部 Host 单列。 |
 | 质量与维护 | 同一冻结目标独立评价；演练换工具、改压缩策略、增加一种可恢复结果，观察实际涉及的模块与补丁。 |
 
-最终选择应同时满足业务质量与控制边界，再比较全任务成本和维护工作。DSH 若仅需少量插件即可满足边界，优先级有望转为实际选择；若必须深入修改核心或承担大量版本跟随工作，则与 Deep Agents、Codex 和 Agents SDK 的完整接入成本重新比较。此条件判断不是预设胜负。
+最终选择应同时满足业务质量与控制边界，再比较全任务成本和维护工作。SDK 若能以少量公开接口适配满足现有模型、上下文和控制需求，可进入第一条业务链；若需要大量补写上下文管理，应与 Deep Agents 比较实际成本。DSH 的可定制性仍保留价值，但须计入版本跟随和控制扩展。此条件判断不是预设胜负。
 
 ## 8. 证据范围
 
