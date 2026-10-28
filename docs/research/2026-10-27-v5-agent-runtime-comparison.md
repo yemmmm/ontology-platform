@@ -2,11 +2,13 @@
 
 日期：2026-10-27；2026-10-28 补充 Codex harness 评估。状态：**官方资料与本地源码比较完成，尚未执行五方案的同条件运行对照；没有成本、质量或最终选型 PASS。**
 
+2026-10-28 后续决定：用户已暂定 Codex harness 作为自定义 Agent 的执行基础，并要求形成前置功能验证的 [v5 改造计划](../delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md)。下文保留横向判断依据；先验证 Codex 的必需能力，发现实质缺口后才定向比较备选，不同时实现五套方案。
+
 用户已确认 LangGraph 编排选型，要求比较 Codex、DSH、OpenAI SDK、Deep Agents、`create_agent`，并指出 DSH 的轻量核心与定制空间值得期待，`create_agent` 可能留下较多优化工作；随后补充 DSH 的早期版本风险，要求重点评估 SDK 方案。本记录承接 [R5.0-001](../requirements/requirements-v5.0.md#r5-0-001) 和[编排选型记录](2026-10-27-v5-modeling-team-orchestration-options.md)。这里的 OpenAI SDK 指 **OpenAI Agents SDK**，不是普通 `openai` API 客户端、Codex SDK 或托管 Agents API。
 
 ## 1. 当前判断
 
-**建议先验证 Codex harness 的最小接入，以 Deep Agents 作为主要对照；OpenAI Agents SDK 保留直接组合运行策略的备选，DSH 保留定制备选，`create_agent` 作为按需组装的基线。** 2026-10-28 的[补充评估](2026-10-28-v5-codex-harness-assessment.md)核对了官方 Python SDK、角色指令替换、控制协议和 provider 本地压缩路径，并区分现有运行基础与旧 Team 职责。本项目已有 Codex／GLM Responses 和 MCP 接入，尚无必须深改 harness 的需求，因此调整验证顺序；这不代表已测得 Codex 优于其他方案。Agent 执行层尚未选定，当前模型的完整能力仍需验证。
+**先验证暂定 Codex harness 的最小接入，以 Deep Agents 作为主要对照；OpenAI Agents SDK 保留直接组合运行策略的备选，DSH 保留定制备选，`create_agent` 作为按需组装的基线。** 2026-10-28 的[补充评估](2026-10-28-v5-codex-harness-assessment.md)核对了官方 Python SDK、角色指令替换、控制协议和 provider 本地压缩路径，并区分现有运行基础与旧 Team 职责。本项目已有 Codex／GLM Responses 和 MCP 接入，尚无必须深改 harness 的需求，因此调整验证顺序；这不代表已测得 Codex 优于其他方案。最终采用与当前模型完整能力仍需验证。
 
 DSH 的优势有源码依据：运行核心、模型适配、工具、上下文处理和持久化可以按插件组合；不必先写完整 Agent 循环才获得定制能力。Deep Agents 的竞争力则在于已组合好的上下文与委派能力，以及与 Python／LangGraph 的直接衔接。两者值得比较“完成同一业务工作实际还要维护多少代码”，不能用核心大小直接推导成本或质量。
 
@@ -82,6 +84,8 @@ OpenAI Agents SDK 则允许应用掌握运行与存储。当前 `SandboxAgent` �
 | 语义工作空间与平台 | 持续业务内容、版本冲突、授权读取、应用身份与回执。 | 不依赖聊天摘要判定已应用或已验收。 |
 
 内部子 Agent 可服务于有界工作，跨业务单元的持久依赖由外层承接；不强制新增角色。模型重试、工具重试和流程重执行也要明确各自负责的失败层，避免重试相乘。任何已开始的模型调用都需结算，框架暂停不等于远端零费用。
+
+当前预算与控制按 [R4.4-002／003 的最新口径](../requirements/requirements-v4.4.md#r4-4-002)在原生回合自然结束后生效，输入先入队、下一回合前检查预算，并接受在途尾差。上文比较的即时取消接口是技术能力差异，不是当前自然边界暂停的必需条件；不据其缺失直接否定候选，也不恢复逐请求精确截断。
 
 ## 7. 下一步应如何验证
 

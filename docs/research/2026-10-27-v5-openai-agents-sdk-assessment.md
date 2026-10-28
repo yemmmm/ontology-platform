@@ -2,9 +2,9 @@
 
 日期：2026-10-27。状态：**官方文档与当前仓库合同评估；未安装候选 SDK、未调用真实模型、未完成运行或语义验收。**
 
-2026-10-28 补充：本文保留 Agents SDK 的方案评估。结合后续 [Codex harness 调研](2026-10-28-v5-codex-harness-assessment.md)，当前建议先验证 Codex 最小接入；本文的 SDK 优先建议为 10 月 27 日判断，最新选择状态以[五方案比较](2026-10-27-v5-agent-runtime-comparison.md)为准，执行层仍未最终选定。
+2026-10-28 补充：本文保留 Agents SDK 的方案评估。用户后续暂定 Codex harness，并要求前置功能验证，见 [v5 改造计划](../delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md)。本文的 SDK 优先建议为 10 月 27 日判断；Agents SDK 保留为实际缺口出现后的备选，最终采用仍须功能证据。
 
-用户在[五方案比较](2026-10-27-v5-agent-runtime-comparison.md)后提出 DSH 仍处早期版本，要求重点评估 OpenAI SDK 构建方案。本文继续将 SDK 理解为 **OpenAI Agents SDK**。LangGraph 已确认，Agent 与模型尚未重新选定；归属 [R5.0-001](../requirements/requirements-v5.0.md#r5-0-001)，并承接 R5.0-002／004／006／007 的工作空间、应用、验收与计量要求。
+用户在[五方案比较](2026-10-27-v5-agent-runtime-comparison.md)后提出 DSH 仍处早期版本，要求重点评估 OpenAI SDK 构建方案。本文继续将 SDK 理解为 **OpenAI Agents SDK**。当时 LangGraph 已确认，执行层尚待选择，未授权更换模型；归属 [R5.0-001](../requirements/requirements-v5.0.md#r5-0-001)，并承接 R5.0-002／004／006／007 的工作空间、应用、验收与计量要求。
 
 ## 1. 结论
 
@@ -89,10 +89,10 @@ OpenAI 官方 SDK quickstart 使用 API key；本文不据此修改现有模型�
 
 SDK 文档支持运行中断后从 state 接续，Python 的 `to_state()` 提供中断快照。但取消流、保存会话和 LangGraph checkpoint 都不等于远端停止计费，更不等于任意进程崩溃后的工具效果只发生一次。[运行与取消](https://developers.openai.com/api/docs/guides/agents/running-agents)、[状态序列化](https://developers.openai.com/api/docs/guides/agents/results)。
 
-本项目的最小接入仍需完成三件事：
+本项目的最小接入仍需完成三件事。2026-10-28 核对修正：控制语义以 [R4.4-002／003 的 2026-10-22 最新口径](../requirements/requirements-v4.4.md#r4-4-002)为准，覆盖此前逐请求截断与忙碌取消建议：
 
-1. **调用准入与结算**：现有 [provider 代理](../../modeling_team/deepseek_provider_proxy.py) 已在每次请求尝试前调用 `admit_attempt`，并执行 `record_attempt`。优先复用该边界与既有预算账本，验证 SDK 的压缩、子 Agent 和重试也被覆盖；不先重写一套 SDK 内预算控制。不能只在 `Runner.run()` 入口检查一次，也不能用 `max_turns` 代替金额预算。
-2. **业务暂停与在途处理**：关闭新调用／写入准入，保存 SDK 可恢复状态，记录已在途结果。恢复沿原工作单元和 budget_ref；缺用量保留未知。
+1. **回合准入与结算**：复用现有 [provider 代理](../../modeling_team/deepseek_provider_proxy.py)及任务账本的用量来源，覆盖压缩、子 Agent 和重试；不另建 SDK 费用主账。新原生 activity 开始前检查预算，已开始 activity 的内部后续自然完成并记录尾差；不能把整项业务任务视为一个无限长回合，也不用 `max_turns` 代替金额预算。
+2. **业务暂停与在途处理**：新输入及暂停／停止即时入队，目标 activity 自然结束后处理，确认停稳前不升级状态；禁止新的未获准回合，保存可恢复状态并记录在途结果。恢复沿原工作单元和 budget_ref；缺用量保留未知。SDK 的 activity 边界须在候选验证中明确映射，不直接套用 Codex 的协议身份。
 3. **应用效果恢复**：沿用 [direct_execution.py](../../modeling_team/direct_execution.py) 的原操作身份及回执。平台写入成功、SDK／图状态未保存时先对账，不让两层各自盲目重试。
 
 不因 SDK 具有 guardrail 或人工审批能力而增加逐批审批，也不把可修正工具错误变成整个目标永久终止。独立验收继续使用单独输入、权限与运行状态。
@@ -105,7 +105,7 @@ SDK 文档支持运行中断后从 state 接续，Python 的 `to_state()` 提供
 | --- | --- |
 | 模型与工具合同 | 实际 provider／模型／effort 正确；一轮工具调用、结构化结果和 usage 完整；第三方不支持的能力明确暴露。 |
 | 上下文能力 | 大材料与工具结果可按引用读取；一次真实压缩／等价摘要后条件、例外和出处可恢复；记录额外用量。 |
-| 控制与接续 | 暂停发生后无新调用；在途结果不丢；原状态恢复；写后崩溃不重复应用。 |
+| 控制与接续 | 忙碌时输入／控制先排队，当前 activity 自然结束，下一回合受控；在途结果和尾差不丢；沿原身份恢复；写后崩溃不重复应用。 |
 | 方法与成本 | 采用同一业务目标和独立评价，统计全部往返、输入／输出、压缩、重试和宿主介入；不以短样例成功代替完整建模质量。 |
 
 如果前三项能以少量公开 API 接入成立，就有理由进入第一条真实建模链。若 GLM 路径要求大规模重建上下文优化，则优先拿 Deep Agents 的同条件结果对照；若主要问题是工具／状态合同，先修最窄接入层，不再扩大框架选型。

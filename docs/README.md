@@ -21,11 +21,12 @@ delivery evidence. Use the following locations for new documentation.
 ## Current requirement entry points
 
 - [v5.0 modeling Team rewrite and semantic workspace methodology](requirements/requirements-v5.0.md):
-  version goals are confirmed; initial requirement decomposition and an
-  [orchestration assessment](research/2026-10-27-v5-modeling-team-orchestration-options.md)
-  are recorded. LangGraph with direct model API execution is the recommended candidate,
-  with PydanticAI plus DBOS as the main alternative. The user permits replacing Codex/DSH.
-  Technical selection, independent design review, implementation and real validation remain pending.
+  LangGraph is confirmed and custom Agents provisionally use Codex harness. The
+  [migration plan](delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md)
+  defines capability validation, a complete small business flow, larger-scale collaboration,
+  incremental maintenance, and migration before switching the default entry point.
+  Existing LangGraph mechanism tests cover a limited subset; Codex integration validation,
+  production implementation and independent review of the migration plan remain pending.
 - [v4.4 modeling Team work board, collaboration and task cost budgets](requirements/requirements-v4.4.md):
   R4.4-001 records Agent-maintained current work and flexible near-term goals, with one tracked
   request shown to both requester and assignee. Refinement and design are complete;
