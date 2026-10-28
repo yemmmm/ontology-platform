@@ -2,12 +2,69 @@
 
 import hashlib
 import json
+import socket
 import subprocess
 import sys
 from pathlib import Path
 
+from openai_codex.generated.v2_all import McpServerToolCallResponse
+
 from ontoweave_modeling.codex_agent import CodexAgent, outbound_tool_names
 from ontoweave_modeling.preflight import ModelBinding
+
+
+def test_isolated_mcp_reads_real_workspace_without_host_dns_files(tmp_path, workspace):
+    workspace.put("public", "definition", {"text": "Approved record"}, 0)
+    workspace.put("private", "definition", {"text": "Private record"}, 0)
+    materials = tmp_path / "materials"
+    materials.mkdir()
+    (materials / "manifest.json").write_text("{}")
+    connection = dict(workspace.connection)
+    connection["hostaddr"] = socket.gethostbyname(connection["host"])
+    config = tmp_path / "workspace.json"
+    config.write_text(
+        json.dumps(
+            {
+                "connection": connection,
+                "schema": workspace.schema,
+                "task_ref": workspace.task_ref,
+                "read_ids": ["public"],
+                "write_ids": [],
+            }
+        )
+    )
+    agent = CodexAgent(
+        tmp_path / "agent",
+        ModelBinding("glm-direct", "glm-5.3-flash", "low"),
+        provider_base_url="http://127.0.0.1:9",
+        materials=materials,
+        instructions="Non-inference workspace read test.",
+        on_event=lambda *_: None,
+        workspace_config=config,
+        allowed_tools=("read_workspace_object",),
+    )
+    try:
+        agent.start()
+        params = {
+            "threadId": agent.thread_id,
+            "server": "workspace",
+            "tool": "read_workspace_object",
+            "arguments": {"object_id": "public", "revision": 1},
+        }
+        read = agent.client.request(
+            "mcpServer/tool/call", params, response_model=McpServerToolCallResponse
+        )
+        actual = json.loads(read.content[0]["text"])
+        assert not read.is_error and actual["content"] == {"text": "Approved record"}
+        denied = agent.client.request(
+            "mcpServer/tool/call",
+            {**params, "arguments": {"object_id": "private"}},
+            response_model=McpServerToolCallResponse,
+        )
+        assert denied.is_error and "forbidden" in denied.content[0]["text"]
+        assert "Private record" not in denied.content[0]["text"]
+    finally:
+        agent.close()
 
 
 def test_agent_disables_builtin_skills_before_thread_start(tmp_path):

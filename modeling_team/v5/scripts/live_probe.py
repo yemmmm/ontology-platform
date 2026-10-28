@@ -64,7 +64,13 @@ class ObservedProvider(ResponsesProviderSession):
         return super().admit_attempt(receipt, request=request)
 
 
-def run(root: Path, budget_ref: Path, *, plain_output: bool = False) -> dict:
+def run(
+    root: Path,
+    budget_ref: Path,
+    *,
+    native_output_schema: bool = False,
+    usage_only: bool = False,
+) -> dict:
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=False, mode=0o700)
     source_ref = "docs/evaluation-scenarios/minimal-installation-chain/modeling-input/scenario.md"
@@ -200,6 +206,7 @@ def run(root: Path, budget_ref: Path, *, plain_output: bool = False) -> dict:
                 {
                     "task_ref": context["task_ref"],
                     "budget_ref": str(budget.ref),
+                    "resource_policy": "usage_only" if usage_only else "amount_enforced",
                     "work_unit": "P0-V1",
                     "execution_attempt": owner_id,
                     "codex_thread": identity["thread"]["id"],
@@ -217,14 +224,15 @@ def run(root: Path, budget_ref: Path, *, plain_output: bool = False) -> dict:
             encoding="utf-8",
         )
         budget.tick()
-        budget.require_available(operation="production", binding=context)
+        if not usage_only:
+            budget.require_available(operation="production", binding=context)
         result = agent.run_turn(
             "本次是 P0 工具集成验证。先调用 read_material，使用 material_id=missing，"
             "观察类型化错误，再依据工具反馈读取获准的 scenario 材料；需要时分页补读。"
             "阅读后列出完整业务命题、关键条件及明确未知，每条保留来源引用。"
             "不要应用本体，不要读取隐藏题或其他文件。最后返回 JSON，字段 propositions、unknowns、"
             "source_refs 均为字符串数组。",
-            output_schema=None if plain_output else MATERIAL_RESULT_SCHEMA,
+            output_schema=MATERIAL_RESULT_SCHEMA if native_output_schema else None,
         )
         try:
             result["structured_result"] = decode_json_result(
@@ -258,9 +266,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--budget-ref", type=Path, required=True)
-    parser.add_argument("--plain-output", action="store_true")
+    parser.add_argument("--native-output-schema", action="store_true")
+    parser.add_argument("--usage-only", action="store_true")
     args = parser.parse_args()
-    result = run(args.output_dir, args.budget_ref, plain_output=args.plain_output)
+    result = run(
+        args.output_dir,
+        args.budget_ref,
+        native_output_schema=args.native_output_schema,
+        usage_only=args.usage_only,
+    )
     print(
         json.dumps(
             {

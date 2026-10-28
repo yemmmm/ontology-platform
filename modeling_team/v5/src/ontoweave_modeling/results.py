@@ -41,3 +41,14 @@ def decode_json_result(message: str, schema: dict) -> dict:
         path = "/".join(str(part) for part in exc.absolute_path)
         raise ResultContractError(f"result_schema_invalid: {path}") from None
     return result
+
+
+def validate_evaluation_binding(report: dict, *, case_count: int, target_revision: int) -> None:
+    """Check frozen coverage and identity; leave semantic judgments to the evaluator."""
+    if report.get("target_revision") != target_revision:
+        raise ResultContractError("evaluation_target_revision_mismatch")
+    indices = [case["index"] for case in report["cases"]]
+    if case_count <= 0 or sorted(indices) != list(range(1, case_count + 1)):
+        raise ResultContractError("evaluation_case_coverage_mismatch")
+    if report["verdict"] == "PASS" and not all(case["passed"] for case in report["cases"]):
+        raise ResultContractError("evaluation_verdict_inconsistent")

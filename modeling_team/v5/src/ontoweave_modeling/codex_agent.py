@@ -41,6 +41,10 @@ class CodexAgent:
         materials: Path,
         instructions: str,
         on_event: Callable[[str, dict], None],
+        allowed_tools: tuple[str, ...] = ("read_material",),
+        workspace_config: Path | None = None,
+        platform_config: Path | None = None,
+        config_overrides: dict | None = None,
     ):
         self.root = root.resolve()
         self.binding = binding
@@ -48,6 +52,10 @@ class CodexAgent:
         self.materials = materials.resolve()
         self.instructions = instructions
         self.on_event = on_event
+        self.allowed_tools = allowed_tools
+        self.workspace_config = workspace_config
+        self.platform_config = platform_config
+        self.config_overrides = config_overrides or {}
         self.thread_id: str | None = None
         self.active_turn: str | None = None
         self.client: CodexClient | None = None
@@ -59,31 +67,44 @@ class CodexAgent:
             )
         self.on_event(method, payload)
 
-    def start(self) -> dict:
-        self.root.mkdir(parents=True, exist_ok=False, mode=0o700)
+    def start(self, *, resume: bool = False) -> dict:
+        self.root.mkdir(parents=True, exist_ok=resume, mode=0o700)
         home, work = self.root / "home", self.root / "work"
-        home.mkdir(mode=0o700)
-        work.mkdir(mode=0o700)
+        home.mkdir(mode=0o700, exist_ok=resume)
+        work.mkdir(mode=0o700, exist_ok=resume)
         config_text = candidate_config(self.binding, provider_base_url=self.provider_base_url)
+        config_text = (
+            "".join(
+                f"{key} = {json.dumps(value)}\n" for key, value in self.config_overrides.items()
+            )
+            + config_text
+        )
         # P0 failures return to the program for diagnosis. Do not stack proxy
         # retries and harness retries while establishing the wire contract.
         config_text += "request_max_retries = 0\nstream_max_retries = 0\n"
-        config_text += (
-            '\n[mcp_servers.workspace]\ncommand = "/agent/venv/bin/python"\n'
-            'args = ["/agent/runtime/material_tools.py", "--root", "/agent/materials"]\n'
-            'enabled_tools = ["read_material"]\nrequired = true\n'
-            '[mcp_servers.workspace.tools.read_material]\napproval_mode = "approve"\n'
-        )
+        args = ["-m", "ontoweave_modeling.material_tools", "--root", "/agent/materials"]
+        mounts = [
+            (Path(sys.prefix), "/agent/venv"),
+            (Path(__file__).parent, "/agent/runtime/ontoweave_modeling"),
+            (self.materials, "/agent/materials"),
+        ]
+        if self.workspace_config is not None:
+            args.extend(("--workspace-config", "/agent/workspace.json"))
+            mounts.append((self.workspace_config, "/agent/workspace.json"))
+        if self.platform_config is not None:
+            args.extend(("--platform-config", "/agent/platform.json"))
+            mounts.append((self.platform_config, "/agent/platform.json"))
+        config_text += '\n[mcp_servers.workspace]\ncommand = "/agent/venv/bin/python"\n'
+        config_text += f"args = {json.dumps(args)}\nenabled_tools = {json.dumps(self.allowed_tools)}\nrequired = true\n"
+        for tool in self.allowed_tools:
+            config_text += f'[mcp_servers.workspace.tools.{tool}]\napproval_mode = "approve"\n'
+        config_text += '[mcp_servers.workspace.env]\nPYTHONPATH = "/agent/runtime"\n'
         (home / "config.toml").write_text(config_text, encoding="utf-8")
         command = namespace_command(
             home,
             work,
             network=True,
-            read_only_mounts=(
-                (Path(sys.prefix), "/agent/venv"),
-                (Path(__file__).parent, "/agent/runtime"),
-                (self.materials, "/agent/materials"),
-            ),
+            read_only_mounts=tuple(mounts),
         )
         config = CodexConfig(
             launch_args_override=(
@@ -122,20 +143,34 @@ class CodexAgent:
         self.record("skills/list", skills.model_dump(mode="json", by_alias=True))
         if any(skill.enabled for entry in skills.data for skill in entry.skills):
             raise RuntimeError("unapproved Skills remain enabled; inspect skills/list evidence")
-        thread = self.client.thread_start(
-            {
-                "cwd": "/agent/work",
-                "model": self.binding.model,
-                "modelProvider": self.binding.provider,
-                "baseInstructions": "",
-                "developerInstructions": self.instructions,
-                "approvalPolicy": "never",
-                "sandbox": "read-only",
-            }
-        )
+        params = {
+            "cwd": "/agent/work",
+            "model": self.binding.model,
+            "modelProvider": self.binding.provider,
+            "baseInstructions": "",
+            "developerInstructions": self.instructions,
+            "approvalPolicy": "never",
+            "sandbox": "read-only",
+        }
+        if resume:
+            prior = json.loads((self.root / "thread-binding.json").read_text())
+            thread = self.client.thread_resume(prior["thread_id"], params)
+        else:
+            thread = self.client.thread_start(params)
         self.thread_id = thread.thread.id
         result = thread.model_dump(mode="json", by_alias=True)
-        self.record("thread/start", result)
+        self.record("thread/resume" if resume else "thread/start", result)
+        (self.root / "thread-binding.json").write_text(
+            json.dumps(
+                {
+                    "thread_id": self.thread_id,
+                    "provider": self.binding.provider,
+                    "model": self.binding.model,
+                    "effort": self.binding.effort,
+                }
+            )
+            + "\n"
+        )
         if (thread.model_provider, thread.model, thread.reasoning_effort.value) != (
             self.binding.provider,
             self.binding.model,
