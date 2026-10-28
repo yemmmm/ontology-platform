@@ -8,8 +8,8 @@
 - 用户随后确认 **LangGraph 编排选型**；已比较 Codex、DSH、OpenAI Agents SDK、Deep Agents 与 `create_agent`，不预设必须直连模型 API。
 - 用户追加关注 DSH 的早期版本风险，要求评估 OpenAI Agents SDK 构建方案；该请求不代表已选定 SDK 或改用 OpenAI 模型。
 - 2026-10-28 用户追加 Codex harness 适配调研；官方嵌入接口、现有接入与本机协议已核对。随后明确要求形成 **LangGraph＋自定义 Agent 的改造计划，自定义 Agent 暂定 Codex harness，并前置功能验证**；该计划纳入 v5 需求。
-- 当前状态：**已按用户追加指令开始实施，P0 无推理 SDK 接入基线通过 9 项开发测试，P0 整体仍为 PARTIAL；两项编排风险已有独立机制测试证据。Codex 必需功能的真实模型／平台集成验证、P1—P4 生产实现和本计划的独立审阅尚未完成。** 详见[本批验证记录](../delivery/test-docs/2026-10-28-v5-codex-p0-validation.md)；原方法设计的独立 PASS 不自动覆盖 v5 的执行、存储及迁移设计。
-- 用户已追加授权测试设计、框架原型和子 Agent 验证，范围见[两项风险测试记录](../delivery/test-docs/2026-10-27-v5-langgraph-risk-validation.md)。原任务授权、预算与历史证据保持；版本登记和本次确定性实验不创建预算、恢复旧任务或启动新的收费建模。
+- 当前状态：**已开始实施，27 项开发测试通过；用户另行授权独立人民币 3 元，真实 GLM／MCP 工具循环已有证据。P0 因 `outputSchema` 与实际工具使用的行为差异暂停，结果合同候选待用户确认，整体仍为 PARTIAL。必需集成验证、P1—P4 生产实现和计划独立审阅尚未完成。** 详见[本批验证记录](../delivery/test-docs/2026-10-28-v5-codex-p0-validation.md)；原方法的独立 PASS 不自动覆盖 v5 的执行、存储及迁移设计。
+- 2026-10-27 两项风险的测试设计、框架原型和子 Agent 验证授权见[测试记录](../delivery/test-docs/2026-10-27-v5-langgraph-risk-validation.md)。当时确定性实验未创建预算或启动收费建模；2026-10-28 本次 P0 已另获独立 3 元授权，原任务及历史证据保持，不恢复旧任务。
 - v5 的工作重点按本轮目标调整。既有任务继续遵守其原合同；质量、完整范围、授权、应用正确性与独立验收不因重写降低。运行成本继续测量，不将研发／复盘成本混入单次建模收益。
 - 当前改造顺序、验证判据、迁移边界及实质决策主记录：[v5 改造计划](../delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md)。编写计划时未修改运行代码；2026-10-28 用户追加授权按计划开始底座技术切换，优先清晰架构与现有功能完整保留，遇到需知晓或决策的事项暂停。当前新增[隔离 P0 入口](../../modeling_team/v5/README.md)，不切换默认入口或变更实际预算。
 - 选型依据：[LangGraph 与替代方案评估](../research/2026-10-27-v5-modeling-team-orchestration-options.md)、[五种 Agent 方案比较](../research/2026-10-27-v5-agent-runtime-comparison.md)、[SDK 构建方案评估](../research/2026-10-27-v5-openai-agents-sdk-assessment.md)及 [Codex harness 评估](../research/2026-10-28-v5-codex-harness-assessment.md)。Codex 由“优先验证建议”更新为用户暂定执行基础；只有前期验证发现实质缺口时，才针对缺口评估 Deep Agents 或 Agents SDK，不并行建设多套执行器。

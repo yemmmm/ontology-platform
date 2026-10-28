@@ -65,8 +65,10 @@ class ModelBinding:
         return cls(*values)
 
 
-def candidate_config(binding: ModelBinding) -> str:
-    """Use a deliberately unreachable route; preflight cannot perform inference."""
+def candidate_config(
+    binding: ModelBinding, *, provider_base_url: str = "http://127.0.0.1:9/v1"
+) -> str:
+    """Keep inference off by default; real execution supplies its owned route."""
     quote = json.dumps
     lines = [
         f"model = {quote(binding.model)}",
@@ -84,7 +86,7 @@ def candidate_config(binding: ModelBinding) -> str:
         "enabled = false",
         f"[model_providers.{quote(binding.provider)}]",
         f"name = {quote(binding.provider)}",
-        'base_url = "http://127.0.0.1:9/v1"',
+        f"base_url = {quote(provider_base_url)}",
         'wire_api = "responses"',
         "requires_openai_auth = false",
         'remote_compaction = "unsupported"',
@@ -92,7 +94,13 @@ def candidate_config(binding: ModelBinding) -> str:
     return "\n".join(lines) + "\n"
 
 
-def namespace_command(home: Path, work: Path) -> list[str]:
+def namespace_command(
+    home: Path,
+    work: Path,
+    *,
+    network: bool = False,
+    read_only_mounts: tuple[tuple[Path, str], ...] = (),
+) -> list[str]:
     """The existing Linux isolation layout, with network also off for preflight.
 
     No import from modeling_team: its __init__ eagerly loads the old Runner.
@@ -105,7 +113,6 @@ def namespace_command(home: Path, work: Path) -> list[str]:
         bwrap,
         "--die-with-parent",
         "--unshare-pid",
-        "--unshare-net",
         "--proc",
         "/proc",
         "--dev",
@@ -123,6 +130,8 @@ def namespace_command(home: Path, work: Path) -> list[str]:
         "CODEX_HOME",
         "/agent/home",
     ]
+    if not network:
+        command.append("--unshare-net")
     for source in (
         "/usr",
         "/bin",
@@ -133,6 +142,8 @@ def namespace_command(home: Path, work: Path) -> list[str]:
     ):
         if Path(source).exists():
             command.extend(("--ro-bind", source, source))
+    for source, destination in read_only_mounts:
+        command.extend(("--ro-bind", str(source.resolve()), destination))
     command.extend(
         (
             "--ro-bind",

@@ -3,10 +3,10 @@
 归属：[R5.0-001](../../docs/requirements/requirements-v5.0.md#r5-0-001)、
 [实施计划 P0](../../docs/delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md#5-p0在全面改造前验证什么)。
 
-当前实现是 **P0 无推理接入检查**。独立包 `ontoweave_modeling` 不导入旧
+当前实现包含 **P0 无推理接入检查与真实 SDK／MCP 最小探针**。独立包 `ontoweave_modeling` 不导入旧
 `modeling_team`／Runner，独立依赖环境不修改后端、默认任务入口或现有任务。
 后续有界 Agent、LangGraph 编排和持久业务工作空间按 P0 放行结果推进。
-当前 9 项开发测试及未验证范围见[验证记录](../../docs/delivery/test-docs/2026-10-28-v5-codex-p0-validation.md)。
+当前 27 项开发测试、真实回合及暂停事项见[验证记录](../../docs/delivery/test-docs/2026-10-28-v5-codex-p0-validation.md)。
 
 ## 复跑
 
@@ -47,7 +47,11 @@ uv run --locked --project modeling_team/v5 ruff format --check modeling_team/v5/
 ## 剩余放行条件
 
 P0 V1—V8 仍需真实模型、获准 MCP 与平台资源、原预算账本、PostgreSQL
-checkpointer 和独立评价上下文的证据。当前隔离网络的环境只用于无推理检查，
-后续真实执行需另接获准 provider／工具路由，不能直接当作生产 Agent。
-空 home 实测仍启用了 5 个运行时内置 Skills；后续需按授权裁剪并核对出站上下文。
+checkpointer 和独立评价上下文的证据。`preflight` 入口仍禁用网络；真实探针显式接入
+获准 provider／工具路由，两者的证据范围分别记录，不能直接当作生产 Agent。
 未满足 P0 放行条件前不进入 P1 全面实现，不切换默认入口。
+
+真实 Agent 已在 thread 创建前通过公开配置关闭上述系统 Skills，工具循环已实际走通。
+但 `outputSchema` 回合未调用材料工具且返回了未经实际读取支持的内容；当前停在结果合同确认。
+已准备“自然 JSON 返回＋程序结构校验”的最小候选，不增建备用执行器。
+真实探针需要显式 `--budget-ref`，复用原主账；当前预算因待确认事项暂停，不继续收费运行。
