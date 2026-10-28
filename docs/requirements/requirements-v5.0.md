@@ -7,10 +7,11 @@
 - 用户补充确认：**允许一并替换 Codex／DSH，优先更简单、可控的执行方式。** 不要求新实现兼容旧原生会话执行模型。
 - 用户随后确认 **LangGraph 编排选型**；Agent 执行层比较 Codex、DSH、OpenAI Agents SDK、Deep Agents 与 `create_agent`，尚未选定。重点检验 DSH 的可定制性与各方案可复用的 Agent 优化，不预设必须直连模型 API。
 - 用户追加关注 DSH 的早期版本风险，要求评估 OpenAI Agents SDK 构建方案；该请求不代表已选定 SDK 或改用 OpenAI 模型。
+- 2026-10-28 用户追加 Codex harness 适配调研；官方嵌入接口、现有接入与本机协议已核对，尚未选定执行层或授权新的收费验证。
 - 当前状态：**版本方向已确认，需求初始分解与选型调研完成；两项选型风险已做隔离框架实验并通过独立机制测试。生产实现、真实模型与完整技术设计的独立审阅尚未完成。** 原方法设计的独立 PASS 不自动覆盖 v5 的执行、存储及迁移设计。
 - 用户已追加授权测试设计、框架原型和子 Agent 验证，范围见[两项风险测试记录](../delivery/test-docs/2026-10-27-v5-langgraph-risk-validation.md)。原任务授权、预算与历史证据保持；版本登记和本次确定性实验不创建预算、恢复旧任务或启动新的收费建模。
 - v5 的工作重点按本轮目标调整。既有任务继续遵守其原合同；质量、完整范围、授权、应用正确性与独立验收不因重写降低。运行成本继续测量，不将研发／复盘成本混入单次建模收益。
-- 编排与实质决策主记录：[LangGraph 与替代方案评估](../research/2026-10-27-v5-modeling-team-orchestration-options.md)；执行层主记录：[五种 Agent 方案比较](../research/2026-10-27-v5-agent-runtime-comparison.md)及 [SDK 构建方案评估](../research/2026-10-27-v5-openai-agents-sdk-assessment.md)。LangGraph 已确认；当前建议优先验证 SDK 与现有模型接入、以 Deep Agents 为主要对照，不是执行层最终选择或运行通过。
+- 编排与实质决策主记录：[LangGraph 与替代方案评估](../research/2026-10-27-v5-modeling-team-orchestration-options.md)；执行层主记录：[五种 Agent 方案比较](../research/2026-10-27-v5-agent-runtime-comparison.md)、[SDK 构建方案评估](../research/2026-10-27-v5-openai-agents-sdk-assessment.md)及 [Codex harness 评估](../research/2026-10-28-v5-codex-harness-assessment.md)。LangGraph 已确认；结合现有接入与公开控制能力，当前建议先验证 Codex 最小接入、以 Deep Agents 为主要对照，Agents SDK 保留直接组合运行策略的备选。这是验证顺序建议，不是执行层最终选择或运行通过。
 
 ## 目标与边界
 

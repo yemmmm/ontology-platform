@@ -1,12 +1,12 @@
 # v5 Agent 执行层横向比较
 
-日期：2026-10-27。状态：**官方资料与本地源码比较完成，尚未执行五方案的同条件运行对照；没有成本、质量或最终选型 PASS。**
+日期：2026-10-27；2026-10-28 补充 Codex harness 评估。状态：**官方资料与本地源码比较完成，尚未执行五方案的同条件运行对照；没有成本、质量或最终选型 PASS。**
 
 用户已确认 LangGraph 编排选型，要求比较 Codex、DSH、OpenAI SDK、Deep Agents、`create_agent`，并指出 DSH 的轻量核心与定制空间值得期待，`create_agent` 可能留下较多优化工作；随后补充 DSH 的早期版本风险，要求重点评估 SDK 方案。本记录承接 [R5.0-001](../requirements/requirements-v5.0.md#r5-0-001) 和[编排选型记录](2026-10-27-v5-modeling-team-orchestration-options.md)。这里的 OpenAI SDK 指 **OpenAI Agents SDK**，不是普通 `openai` API 客户端、Codex SDK 或托管 Agents API。
 
 ## 1. 当前判断
 
-**综合版本风险与 Python 接入结构，建议优先验证 OpenAI Agents SDK，以 Deep Agents 作为主要对照；Codex 保留现有基线，DSH 保留定制备选，`create_agent` 作为按需组装的基线。** 初始 DSH 优先建议据补充评估调整；Agent 执行层尚未选定。关键条件是当前 GLM 路由能承接所需上下文与控制能力，详见 [SDK 构建方案评估](2026-10-27-v5-openai-agents-sdk-assessment.md)。
+**建议先验证 Codex harness 的最小接入，以 Deep Agents 作为主要对照；OpenAI Agents SDK 保留直接组合运行策略的备选，DSH 保留定制备选，`create_agent` 作为按需组装的基线。** 2026-10-28 的[补充评估](2026-10-28-v5-codex-harness-assessment.md)核对了官方 Python SDK、角色指令替换、控制协议和 provider 本地压缩路径，并区分现有运行基础与旧 Team 职责。本项目已有 Codex／GLM Responses 和 MCP 接入，尚无必须深改 harness 的需求，因此调整验证顺序；这不代表已测得 Codex 优于其他方案。Agent 执行层尚未选定，当前模型的完整能力仍需验证。
 
 DSH 的优势有源码依据：运行核心、模型适配、工具、上下文处理和持久化可以按插件组合；不必先写完整 Agent 循环才获得定制能力。Deep Agents 的竞争力则在于已组合好的上下文与委派能力，以及与 Python／LangGraph 的直接衔接。两者值得比较“完成同一业务工作实际还要维护多少代码”，不能用核心大小直接推导成本或质量。
 
@@ -18,9 +18,9 @@ DSH 的优势有源码依据：运行核心、模型适配、工具、上下文�
 
 | 方案 | 已有能力 | 需要选择、定制或补齐的部分 | v5 适配判断 |
 | --- | --- | --- | --- |
-| **Codex，通过官方 SDK／app-server** | 完整运行时；工具执行、会话接续、流式事件、Skills、压缩；公开 turn 启动、steer、interrupt 控制。Python SDK 已提供稳定发布并绑定运行时版本。 | 收窄实际工具与输入；映射事件、用量及控制结果；深改循环与上下文策略受公开扩展面约束。不能整体沿用旧适配器。 | **现有基线，仍可竞争。** 重新用官方接口评估薄接入层，不把旧适配器的历史职责当作 Codex 的必然代价。[SDK](https://learn.chatgpt.com/docs/codex-sdk)、[app-server](https://learn.chatgpt.com/docs/app-server) |
+| **Codex，通过官方 SDK／app-server** | 完整运行时；工具执行、会话接续、流式事件、Skills、压缩；公开 turn 启动、steer、interrupt 控制。Python SDK 已提供稳定发布并绑定运行时版本。 | 收窄实际工具与输入；映射事件、用量及控制结果；深改循环与上下文策略受公开扩展面约束。不能整体沿用旧适配器。 | **优先验证最小接入。** 复用现有 Responses 与 MCP 基础，核对工具边界和当前模型压缩；详见[补充评估](2026-10-28-v5-codex-harness-assessment.md)。[SDK](https://learn.chatgpt.com/docs/codex-sdk)、[app-server](https://learn.chatgpt.com/docs/app-server) |
 | **DSH，通过 SDK＋profile／插件** | 可组合运行核心；自动压缩、会话日志与恢复、工具管线；完整 profile 可组合 Skills、子 Agent、结果外置等能力。 | 选择最小插件集合；当前公开 SDK 缺少单会话 cancel／pause；模型路由、调用准入和完整用量接入需验证。上游仍为开发预览。 | **定制备选。** 可插拔有价值，版本跟随与控制接入成本需要纳入比较。[架构][dsh-architecture]、[Python SDK][dsh-sdk]、[发布状态][dsh-readme] |
-| **OpenAI Agents SDK** | 工具循环、handoff、会话与可恢复运行状态；当前 `SandboxAgent` 默认提供文件、shell、compaction，并可加 Skills／Memory。 | 选择普通 Agent 或 SandboxAgent；接入工作目录、工具与存储；核对非 OpenAI 路由及所选高级能力，不能只验证普通文本调用。 | **优先验证建议。** Python 接入可减少独立运行时桥接；GLM 的原生压缩等能力尚未证实。[运行](https://developers.openai.com/api/docs/guides/agents/running-agents)、[SandboxAgent](https://developers.openai.com/api/docs/guides/agents/sandboxes) |
+| **OpenAI Agents SDK** | 工具循环、handoff、会话与可恢复运行状态；当前 `SandboxAgent` 默认提供文件、shell、compaction，并可加 Skills／Memory。 | 选择普通 Agent 或 SandboxAgent；接入工作目录、工具与存储；核对非 OpenAI 路由及所选高级能力，不能只验证普通文本调用。 | **直接组合运行策略的备选。** Python 接入可减少独立运行时桥接；GLM 的原生压缩等能力尚未证实。[运行](https://developers.openai.com/api/docs/guides/agents/running-agents)、[SandboxAgent](https://developers.openai.com/api/docs/guides/agents/sandboxes) |
 | **Deep Agents** | 基于 LangChain／LangGraph 的预组装 Agent；历史摘要、大结果外置、文件工具和独立上下文子 Agent；可配置 Skills、Memory，任务规划可选。 | 选择 backend 和持久化；裁剪工具及默认指令；接入业务状态、预算和中断合同；核对内外层图的运行身份。 | **主要对照。** 有望少写通用 Agent 工程，Python 接入直接；默认能力是否适合建模须实测。[概览](https://docs.langchain.com/oss/python/deepagents/overview)、[定制](https://docs.langchain.com/oss/python/deepagents/customization) |
 | **LangChain `create_agent`** | 已有模型／工具循环、结构化输出和 LangGraph 运行基础；可用官方摘要、工具错误处理、重试、调用上限、文件和子 Agent 等中间件。 | 自己确定中间件集合、顺序、阈值、模型和错误政策，并验证组合效果。 | **按需组装基线。** 简单有界工作可能最省事；若多数工作都要长上下文、文件和委派，应先比较现成 harness。[Agent](https://docs.langchain.com/oss/python/langchain/agents)、[中间件](https://docs.langchain.com/oss/python/langchain/middleware/built-in) |
 
@@ -65,6 +65,8 @@ Deep Agents 在 `create_agent` 上组装通用能力，返回 `CompiledStateGrap
 
 Codex 有官方程序接口，不能仅用 CLI 文本驱动的困难评价它。app-server 已区分 thread、turn、item，提供 steer、interrupt、压缩和实际事件；Python SDK 使用本地 app-server。v5 可评估只绑定工作单元、调用控制与结果的薄接入，而不搬入旧 Runner 的协调职责。[SDK](https://learn.chatgpt.com/docs/codex-sdk)、[控制接口](https://learn.chatgpt.com/docs/app-server)。
 
+2026-10-28 补充：本机 `0.165.0` 稳定 schema 有角色指令与结构化输出字段，`dynamicTools` 仍在实验面。优先复用 MCP；工具裁剪必须核对实际效果，不能复用已知无效的顶层 `default_tools_enabled`。官方也提供 provider 不支持远端压缩时的本地压缩路径，不能据远端能力缺失直接推导需要重写历史摘要。范围与未验证项见[Codex harness 评估](2026-10-28-v5-codex-harness-assessment.md)。
+
 OpenAI Agents SDK 则允许应用掌握运行与存储。当前 `SandboxAgent` 已有文件、shell、compaction 的默认组合，Skills／Memory 按需加入；应与 DSH／Deep Agents 的可用组合公平比较。普通 Agent 的模型适配成功，不足以证明 SandboxAgent 的全部能力在现有 GLM／其他路由下等价，需分别验证。[SandboxAgent](https://developers.openai.com/api/docs/guides/agents/sandboxes)、[模型与 provider](https://developers.openai.com/api/docs/guides/agents/models)。
 
 两者的运行状态都不能与外层流程各自重放同一次副作用。Agents SDK 的 history、session、服务端 conversation 等也应选择明确的会话权威，避免重复注入同一段历史。[运行与状态策略](https://developers.openai.com/api/docs/guides/agents/running-agents)。
@@ -85,7 +87,7 @@ OpenAI Agents SDK 则允许应用掌握运行与存储。当前 `SandboxAgent` �
 
 本轮只做比较与记录，未新建收费任务、预算或生产接入。已有 [9 项 LangGraph 机制测试](../delivery/test-docs/2026-10-27-v5-langgraph-risk-validation.md) 只支持编排机制，不作为任一候选 Agent 的成绩。
 
-结合补充评估，建议先验证 OpenAI Agents SDK 与当前模型的一个有界执行单元，Deep Agents 为主要对照，Codex 提供现有基线；DSH 和 `create_agent` 保留同合同下的备选。先验证实际会改变选择的最小接入，不先重写整个 Team，也不把五套完整实现作为首次真实建模的前置门。
+结合补充评估，建议先验证 Codex 官方 SDK／app-server 与当前模型的一个有界执行单元，Deep Agents 为主要对照；Agents SDK、DSH 和 `create_agent` 保留同合同下的备选。先验证实际会改变选择的最小接入，不先重写整个 Team，也不把五套完整实现作为首次真实建模的前置门。
 
 | 比较项 | 需要留下的证据 |
 | --- | --- |
@@ -96,11 +98,13 @@ OpenAI Agents SDK 则允许应用掌握运行与存储。当前 `SandboxAgent` �
 | 完整成本 | 统计全部角色、子 Agent、压缩、重试和恢复补读；记录输入／输出、往返、墙钟与人工介入，外部 Host 单列。 |
 | 质量与维护 | 同一冻结目标独立评价；演练换工具、改压缩策略、增加一种可恢复结果，观察实际涉及的模块与补丁。 |
 
-最终选择应同时满足业务质量与控制边界，再比较全任务成本和维护工作。SDK 若能以少量公开接口适配满足现有模型、上下文和控制需求，可进入第一条业务链；若需要大量补写上下文管理，应与 Deep Agents 比较实际成本。DSH 的可定制性仍保留价值，但须计入版本跟随和控制扩展。此条件判断不是预设胜负。
+最终选择应同时满足业务质量与控制边界，再比较全任务成本和维护工作。Codex 若通过少量公开接口适配满足现有需求，可进入第一条业务链；若必须深改核心，则根据已暴露的问题比较 Deep Agents 与 Agents SDK。DSH 的可定制性仍保留价值，但须计入版本跟随和控制扩展。此条件判断不是预设胜负。
 
 ## 8. 证据范围
 
 本轮核对了当前 v5 需求、旧 Codex／DSH 适配入口、DSH 固定源码与上述官方在线文档。DSH 固定版本可回查；其他在线文档访问日期为 2026-10-27，具体候选包版本须在运行对照前锁定。本地 Codex CLI 为 `0.164.0`，未据此声称当前 SDK 所有文档能力均已本地验证。
+
+2026-10-28 的 Codex 补充评估读取到本机 CLI `0.165.0`，并导出普通／实验协议 schema；没有升级 CLI、安装候选 Python SDK或调用模型。该检查只补充协议形状证据，不能替代真实接入与语义验收。
 
 没有执行候选 SDK 的安装、真实模型基准、生产改造或独立语义验收。修改范围仅为本比较、编排选型记录和 v5 需求中的选择状态；文档链接与 diff 检查不升级为运行 PASS。
 
