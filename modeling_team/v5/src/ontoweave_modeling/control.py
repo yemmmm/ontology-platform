@@ -66,6 +66,9 @@ class TaskControl:
             if message["status"] != "queued" or message["kind"] == "input":
                 continue
             kind = message["kind"]
+            if kind == "resume" and state["mode"] == "stopped":
+                message.update(status="rejected", code="task_stopped", effective_at=time.time())
+                continue
             if kind in {"pause", "stop", "resume"}:
                 state["mode"] = {"pause": "paused", "stop": "stopped", "resume": "running"}[kind]
             else:
@@ -79,6 +82,9 @@ class TaskControl:
         return "waiting_for_turn_end" if state["active"] else "settled"
 
     def begin_turn(self, unit: str, execution_id: str) -> dict:
+        return self.begin_activity(unit, execution_id, deliver_inputs=True)
+
+    def begin_activity(self, unit: str, execution_id: str, *, deliver_inputs: bool = False) -> dict:
         def change(state):
             self._controls(state)
             if unit in state["active"]:
@@ -97,7 +103,8 @@ class TaskControl:
             inputs = [
                 m
                 for m in state["messages"]
-                if m["kind"] == "input"
+                if deliver_inputs
+                and m["kind"] == "input"
                 and m["target"] in {None, unit}
                 and (
                     m["status"] == "queued"
@@ -121,10 +128,26 @@ class TaskControl:
 
         return self._change(change)
 
+    def synchronize(self) -> dict:
+        """Make queued controls visible before dispatch, including non-model effects."""
+
+        def change(state):
+            self._controls(state)
+            return {**copy.deepcopy(state), "status": self._status(state)}
+
+        return self._change(change)
+
     def finish_turn(self, unit: str, execution_id: str, *, consumed_ids: tuple[str, ...] = ()):
         def change(state):
             if state["active"].get(unit) != execution_id:
                 raise ValueError("finish must match the active execution")
+            delivered = {
+                m["id"]
+                for m in state["messages"]
+                if m.get("execution_id") == execution_id and m["status"] == "delivered"
+            }
+            if not set(consumed_ids).issubset(delivered):
+                raise ValueError("consumption must match a delivered input")
             del state["active"][unit]
             for message in state["messages"]:
                 if message["id"] in consumed_ids:

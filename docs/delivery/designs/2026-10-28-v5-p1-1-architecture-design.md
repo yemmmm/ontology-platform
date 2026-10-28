@@ -3,7 +3,7 @@
 - 日期：2026-10-28；源码基线：`b4bc433`。
 - 权威范围：[v5.0 需求](../../requirements/requirements-v5.0.md)，重点为 R5.0-001／002／004／006／007；阶段范围为[改造计划 P1.1](../implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md#p1-1)。
 - 方法依据：[语义工作空间与分层认知方法](2026-10-26-ontoweave-modeling-methodology-design.md) §3—4、§11、§17。
-- 本轮授权：先完成整体架构搭建设计与独立审阅。**设计独立审阅 Round 1 PASS，0 Critical／0 High；P1.1 尚未实现、运行或验收。** 见[独立审阅记录](../records/2026-10-28-v5-p1-1-architecture-design-review.md)。
+- 2026-10-28 的授权及交付：先完成整体架构搭建设计与独立审阅。**设计独立审阅 Round 1 PASS，0 Critical／0 High；当时 P1.1 尚未实现、运行或验收。** 见[独立审阅记录](../records/2026-10-28-v5-p1-1-architecture-design-review.md)。2026-10-29 用户追加授权后，整体框架子集已实现并通过开发工程验证，见[实施记录](../records/2026-10-29-v5-p1-1-framework-delivery.md)；真实小链与独立语义验收仍待完成。
 - P0 的 47 项开发测试、主要真实集成及小目标 6/6 仅按[原记录](../test-docs/2026-10-28-v5-codex-p0-validation.md)复用；完整计量仍为 PARTIAL，不因本设计升级。
 
 ## 1. 设计结论与交付范围

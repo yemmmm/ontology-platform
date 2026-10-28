@@ -1,5 +1,6 @@
 """Disposable PostgreSQL schema shared by v5 persistence and boundary tests."""
 
+import hashlib
 import json
 import os
 import uuid
@@ -31,3 +32,41 @@ def workspace():
             conn.execute(
                 sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(repository.schema))
             )
+
+
+@pytest.fixture
+def task_file(tmp_path):
+    materials = tmp_path / "sources"
+    materials.mkdir()
+    payload = b"A source with a condition and an explicit unknown."
+    (materials / "source.md").write_bytes(payload)
+    manifest = {
+        "source": {
+            "path": "source.md",
+            "source_ref": "approved-source/v1",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+    }
+    (materials / "manifest.json").write_text(json.dumps(manifest))
+    profile = tmp_path / "profile.yaml"
+    profile.write_text(
+        "roles:\n  modeling: &model\n    model_provider: glm-direct\n"
+        "    model: glm-5.3-flash\n    model_reasoning_effort: low\n"
+        "  acceptance: *model\n"
+    )
+    task = {
+        "schema_version": "ontoweave-task/v1",
+        "task_ref": "framework-task",
+        "run_id": "framework-run",
+        "work_unit_id": "bounded-unit",
+        "objective": "Express only the approved source.",
+        "materials": str(materials),
+        "model_profile": str(profile),
+        "instructions": "Preserve conditions and unknowns.",
+        "authorization": {"mode": "usage_only", "reference": "test-authorization"},
+        "scope": {"mode": "create", "base_url": "http://127.0.0.1:8001"},
+        "evaluation": {"freeze_id": "freeze-1", "sha256": "a" * 64, "case_count": 2},
+    }
+    path = tmp_path / "task.json"
+    path.write_text(json.dumps(task))
+    return path

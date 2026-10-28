@@ -15,20 +15,8 @@ from openai_codex.generated.v2_all import (
     SkillsListResponse,
 )
 
+from .contracts import outbound_tool_names  # noqa: F401 - public compatibility re-export
 from .preflight import ModelBinding, candidate_config, namespace_command
-
-
-def outbound_tool_names(tools: list[dict], namespace: str = "") -> list[str]:
-    """Read both flat and namespaced tool identities from the real Responses wire format."""
-    names = []
-    for tool in tools:
-        name = tool.get("name", (tool.get("function") or {}).get("name"))
-        qualified = f"{namespace}__{name}" if namespace else name
-        if tool.get("type") == "namespace":
-            names.extend(outbound_tool_names(tool["tools"], qualified))
-        else:
-            names.append(qualified)
-    return names
 
 
 class CodexAgent:

@@ -3,7 +3,9 @@
 归属：[R5.0-001](../../docs/requirements/requirements-v5.0.md#r5-0-001)、
 [实施计划 P0](../../docs/delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md#5-p0在全面改造前验证什么)。
 
-当前实现包含 **P0 无推理接入、真实 SDK／MCP、PostgreSQL 工作空间／checkpoint、自然回合控制及平台故障探针**。独立包 `ontoweave_modeling` 不导入旧
+当前实现包含 **P0 接入与 P1.1 整体框架**：显式 CLI、不可变任务绑定、版本化引用、单工作单元 LangGraph、原生执行登记／结果复用、自然回合控制、Host 平台桥和独立交接合同。P1.1 的真实小业务链及独立语义验收尚未完成，不能用工程 fixture 关闭 P1.1。框架范围见[实施记录](../../docs/delivery/records/2026-10-29-v5-p1-1-framework-delivery.md)。
+
+独立包 `ontoweave_modeling` 不导入旧
 `modeling_team`／Runner，独立依赖环境不修改后端、默认任务入口或现有任务。
 Host-only 探针暂时复用旧工具模块，不代表 P1 生产依赖切分已经完成。
 当前 47 项开发测试、独立工程 PASS、冻结平台小目标 6/6，以及计量 PARTIAL 边界见
@@ -75,3 +77,76 @@ Host 私有连接文件及自有资源运行；本批原目录用于只读证据
 未据此声明完整记忆方案或净降耗通过。
 跨批部分成功的恢复只复用原回执并保留已拒绝项，不自动更改分批或冒称全部完成。
 P0 选型阶段曾按用户要求暂停，后续已继续共享记忆子集验证；P1—P4、完整计量和默认切换仍须后续交付。
+
+## P1.1 框架入口
+
+从仓库根目录使用同一锁定 v5 环境：
+
+```bash
+env UV_PROJECT_ENVIRONMENT=$PWD/workspaces/v5-codex-p0/.venv \
+  uv run --locked --project modeling_team/v5 python -m ontoweave_modeling --help
+```
+
+`start`、`status`、`pause`、`stop`、`resume`、`evaluate`、`cleanup` 均显式绑定 `--run-dir`。
+首次准备可使用以下命令；它只冻结输入并保存 PostgreSQL 记录，不启动模型或平台资源：
+
+```bash
+env UV_PROJECT_ENVIRONMENT=$PWD/workspaces/v5-codex-p0/.venv \
+  uv run --locked --project modeling_team/v5 python -m ontoweave_modeling start \
+  --task /absolute/path/task.yaml \
+  --postgres-config /absolute/path/postgres-private.json \
+  --run-dir workspaces/v5-runs/unique-run --prepare-only
+```
+
+去掉 `--prepare-only`，或对已准备目录执行 `resume`，会按获准任务真正调用模型／平台；
+本轮框架验证没有执行这类真实调用。旧 `python -m modeling_team` 入口与新任务默认路由未切换。
+PostgreSQL 业务 schema 默认 `ontoweave_v5_workspace`，checkpoint 默认
+`ontoweave_v5_checkpoints`，可由 Host 显式指定独立名称。私有连接文件为 psycopg 连接参数 JSON，
+不会挂给生产 Agent。
+
+任务文件的完整最小形状如下。路径相对任务文件解析；所有示例占位值都须替换为真实获准内容，
+其中冻结题集应在生产前由独立侧准备，`sha256` 是其原始字节摘要：
+
+```yaml
+schema_version: ontoweave-task/v1
+task_ref: authorized-task
+run_id: unique-run
+work_unit_id: bounded-unit
+objective: 本次有界业务目标
+materials: /absolute/path/approved-materials
+model_profile: /absolute/path/glm-flash-low.yaml
+instructions: 本次获准建模方法和角色说明
+authorization:
+  mode: usage_only
+  reference: 当次真实Host授权引用
+  budget_ref: 原预算引用（如有则保留）
+scope:
+  mode: create
+  base_url: http://127.0.0.1:8001
+evaluation:
+  freeze_id: 独立冻结题集身份
+  sha256: 替换为64位十六进制原始字节摘要
+  case_count: 真实题目数量
+```
+
+`approved-materials/manifest.json` 使用已有材料合同，按材料 ID 列出相对 `path`、
+`source_ref`、`sha256` 及可选 `source_ranges`。准备后从 run 内材料快照接续；原材料、Profile
+变化不静默改变原绑定，快照篡改会返回准确错误。当前 Host 路由只接入 `glm-direct`，按
+Profile 精确保留模型／effort；普通金额／次数模式仍待对应阶段接入，不自动降为 `usage_only`。
+
+框架正常链为 `prepare → model → apply → self_check → handoff`。工作空间和 checkpoint
+保存精确引用，实际应用仍走已有统一图／明确变更、编译器、跨批绑定及 executor；Host worker
+使用 backend 环境，不导入旧 CLI 或启动 `TeamRunner`。原始原生事件、返回、用量及 executor
+意图／回执各保留原件。缺失业务输入停在 `waiting_input`；动态 HITL 在 P1.3 接入。
+
+暂停／停止先登记，等待在途原生回合自然结束，不调用 steer／interrupt；已返回候选保留。
+`stop` 不会由 `resume` 静默撤销。未知原执行保持 `reconciliation_required`，有原完成事件或
+回执时复用原结果；本阶段不承诺所有故障都能自动重连。应用恢复保持原操作身份和原分批，
+不把 checkpoint 当外部副作用事务。
+
+独立评价由 `evaluate --package /absolute/path/independent-materials --evaluation-id stable-id`
+启动。该包使用材料 manifest，包含同版本原来源和 `frozen-questions`；Host 加入准确实际目标。
+评价只获原材料、冻结题集与治理读取，具有独立原生上下文；不收到生产候选、自查或队列输入。
+Host 统一统计所有在途角色供暂停／停止判断。私有题目、答案和理由只保存于评价原件，公开反馈
+仅投影 verdict、范围及目标身份。格式或必需读取错误可沿同一评价身份重试，保持原冻结标准；
+未知在途执行不会借新报告尝试重启。当前工程 fixture 的 PASS 不代表真实语义 PASS。

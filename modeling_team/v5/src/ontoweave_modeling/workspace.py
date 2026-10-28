@@ -13,6 +13,8 @@ from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from .contracts import FrameworkError, digest
+
 
 class WorkspaceRepository:
     def __init__(self, connection: dict, schema: str, task_ref: str):
@@ -201,11 +203,39 @@ class WorkspaceRepository:
             }
 
     @contextmanager
-    def checkpointer(self) -> Iterator[PostgresSaver]:
-        info = {**self.connection, "options": f"-csearch_path={self.schema}"}
+    def checkpointer(self, schema: str | None = None) -> Iterator[PostgresSaver]:
+        namespace = schema or self.schema
+        with self.connect(autocommit=True) as conn:
+            conn.execute(
+                sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(namespace))
+            )
+        # Quote the identifier; search_path must also work for Host-selected schema names.
+        quoted = '"' + namespace.replace('"', '""') + '"'
+        info = {**self.connection, "options": f"-csearch_path={quoted}"}
         with psycopg.connect(
             **info, autocommit=True, prepare_threshold=0, row_factory=dict_row
         ) as conn:
             saver = PostgresSaver(conn)
             saver.setup()
             yield saver
+
+    def put_reference(
+        self, object_id: str, kind: str, content: dict, expected_revision: int
+    ) -> dict:
+        result = self.put(object_id, kind, content, expected_revision)
+        if result.get("status") != "recorded":
+            raise FrameworkError(result["code"], actual=result)
+        row = result["object"]
+        return {
+            "object_id": object_id,
+            "revision": row["revision"],
+            "digest": digest(row["content"]),
+        }
+
+    def read_reference(self, reference: dict) -> dict:
+        row = self.get(reference["object_id"], reference["revision"])
+        if row is None:
+            raise FrameworkError("record_not_found", reference=reference)
+        if digest(row["content"]) != reference["digest"]:
+            raise FrameworkError("record_digest_mismatch", reference=reference)
+        return row["content"]
