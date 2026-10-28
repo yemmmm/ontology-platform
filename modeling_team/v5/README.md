@@ -63,6 +63,7 @@ Host 私有连接文件及自有资源运行；本批原目录用于只读证据
 | `scripts/platform_case.py` | 使用已有 backend 环境复用编译、应用、读取和资源收尾；凭据留在 Host。 |
 | `scripts/platform_graph_case.py initial/resume` | 实际应用后的 checkpoint 丢失、未知响应、确认未写入及跨批部分成功。 |
 | `scripts/acceptance_case.py` | 独立只读评价冻结目标；实际材料读取、完整题集及模型修订均须核对。 |
+| `scripts/memory_case.py write/consume/evaluate` | 两 Agent 同记录版本冲突合并；新消费者仅从共享记忆答题，独立侧按原始依据评价。 |
 
 真实 Agent 已在 thread 创建前通过公开配置关闭上述系统 Skills，工具循环已实际走通。
 `outputSchema` 的失败证据保留，用户已确认“自然 JSON 返回＋程序结构校验”。本任务最新授权
@@ -70,5 +71,7 @@ Host 私有连接文件及自有资源运行；本批原目录用于只读证据
 此项仅适用于本任务，不改变其他任务的预算。没有新增费用总账或备用执行器。
 
 工作空间只保存候选业务内容；checkpoint 保存执行引用，平台保有实际模型，独立报告保有验收结论。
+共享记忆有界验证与边界见[专门记录](../../docs/delivery/test-docs/2026-10-28-v5-shared-memory-validation.md)，
+未据此声明完整记忆方案或净降耗通过。
 跨批部分成功的恢复只复用原回执并保留已拒绝项，不自动更改分批或冒称全部完成。
-本批在选型证据结论处按用户要求暂停；P1—P4、完整计量和默认切换仍须后续交付。
+P0 选型阶段曾按用户要求暂停，后续已继续共享记忆子集验证；P1—P4、完整计量和默认切换仍须后续交付。

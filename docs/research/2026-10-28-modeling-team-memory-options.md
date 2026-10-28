@@ -2,6 +2,11 @@
 
 日期：2026-10-28。状态：初步调研与方案建议；用户已确认登记为 [R5.0-008 建模 Team 长短期记忆与上下文压缩专项研究](../requirements/requirements-v5.0.md#r5-0-008)。本文作为专项输入，研究待深化；未据此确认最终选型、实现、检索质量或净降耗通过。
 
+后续实证：[共享记忆有界验证](../delivery/test-docs/2026-10-28-v5-shared-memory-validation.md)已验证
+两个真实 Agent 对同一版本记录发生冲突后合并、先提交内容保留，以及新消费者仅从记忆答题，
+独立评价 6/6 PASS。该实证只覆盖既有工作空间按 ID／版本读取的路径，不覆盖相互矛盾的来源、
+资料撤回、未知位置检索、摘要刷新或净降耗，不改变本文其余候选方案的研究状态。
+
 **结论：可以借鉴现有 Agent 记忆实现，为建模 Team 提供“有界当前上下文＋可查询的持续业务记录”。最贴合当前方向的组合是 LangGraph 执行状态、Codex 局部上下文管理、PostgreSQL 语义工作空间，以及摘要导航和按需读取。** 优先复用已确认的 v5 方向，先以身份／关键词／显式引用建立可靠回查，再依据实际漏召回增加向量检索；首版不需要完整接入另一套自动抽取业务事实的记忆平台。
 
 归属需求为 [R5.0-008](../requirements/requirements-v5.0.md#r5-0-008)，关联 [R5.0-001／002／005／006／007](../requirements/requirements-v5.0.md)，并承接 [R4.3-030](../requirements/requirements-v4.3.md#r4-3-030) 的有界上下文与降耗目标。方法依据为[语义工作空间设计](../delivery/designs/2026-10-26-ontoweave-modeling-methodology-design.md)；执行方向沿[现有 v5 改造计划](../delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md)。下文的适配结论是本项目建议，不是这些产品的通用性能排名。
