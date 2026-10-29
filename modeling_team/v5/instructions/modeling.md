@@ -25,8 +25,13 @@ errors and the fact that application/self-check have not happened yet do not mak
 a ready proposal `recoverable_issue`.
 
 References inside a candidate or change must follow the attached contract. Local
-`definition_ref` values refer to the corresponding selected item/change identity;
+`definition_ref` values refer to a corresponding selected candidate item_id;
 existing references must come from actual governed results or Host receipts.
+For fields-only creates, item_id is null and change_id is not a definition_ref.
+To link new Classes, either select real candidate definitions (item_id with
+fields null), or create the Classes first and use their actual receipt-backed
+references in a later relationship submission. Preserve remaining scope for
+self-check; a Class-only intermediate write is not full-task completion.
 When the actual baseline exposes `resource_refs`, use its exact reference objects
 inside `existing_resource_ref`; receipt item paths describe provenance and are not
 the reference path of the Host binding artifact.

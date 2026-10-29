@@ -168,6 +168,7 @@ class PlatformWorker:
             write_json(plan_path, plan)
         forwarder = self.forwarder(scope)
         try:
+            self._close_applied_sessions(scope, forwarder, current=root)
             executor = self.executor(scope, root, forwarder, allow_submit=not reconcile)
             result = execute_bound_model_changes(executor, plan["batches"], plan["source_map"])
             write_json(root / "result.json", result)
@@ -258,24 +259,40 @@ class PlatformWorker:
         write_json(path, config)
         return {"config_ref": str(path)}
 
+    def _close_applied_sessions(self, scope, forwarder, *, current=None):
+        for root in sorted((self.root / "operations").glob("*")):
+            if root == current or not (root / "compiled.json").exists():
+                continue
+            if not (root / "result.json").exists():
+                raise FrameworkError("application_outcome_unknown")
+            result = json.loads((root / "result.json").read_text())
+            if result.get("status") == "not_written":
+                continue
+            if result.get("status") != "completed":
+                raise FrameworkError("application_incomplete")
+            completion = root / "session-completion.json"
+            if completion.exists() and json.loads(completion.read_text())["closed"]:
+                continue
+            executor = self.executor(scope, root, forwarder, allow_submit=False)
+            intents, _ = executor._load_records()
+            for intent in intents:
+                snapshot = executor._load_snapshot(intent)
+                if snapshot is not None:
+                    executor._adopt_snapshot_context(snapshot, snapshot["batch"]["ontology_id"])
+            if executor.session_id:
+                executor._refresh_session_revision()
+            closed = executor.close_session()
+            write_json(completion, closed)
+            if not closed["closed"]:
+                raise FrameworkError("session_close_unconfirmed")
+            if closed.get("session_id"):
+                scope.completed_session_id = closed["session_id"]
+
     def finalize(self) -> dict:
         scope = self.scope()
         forwarder = self.forwarder(scope)
         try:
-            for root in sorted((self.root / "operations").glob("*")):
-                if not (root / "compiled.json").exists():
-                    continue
-                if not (root / "result.json").exists():
-                    raise FrameworkError("application_outcome_unknown")
-                result = json.loads((root / "result.json").read_text())
-                if result.get("status") != "completed":
-                    raise FrameworkError("application_incomplete")
-                closed = self.executor(scope, root, forwarder, allow_submit=False).close_session()
-                write_json(root / "session-completion.json", closed)
-                if not closed["closed"]:
-                    raise FrameworkError("session_close_unconfirmed")
-                if closed.get("session_id"):
-                    scope.completed_session_id = closed["session_id"]
+            self._close_applied_sessions(scope, forwarder)
             self.save_scope(scope)
         finally:
             forwarder.stop()

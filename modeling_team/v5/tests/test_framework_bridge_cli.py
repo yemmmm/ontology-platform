@@ -54,6 +54,71 @@ print("configured-tools-only")
     assert process.stdout.strip() == "configured-tools-only"
 
 
+def test_host_closes_prior_apply_session_before_followup_and_preserves_unknown_outcomes(
+    task_file, tmp_path
+):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    bridge = HostBridge(binding.root)
+    program = r"""
+import json, sys
+from pathlib import Path
+from types import SimpleNamespace
+from ontoweave_modeling.contracts import TaskBinding, FrameworkError, write_json
+from modeling_team.v5.host.worker import PlatformWorker
+worker=PlatformWorker(TaskBinding.load(Path(sys.argv[1])))
+scope=SimpleNamespace(ontology_id="ontology")
+worker.scope=lambda:scope
+worker.save_scope=lambda value:None
+worker.forwarder=lambda value:SimpleNamespace(stop=lambda:None)
+worker.snapshot=lambda:{"model_revisions":{"ontology":2}}
+events=[]
+class Executor:
+    def __init__(self, root): self.root,self.session_id=root,None
+    def _load_records(self): return ([{"ordinal":1}],[])
+    def _load_snapshot(self,intent): return {"batch":{"ontology_id":"ontology","session_id":self.root.name}}
+    def _adopt_snapshot_context(self,snapshot,ontology):
+        assert ontology=="ontology"
+        self.session_id=snapshot["batch"]["session_id"]
+    def _refresh_session_revision(self): assert self.session_id==self.root.name
+    def close_session(self):
+        assert self.session_id==self.root.name
+        events.append("close:"+self.root.name)
+        return {"closed":True,"session_id":self.root.name}
+    def execute(self,batches,source_map):
+        assert events==["close:first"]
+        events.append("apply:second")
+        return {"status":"completed","batches":[],"errors":[],"pending_changes":[]}
+worker.executor=lambda scope,root,*args,**kwargs:Executor(root)
+first=worker.root/"operations/first"
+write_json(first/"compiled.json",{})
+write_json(first/"result.json",{"status":"completed","batches":[]})
+rejected=worker.root/"operations/rejected"
+write_json(rejected/"compiled.json",{})
+write_json(rejected/"result.json",{"status":"not_written","errors":[{"code":"ontology_lease_conflict"}]})
+request={"schema_version":"r4-3-025-model-changes/v1","candidate_ref":None,"changes":[{
+    "change_id":"second-definition","action":"create","resource_kind":"class",
+    "item_id":None,"target_ref":None,"fields":{"name":"Second definition"}}]}
+result=worker.apply({"operation_id":"second","candidate":None,"changes":request})
+assert result["status"]=="completed"
+assert worker.finalize()=={"model_revisions":{"ontology":2}}
+assert events==["close:first","apply:second","close:second"]
+write_json(worker.root/"operations/unknown/compiled.json",{})
+try: worker.finalize()
+except FrameworkError as error: assert error.code=="application_outcome_unknown"
+else: raise AssertionError("an unknown write must remain unresolved")
+print("completed-session-closed-and-unknown-preserved")
+"""
+    process = subprocess.run(
+        [bridge.command[0], "-c", program, str(binding.root)],
+        env=bridge.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stdout.strip() == "completed-session-closed-and-unknown-preserved"
+
+
 def test_host_worker_compiles_once_and_preserves_frozen_plan(task_file, tmp_path):
     binding = TaskBinding.prepare(task_file, tmp_path / "run")
     bridge = HostBridge(binding.root)

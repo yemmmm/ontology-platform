@@ -266,7 +266,9 @@ python -m ontoweave_modeling input --run-dir /absolute/path/run \
 
 快照同时保留各子图 checkpoint。当前是直接子级能力，完整递归规划及大型业务收口另按
 P2 验证；[工程及真实运行记录](../../docs/delivery/records/2026-10-29-v5-multi-unit-delivery.md)
-区分已实现机制与尚待人工答复的实际父级闭环。
+区分已实现机制与实际父级闭环的验证范围。测试阶段可按用户授权构造并署名 HITL 答复。
+父级可按真实依赖分批应用；后续提交前从原快照恢复并关闭此前已确认完成的 Session。
+历史明确未写入的尝试不阻止收口，结果未知的写入继续按原身份对账。
 
 ## 最小共享业务记忆
 
