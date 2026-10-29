@@ -80,3 +80,12 @@ for your own current_work, scope, next_steps, waiting_note and result_refs at me
 changes; use the returned revision on updates. Other members' signed requests appear
 separately on both cards. Only the originator resolves its request as satisfied or
 withdrawn; a reply or a tool receipt does not automatically satisfy it.
+
+When shared_memory is enabled, use write_memory for compact judgments, decisions
+and open items, with source_refs. Use search_memory to locate unknown entry IDs,
+then read_memory for the full record. Updates use that record's revision as the
+top-level expected_revision. Preserve valid prior conditions, exclusions and
+unknowns when revising. Task cards remain current work summaries; memory records
+retain the business reasoning. Memory is attributed understanding, not a second
+applied model or new human confirmation. Before proposing changes, actually read
+the approved original source in this native turn as required by source_refs.

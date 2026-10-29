@@ -325,6 +325,20 @@ class WorkUnitFlow:
             },
             "required": ["status", "issues", "consumed_ids"],
         }
+        reuse_result = False
+        if state.get("issue", {}).get("code") == "peer_result_needs_correction" and state.get(
+            "peer_round"
+        ):
+            previous_id = f"peer-{actor}-{state['peer_round'] - 1:05d}"
+            previous_path = self.binding.root / "executions" / previous_id / "result.json"
+            if previous_path.exists():
+                previous = json.loads(previous_path.read_text())
+                try:
+                    decode_json_result(previous["final_response"], schema)
+                except ResultContractError:
+                    pass
+                else:
+                    execution_id, reuse_result = previous_id, True
         prompt = json.dumps(
             {
                 "objective": self.team.peers[actor]["objective"],
@@ -340,7 +354,7 @@ class WorkUnitFlow:
         )
         ref = manager.run(execution_id, "peer:" + actor, prompt, self.invoke, resume_original=True)
         native = self.repository.read_reference(ref)["result"]
-        update = {**state, "peer_round": state.get("peer_round", 0) + 1}
+        update = {**state, "peer_round": state.get("peer_round", 0) + (not reuse_result)}
         try:
             if native["status"] != "completed":
                 raise FrameworkError("peer_turn_failed", layer="runtime/infrastructure")

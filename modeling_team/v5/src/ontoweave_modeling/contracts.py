@@ -104,7 +104,7 @@ class TaskBinding:
             "scope",
             "evaluation",
         }
-        if not isinstance(task, dict) or set(task) - {"collaboration"} != required:
+        if not isinstance(task, dict) or set(task) - {"collaboration", "shared_memory"} != required:
             raise FrameworkError("task_schema_mismatch", required=sorted(required))
         if task["schema_version"] != "ontoweave-task/v1":
             raise FrameworkError("task_schema_mismatch")

@@ -181,9 +181,14 @@ def material_server(
 
         scope = json.loads(team_config.read_text())
         repo = WorkspaceRepository(scope["connection"], scope["schema"], scope["task"]["task_ref"])
-        register_team_tools(
-            server, TeamChannel(scope["task"], repo, TaskControl(repo), scope["actor"], root)
-        )
+        if scope["task"].get("collaboration"):
+            register_team_tools(
+                server, TeamChannel(scope["task"], repo, TaskControl(repo), scope["actor"], root)
+            )
+        if scope["task"].get("shared_memory"):
+            from .memory import SharedMemory, register_memory_tools
+
+            register_memory_tools(server, SharedMemory(repo, scope["actor"]))
     return server
 
 

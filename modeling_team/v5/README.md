@@ -205,6 +205,37 @@ python -m ontoweave_modeling board --run-dir /path/to/run --agent-id modeling --
 通信工具由 Agent 专属 MCP 进程执行；连接配置只挂载到受限工具环境。连接地址在 Host
 进入隔离环境前解析，沿已验证 P0 的 hostaddr 路径，避免隔离环境缺 DNS 文件导致失联。
 
+## 最小共享业务记忆
+
+Task 增加 `shared_memory: true` 后，生产成员可调用 `write_memory`、`read_memory`、
+`search_memory`；可以与 collaboration 同时使用，也可以只供单个成员换会话接续。
+记录包含 entry_id、kind、title、body、source_refs；作者、更新时间和 revision 由程序保存。
+kind 是普通标签，建议 judgment／decision／open_item，不强制枚举或固定业务步骤。
+
+用关键词查到 entry_id 后读取完整记录，保留正文中的条件、排除项及未知。更新使用读取的
+revision 作为顶层 expected_revision；冲突直接提供当前内容供 Agent 合并。相同正文不
+重复生成版本。第一版按 task 共享，复用已有 PostgreSQL 对象版本；不另建向量库或记忆服务。
+记忆是业务理解，不代表已应用模型或人工确认，实际应用／自查仍走原接口。
+
+## Host 命名检查点快照
+
+```bash
+python -m ontoweave_modeling snapshot-save --run-dir /path/to/run --name before-review
+python -m ontoweave_modeling snapshot-list --run-dir /path/to/run
+python -m ontoweave_modeling snapshot-show --run-dir /path/to/run --snapshot before-review
+python -m ontoweave_modeling snapshot-diff --run-dir /path/to/run --before before-review --after after-review
+```
+
+快照保存工作空间内容／版本、工作卡和队列、LangGraph checkpoint 引用、执行引用、
+保存时源码摘要及实际模型上下文／版本。源码摘要不代表已启动进程加载的代码版本。
+文件在 run 的 snapshots 目录，快照名是标签，不作为
+文件路径；程序生成唯一文件身份并保留旧内容。可在 Agent 忙碌时观察保存，不要求暂停。
+只读 list／show／diff 直接读取保存文件，不要求原任务、原材料或当前工作流版本仍能加载。
+
+各组件保留各自版本，不声称跨存储全局事务。模型读取不可用时保存原引用和读取错误；
+该快照用于观察、复盘与对比，当前不执行模型回滚／分叉恢复，不是完整平台数据备份。
+设计见[最小记忆与快照](../../docs/delivery/designs/2026-10-29-v5-memory-snapshot-minimal-design.md)。
+
 ## 最小 HITL：问题、答复与主动输入
 
 Agent 回合结束返回 `waiting_input` 和 `human_requests`，每个问题包含 `question`、

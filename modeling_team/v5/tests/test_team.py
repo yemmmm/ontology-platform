@@ -11,6 +11,7 @@ from ontoweave_modeling.execution import CodexInvocation
 from ontoweave_modeling.flow import WorkUnitFlow
 from ontoweave_modeling.human_input import HumanInput
 from ontoweave_modeling.material_tools import material_server
+from ontoweave_modeling.results import ResultContractError
 from ontoweave_modeling.team import TeamChannel
 
 
@@ -275,6 +276,47 @@ def test_peer_dispatch_keeps_simultaneous_human_question(team, binding, workspac
     assert state["status"] == "waiting_input" and not platform.effects
     assert len(questions) == 1 and questions[0]["status"] == "awaiting_answer"
     assert fallback.calls == ["modeling", "peer:reviewer", "modeling"]
+
+
+def test_reparse_original_peer_receipt_after_format_fix_does_not_rerun_actor(
+    team, binding, workspace, saver, monkeypatch
+):
+    import ontoweave_modeling.flow as module
+
+    a, b = team
+    platform = Platform()
+    fallback = Actor(binding, platform)
+    a.send("reviewer", "Please check source", "initial")
+
+    def invoke(root, purpose, prompt, inputs):
+        value = fallback(root, purpose, prompt, inputs)
+        response = json.loads(value["final_response"])
+        response["consumed_ids"] = [m["id"] for m in inputs]
+        if purpose.startswith("peer:"):
+            b.send("modeling", "Checked", "reply", reply_to=inputs[0]["id"])
+            value["final_response"] = "Completed peer review.\n" + json.dumps(response)
+        else:
+            value["final_response"] = json.dumps(response)
+        return value
+
+    real_decode = module.decode_json_result
+
+    def old_decode(message, schema):
+        if message.startswith("Completed peer review."):
+            raise ResultContractError("result_json_missing_or_ambiguous")
+        return real_decode(message, schema)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "decode_json_result", old_decode)
+        state = WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)
+    assert state["status"] == "recoverable_issue" and fallback.calls == ["peer:reviewer"]
+    assert (
+        WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)["status"]
+        == "handoff_ready"
+    )
+    assert (
+        fallback.calls == ["peer:reviewer", "modeling", "self_check"] and len(platform.effects) == 1
+    )
 
 
 def test_actual_invocation_team_mcp_resolves_host_outside_namespace(

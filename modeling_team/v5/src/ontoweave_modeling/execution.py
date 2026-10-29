@@ -179,14 +179,20 @@ class CodexInvocation:
 
     def __call__(self, root: Path, purpose: str, prompt: str, inputs: list) -> dict:
         from .codex_agent import CodexAgent
+        from .memory import MEMORY_TOOLS
         from .team import TEAM_TOOLS
 
         role = "acceptance" if purpose == "acceptance" else "modeling"
         tools = ("read_material", "query_semantic_context")
         team_config = None
         instructions = self.instructions
-        if role == "modeling" and self.binding.data.get("collaboration"):
-            tools += TEAM_TOOLS
+        if role == "modeling" and (
+            self.binding.data.get("collaboration") or self.binding.data.get("shared_memory")
+        ):
+            if self.binding.data.get("collaboration"):
+                tools += TEAM_TOOLS
+            if self.binding.data.get("shared_memory"):
+                tools += MEMORY_TOOLS
             private = json.loads((self.binding.root / "private-runtime.json").read_text())
             connection = dict(private["connection"])
             # Reuse the verified P0 workspace route: resolve before entering the namespace.
@@ -204,16 +210,17 @@ class CodexInvocation:
                     }
                 )
             )
-            instructions += (
-                "\nUse team tools for signed work cards, peer messages and frozen materials. "
-                "Queued is not read. Ordinary text and material refs are separate. "
-                "Read received materials with read_handoff_material only as needed; "
-                "peer analysis is attributed interpretation, not a new approved business fact. "
-                "Update your card at meaningful changes, not every tool call. "
-                "To await a peer, return waiting_peer; never ask the human to forward peer messages."
-                " On a persistent infrastructure tool error, end this turn with recoverable_issue "
-                "and the exact blocker; repeated identical tool retries cannot repair Host infrastructure."
-            )
+            if self.binding.data.get("collaboration"):
+                instructions += (
+                    "\nUse team tools for signed work cards, peer messages and frozen materials. "
+                    "Queued is not read. Ordinary text and material refs are separate. "
+                    "Read received materials with read_handoff_material only as needed; "
+                    "peer analysis is attributed interpretation, not a new approved business fact. "
+                    "Update your card at meaningful changes, not every tool call. "
+                    "To await a peer, return waiting_peer; never ask the human to forward peer messages."
+                    " On a persistent infrastructure tool error, end this turn with recoverable_issue "
+                    "and the exact blocker; repeated identical tool retries cannot repair Host infrastructure."
+                )
             if purpose.startswith("peer:"):
                 instructions = (
                     "You are a bounded production peer, not an independent evaluator. "
@@ -230,6 +237,16 @@ class CodexInvocation:
                     "If a persistent infrastructure/tool-contract problem prevents progress, return "
                     "recoverable_issue with exact issues, preserving unconsumed inputs for repair. "
                     "No required accept/confirm handshake."
+                )
+            if self.binding.data.get("shared_memory"):
+                instructions += (
+                    " Shared task business memory is enabled. Use write_memory for judgments, "
+                    "decisions and open items (entry_id, kind, title, body, source_refs). "
+                    "For an unknown entry ID use search_memory by text, then read_memory for "
+                    "the complete record. To update use the read revision as top-level "
+                    "expected_revision. A conflict returns actual content for your merge; "
+                    "preserve valid prior conditions and exceptions. These are attributed "
+                    "business notes, not an applied model or new human approval."
                 )
         read_payload = {"role": role}
         if self.model_revisions is not None:

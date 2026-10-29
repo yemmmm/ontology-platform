@@ -168,6 +168,17 @@ def parser() -> argparse.ArgumentParser:
     board.add_argument("--agent-id")
     board.add_argument("--revision", type=int)
     commands.append(board)
+    snapshot_save = sub.add_parser("snapshot-save", help="Save a named Host workflow snapshot")
+    snapshot_save.add_argument("--name", required=True)
+    commands.append(snapshot_save)
+    commands.append(sub.add_parser("snapshot-list"))
+    snapshot_show = sub.add_parser("snapshot-show")
+    snapshot_show.add_argument("--snapshot", required=True)
+    commands.append(snapshot_show)
+    snapshot_diff = sub.add_parser("snapshot-diff")
+    snapshot_diff.add_argument("--before", required=True)
+    snapshot_diff.add_argument("--after", required=True)
+    commands.append(snapshot_diff)
     for name in ("reply", "input"):
         command = sub.add_parser(name, help="Persist a human reply or unsolicited input")
         commands.append(command)
@@ -186,6 +197,15 @@ def parser() -> argparse.ArgumentParser:
 
 
 def dispatch(args) -> dict:
+    if args.command in {"snapshot-list", "snapshot-show", "snapshot-diff"}:
+        from .snapshots import RunSnapshots
+
+        snapshots = RunSnapshots(root=args.run_dir)
+        if args.command == "snapshot-list":
+            return {"snapshots": snapshots.list()}
+        if args.command == "snapshot-show":
+            return snapshots.read(args.snapshot)
+        return snapshots.diff(args.before, args.after)
     if args.command == "start":
         if args.workspace_schema == args.checkpoint_schema:
             raise FrameworkError("checkpoint_namespace_must_be_separate")
@@ -213,6 +233,13 @@ def dispatch(args) -> dict:
         from .team import TeamChannel
 
         return TeamChannel(binding.data, repo, control).board(args.agent_id, args.revision)
+    if args.command == "snapshot-save":
+        from .snapshots import RunSnapshots
+
+        snapshots = RunSnapshots(binding, repo)
+        with repo.checkpointer(config["checkpoint_schema"]) as saver:
+            graph = WorkUnitFlow(binding, repo, bridge, None).compile(saver)
+            return snapshots.save(args.name, graph, bridge)
     if args.command in {"reply", "input"}:
         text = args.text if args.text is not None else args.text_file.read_text()
         return human.submit(

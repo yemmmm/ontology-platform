@@ -24,17 +24,28 @@ class ResultContractError(ValueError):
 
 
 def decode_json_result(message: str, schema: dict) -> dict:
-    """Accept bare JSON or one explicit JSON block, then validate the given schema."""
+    """Read the unique schema-matching JSON value, retaining Agent text unchanged."""
     try:
         result = json.loads(message)
     except json.JSONDecodeError:
-        blocks = re.findall(r"^```json\s*\n(.*?)^```\s*$", message, flags=re.MULTILINE | re.DOTALL)
-        if len(blocks) != 1:
+        decoder, position, matches = json.JSONDecoder(), 0, []
+        while start := re.search(r"[\{\[]", message[position:]):
+            position += start.start()
+            try:
+                candidate, end = decoder.raw_decode(message, position)
+            except json.JSONDecodeError:
+                position += 1
+                continue
+            position = end
+            try:
+                validate(instance=candidate, schema=schema)
+            except ValidationError:
+                continue
+            if candidate not in matches:
+                matches.append(candidate)
+        if len(matches) != 1:
             raise ResultContractError("result_json_missing_or_ambiguous") from None
-        try:
-            result = json.loads(blocks[0])
-        except json.JSONDecodeError:
-            raise ResultContractError("result_json_invalid") from None
+        result = matches[0]
     try:
         validate(instance=result, schema=schema)
     except ValidationError as exc:

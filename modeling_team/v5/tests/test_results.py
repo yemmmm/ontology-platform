@@ -45,7 +45,7 @@ def test_evaluation_binding_preserves_independent_negative_judgment():
     validate_evaluation_binding(report, case_count=2, target_revision=2)
 
 
-@pytest.mark.parametrize("wrapper", ["{}", "Read completed.\n\n```json\n{}\n```\n"])
+@pytest.mark.parametrize("wrapper", ["{}", "Read completed.\n\n```json\n{}\n```\n", "Done.\n{}"])
 def test_result_decoding_preserves_agent_content(wrapper):
     payload = {"references": ["source:v1", "definition:v3"]}
     assert decode_json_result(wrapper.format(json.dumps(payload)), SCHEMA) == payload
@@ -67,3 +67,11 @@ def test_result_decoding_preserves_agent_content(wrapper):
 def test_invalid_results_require_agent_correction(message):
     with pytest.raises(ResultContractError):
         decode_json_result(message, SCHEMA)
+
+
+def test_only_top_level_values_are_considered_and_identical_repetition_is_not_ambiguous():
+    with pytest.raises(ResultContractError):
+        decode_json_result('Done. {"wrapper":{"references":[]}}', SCHEMA)
+    assert decode_json_result('Done. {"references":[]}\n{"references":[]}', SCHEMA) == {
+        "references": []
+    }
