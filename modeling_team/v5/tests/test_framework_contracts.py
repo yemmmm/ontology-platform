@@ -21,7 +21,7 @@ def test_frozen_binding_keeps_material_and_model_after_original_changes(task_fil
 
 def test_unsupported_authorization_never_creates_run(task_file, tmp_path):
     task = json.loads(task_file.read_text())
-    task["authorization"]["mode"] = "amount"
+    task["authorization"]["mode"] = "unsupported"
     task_file.write_text(json.dumps(task))
     with pytest.raises(FrameworkError, match="authorization_mode_not_implemented"):
         TaskBinding.prepare(task_file, tmp_path / "run")
@@ -58,6 +58,21 @@ def test_result_errors_are_recoverable_and_unknown_is_not_a_proposal():
     with pytest.raises(FrameworkError, match="model_changes_required") as caught:
         decode_work_result(json.dumps(value), {})
     assert caught.value.recoverable
+
+
+def test_healthy_peer_wait_does_not_need_an_invented_issue():
+    value = {
+        "status": "waiting_peer",
+        "candidate": None,
+        "changes": None,
+        "source_refs": [],
+        "issues": [],
+        "consumed_ids": [],
+    }
+    assert decode_work_result(json.dumps(value), {}) == value
+    value["status"] = "recoverable_issue"
+    with pytest.raises(FrameworkError, match="unresolved_reason_required"):
+        decode_work_result(json.dumps(value), {})
 
 
 def test_versioned_references_do_not_follow_current_business_revision(workspace):

@@ -375,6 +375,7 @@ def main():
             "read_config",
             "cleanup",
             "provider",
+            "budget",
         ],
     )
     args = parser.parse_args()
@@ -396,16 +397,22 @@ def main():
             if args.operation == "provider":
                 provider(binding, payload)
                 return
-            worker = PlatformWorker(binding)
-            if args.operation == "prepare_scope":
+            if args.operation == "budget":
+                from modeling_team.v5.host.budget import amount_state
+
+                result = amount_state(binding, payload.get("addition"), payload.get("role"))
+            elif args.operation == "prepare_scope":
+                worker = PlatformWorker(binding)
                 worker.scope(prepare=True)
                 result = worker.snapshot()
             elif args.operation in {"apply", "reconcile"}:
-                result = worker.apply(payload, reconcile=args.operation == "reconcile")
+                result = PlatformWorker(binding).apply(
+                    payload, reconcile=args.operation == "reconcile"
+                )
             elif args.operation == "read_config":
-                result = worker.read_config(payload)
+                result = PlatformWorker(binding).read_config(payload)
             else:
-                result = getattr(worker, args.operation)()
+                result = getattr(PlatformWorker(binding), args.operation)()
         print(json.dumps({"ok": True, "result": result}), flush=True)
     except Exception as error:  # noqa: BLE001 - RPC boundary retains traceback privately, returns no secrets
         args.run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)

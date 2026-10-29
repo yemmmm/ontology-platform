@@ -132,7 +132,41 @@ evaluation:
 `approved-materials/manifest.json` 使用已有材料合同，按材料 ID 列出相对 `path`、
 `source_ref`、`sha256` 及可选 `source_ranges`。准备后从 run 内材料快照接续；原材料、Profile
 变化不静默改变原绑定，快照篡改会返回准确错误。当前 Host 路由只接入 `glm-direct`，按
-Profile 精确保留模型／effort；普通金额／次数模式仍待对应阶段接入，不自动降为 `usage_only`。
+Profile 精确保留模型／effort；现支持下述金额模式，次数模式仍待对应阶段接入，
+不自动降为 `usage_only`。
+
+### 金额累计与自然回合控制
+
+正常金额任务指定 `authorization.mode: amount` 和稳定 `budget_ref`（相对任务文件解析）。
+Host 按真实授权用现有 `modeling_team.task_budget.TaskBudget.create` 创建账本及价表快照，
+v5 不自动创建额度、追加授权或静默换价。相同任务的后续 run 继续绑定原账本。
+`usage_only` 保留研发用量记录，不执行金额准入。
+
+```yaml
+authorization:
+  mode: amount
+  reference: 当次真实Host授权引用
+  budget_ref: /absolute/path/task-budget
+```
+
+v5 将实际 Codex 累计通知和传输尝试登记到已有账本。新原生回合前刷新金额、模型／价表
+准入及控制状态；已开始回合内的工具、后续请求和压缩自然完成。结束后保存原结果、
+刷新金额并在下一活动前暂停。余额可以因该回合尾差变负，实际金额及未知尾差上界照实显示。
+重复累计通知、读取及原执行结果复用不会重复扣费。独立评价沿同一预算计量；
+Host 用量单列，不扣任务金额。CLI 的 `status`／`budget` 按需刷新，没有新增常驻监视服务。
+
+```bash
+python -m ontoweave_modeling budget --run-dir /absolute/path/run
+python -m ontoweave_modeling budget-add --run-dir /absolute/path/run \
+  --authorization-file /absolute/path/approved-addition.json
+python -m ontoweave_modeling resume --run-dir /absolute/path/run
+```
+
+追加文件沿原账本合同，例如 `{"amount":"1","authorization_id":"实际追加身份",
+"authorization_reference":"真实授权依据","continue_authorized":true}`。重试同一追加身份
+不重复加款。追加只改变预算状态；已有用户暂停仍需明确 `resume`。缺价或计量异常返回
+原类型化反馈，可由 Host 修复后沿原账本接续，不重做已完成回合或已确认应用。
+累计金额是指定价表下的用量估算，不等于提供商最终账单；缺失值不补零。
 
 框架正常链为 `prepare → model → apply → self_check → handoff`。工作空间和 checkpoint
 保存精确引用，实际应用仍走已有统一图／明确变更、编译器、跨批绑定及 executor；Host worker

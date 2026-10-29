@@ -6,8 +6,10 @@ import json
 import os
 import socket
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
+from .budget import synchronize_budget
 from .contracts import FrameworkError, TaskBinding, digest, safe_id, write_json
 from .control import TaskControl
 from .workspace import WorkspaceRepository
@@ -86,6 +88,11 @@ class ExecutionManager:
                     execution_id=execution_id,
                 )
         else:
+            synchronize_budget(
+                self.binding,
+                self.control,
+                role="acceptance" if purpose == "acceptance" else "modeling",
+            )
             admission = self.control.begin_activity(
                 self.unit_id,
                 execution_id,
@@ -124,7 +131,7 @@ class ExecutionManager:
                 "revision": current["revision"],
                 "digest": digest(current["content"]),
             }
-        return self.repository.put_reference(
+        reference = self.repository.put_reference(
             record_id,
             "execution",
             {
@@ -134,6 +141,8 @@ class ExecutionManager:
             },
             current["revision"],
         )
+        synchronize_budget(self.binding, self.control)
+        return reference
 
     def confirm_consumption(self, execution_ref: dict, consumed_ids: list[str]) -> None:
         execution = self.repository.read_reference(execution_ref)
@@ -252,12 +261,29 @@ class CodexInvocation:
         if self.model_revisions is not None:
             read_payload["model_revisions"] = self.model_revisions
         read_config = self.bridge.call("read_config", read_payload)["config_ref"]
+        if self.binding.data["authorization"]["mode"] == "amount":
+            (root / "budget-native-usage.jsonl").touch(exist_ok=True)
         with self.bridge.provider(root.name, role, tools) as url:
 
             def observe(method, params):
                 if method == "thread/tokenUsage/updated":
                     with (root / "usage.jsonl").open("a") as stream:
                         stream.write(json.dumps({"method": method, "params": params}) + "\n")
+                    if self.binding.data["authorization"]["mode"] == "amount":
+                        with (root / "budget-native-usage.jsonl").open("a") as stream:
+                            stream.write(
+                                json.dumps(
+                                    {
+                                        "event": "thread_usage",
+                                        "thread_id": params["threadId"],
+                                        "runtime_session_id": params["threadId"],
+                                        "turn_id": params["turnId"],
+                                        "total": params["tokenUsage"]["total"],
+                                        "received_at": datetime.now(UTC).isoformat(),
+                                    }
+                                )
+                                + "\n"
+                            )
 
             agent = CodexAgent(
                 root / "agent",

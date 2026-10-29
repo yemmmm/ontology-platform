@@ -21,6 +21,7 @@ OPERATIONS = frozenset(
         "read_config",
         "cleanup",
         "provider",
+        "budget",
     }
 )
 

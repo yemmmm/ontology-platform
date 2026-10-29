@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 from .acceptance import REPORT_SCHEMA, validate_report
+from .budget import synchronize_budget
 from .contracts import FrameworkError, TaskBinding, _check_sources, digest, safe_id, write_json
 from .control import TaskControl
 from .execution import CodexInvocation, ExecutionManager
@@ -164,6 +165,10 @@ def parser() -> argparse.ArgumentParser:
     commands[-1].add_argument("--package", type=Path, required=True)
     commands[-1].add_argument("--evaluation-id", required=True)
     commands.append(sub.add_parser("questions", help="List durable questions and reply states"))
+    commands.append(sub.add_parser("budget", help="Read and refresh the bound amount budget"))
+    budget_add = sub.add_parser("budget-add", help="Apply a Host-authorized budget addition file")
+    budget_add.add_argument("--authorization-file", type=Path, required=True)
+    commands.append(budget_add)
     board = sub.add_parser("board", help="Read task member cards and signed requests")
     board.add_argument("--agent-id")
     board.add_argument("--revision", type=int)
@@ -224,9 +229,24 @@ def dispatch(args) -> dict:
     repo, config = repository(binding)
     control, bridge = TaskControl(repo), HostBridge(binding.root)
     human = HumanInput(binding, repo, control)
+    if args.command in {"budget", "budget-add"}:
+        addition = (
+            json.loads(args.authorization_file.read_text())
+            if args.command == "budget-add"
+            else None
+        )
+        return {
+            "budget": synchronize_budget(binding, control, addition=addition),
+            "control": control.view(),
+        }
     if args.command == "status":
         row = repo.get(binding.identity + ":work")
-        return {"work": row["content"] if row else None, "control": control.view()}
+        budget = synchronize_budget(binding, control)
+        return {
+            "work": row["content"] if row else None,
+            "control": control.view(),
+            "budget": budget,
+        }
     if args.command == "questions":
         return {"questions": human.requests()}
     if args.command == "board":

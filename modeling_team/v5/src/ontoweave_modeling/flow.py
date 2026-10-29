@@ -10,6 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from .acceptance import require_governed_read, successful_reads
+from .budget import synchronize_budget
 from .contracts import (
     SELF_CHECK_SCHEMA,
     WORK_RESULT_SCHEMA,
@@ -98,6 +99,7 @@ class WorkUnitFlow:
 
     def _host(self, action: str, operation_id: str, payload=None) -> dict:
         unit = self.binding.data["work_unit_id"] + ":platform"
+        synchronize_budget(self.binding, self.control)
         control = self.control.synchronize()
         if control["mode"] != "running" or not control["budget_open"]:
             raise FrameworkError("task_not_running", control=control["mode"])
@@ -668,7 +670,8 @@ class WorkUnitFlow:
             return self.repository.get(self.work_id)["content"]
         except FrameworkError as error:
             current = self.repository.get(self.work_id)["content"]
-            mode = self.control.view().get("mode", "running")
+            control = self.control.view()
+            mode = control.get("mode", "running")
             status = (
                 mode
                 if error.code in {"task_not_running", "execution_not_admitted"}
@@ -676,6 +679,8 @@ class WorkUnitFlow:
                 else "blocked"
             )
             if error.code == "task_not_running" and status == "blocked":
+                status = "paused"
+            if error.code == "execution_not_admitted" and not control["budget_open"]:
                 status = "paused"
             issue = (
                 current["issue"]

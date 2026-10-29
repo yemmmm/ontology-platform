@@ -73,7 +73,8 @@ Read received references with `read_handoff_material`, by range as needed. A pee
 analysis is attributed interpretation, never a substitute for approved business
 sources or actual governed model reads.
 If a peer reply is needed before proposing changes, send the request and return
-`waiting_peer` with an accurate issue, null candidate/changes and no invented input.
+`waiting_peer` with null candidate/changes and no invented input. Describe the
+dependency in the peer request; issues may be empty when no actual problem exists.
 The program services queued peers after this native turn ends. It does not steer a
 busy turn or require a separate accept/confirm handshake. Use `update_work_card`
 for your own current_work, scope, next_steps, waiting_note and result_refs at meaningful

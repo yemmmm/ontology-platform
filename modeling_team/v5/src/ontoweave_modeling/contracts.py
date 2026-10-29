@@ -125,10 +125,16 @@ class TaskBinding:
             if not isinstance(task[field], dict):
                 raise FrameworkError("task_field_invalid", field=field)
         authorization = task["authorization"]
-        if authorization.get("mode") != "usage_only":
+        if authorization.get("mode") not in {"usage_only", "amount"}:
             raise FrameworkError("authorization_mode_not_implemented")
         if not authorization.get("reference"):
             raise FrameworkError("authorization_reference_required")
+        if authorization["mode"] == "amount":
+            if not authorization.get("budget_ref"):
+                raise FrameworkError("budget_reference_required")
+            authorization["budget_ref"] = str(
+                (task_path.parent / authorization["budget_ref"]).resolve()
+            )
         if task["scope"].get("mode") not in {"create", "existing"}:
             raise FrameworkError("scope_mode_not_implemented")
         if not task["scope"].get("base_url"):
@@ -280,7 +286,7 @@ def decode_work_result(message: str, manifest: dict) -> dict:
             raise FrameworkError("model_changes_required")
         if not result["source_refs"]:
             raise FrameworkError("source_references_required")
-    elif not result["issues"]:
+    elif result["status"] != "waiting_peer" and not result["issues"]:
         raise FrameworkError("unresolved_reason_required")
     return result
 
