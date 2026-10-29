@@ -22,6 +22,7 @@ def material_server(
 ) -> FastMCP:
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     server = FastMCP("ontoweave-materials")
+    semantic_workspace = None
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -156,22 +157,23 @@ def material_server(
                     )
                 ) from None
             expected = platform.get("model_revisions")
-            if expected is not None:
-                actual = {
-                    row["ontology_id"]: row["model_revision"]
-                    for row in result.get("scope", {}).get("ontologies", [])
-                }
-                if actual != expected:
-                    raise ToolError(
-                        json.dumps(
-                            {
-                                "code": "frozen_target_changed",
-                                "recoverable": True,
-                                "expected_revisions": expected,
-                                "actual_revisions": actual,
-                            }
-                        )
+            actual = {
+                row["ontology_id"]: row["model_revision"]
+                for row in result.get("scope", {}).get("ontologies", [])
+            }
+            if semantic_workspace is not None:
+                semantic_workspace.observe_models(actual)
+            if expected is not None and actual != expected:
+                raise ToolError(
+                    json.dumps(
+                        {
+                            "code": "frozen_target_changed",
+                            "recoverable": True,
+                            "expected_revisions": expected,
+                            "actual_revisions": actual,
+                        }
                     )
+                )
             return result
 
     if team_config is not None:
@@ -207,7 +209,8 @@ def material_server(
         if scope["task"].get("semantic_workspace"):
             from .semantic_workspace import SemanticWorkspace, register_workspace_tools
 
-            register_workspace_tools(server, SemanticWorkspace(repo, scope["task"], scope["actor"]))
+            semantic_workspace = SemanticWorkspace(repo, scope["task"], scope["actor"])
+            register_workspace_tools(server, semantic_workspace)
     return server
 
 

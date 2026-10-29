@@ -97,7 +97,7 @@ class ExecutionManager:
             admission = self.control.begin_activity(
                 self.unit_id,
                 execution_id,
-                deliver_inputs=purpose != "acceptance",
+                deliver_inputs=purpose not in {"acceptance", "overview"},
                 input_phase="self_check" if purpose == "self_check" else "model",
                 input_run_id=self.binding.data["run_id"],
             )
@@ -206,11 +206,13 @@ class CodexInvocation:
         materials: Path | None = None,
         instructions: str | None = None,
         model_revisions: dict | None = None,
+        read_only: bool = False,
     ):
         self.binding, self.bridge = binding, bridge
         self.materials = materials or binding.materials
         self.instructions = instructions or binding.data["instructions"]
         self.model_revisions = model_revisions
+        self.read_only = read_only
 
     def __call__(self, root: Path, purpose: str, prompt: str, inputs: list) -> dict:
         from .codex_agent import CodexAgent
@@ -223,12 +225,16 @@ class CodexInvocation:
         tools = ("read_material", "query_semantic_context")
         team_config = None
         instructions = self.instructions
-        if role == "modeling" and (
-            self.binding.data.get("collaboration")
-            or self.binding.data.get("shared_memory")
-            or self.binding.data.get("work_units")
-            or self.binding.data.get("work_management")
-            or self.binding.data.get("semantic_workspace")
+        if (
+            role == "modeling"
+            and not self.read_only
+            and (
+                self.binding.data.get("collaboration")
+                or self.binding.data.get("shared_memory")
+                or self.binding.data.get("work_units")
+                or self.binding.data.get("work_management")
+                or self.binding.data.get("semantic_workspace")
+            )
         ):
             if (
                 self.binding.data.get("collaboration")
@@ -330,7 +336,8 @@ class CodexInvocation:
                     "exact depends_on references; keep review, cognition, expression, work and applicability "
                     "separate. Application and independent acceptance are Host observations, not note states. "
                     "Summaries navigate to originals; stale/needs_review content is not current confirmation. "
-                    "Project records and memory require scope=project and stay within the bound project. "
+                    "get_modeling_context reports the actual bound project_ref; use scope=project for "
+                    "shared project records when available, otherwise scope=task. "
                     "Preserve conditions, exceptions, negation, modality and unknowns, including unallocated scope. "
                     "When the actual existing model already satisfies the source, return no_change with null "
                     "candidate/changes and source_refs; the program still performs actual governed self-check."

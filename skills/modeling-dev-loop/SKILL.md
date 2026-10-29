@@ -1,9 +1,21 @@
 ---
 name: modeling-dev-loop
-description: "Start, resume, wait for private Host requests and periodically check role cards for authorized OntoWeave modeling with independent Delivery or an existing manual Host workflow. Covers progress checks, blocker follow-through, repair handoff and evidence boundaries; not a production modeling or testing business-answerer skill."
+description: "Start and supervise authorized OntoWeave v5 modeling with durable workspaces, direct HITL and independent evaluation; preserve existing legacy Delivery/manual runs on their bound stack. Covers progress checks, technical repair and evidence boundaries; not a production modeler or business-answerer skill."
 ---
 
 # 建模开发推进
+
+## 当前新任务入口：v5
+
+2026-10-30 起，新任务默认沿 [v5 runbook](references/v5-runbook.md) 使用
+`scripts/modeling`。程序承担调度、输入呈现、资源执行及账本接线，不启动常驻 Delivery LLM。
+Task 准备时冻结当前 v5 方法和平台技术合同；业务材料、真实授权及独立冻结标准仍由 Host
+按当次目标准备。先读取简明状态、工作树、卡片及问题，具体异常才展开原生日志。
+
+已有旧 run／Delivery session 继续按其原版本及本文件下文的历史路径接续，命令加
+`scripts/modeling --legacy` 或使用原入口；不把旧 pending checkpoint 交给 v5。
+有据迁移只继承获准业务材料、实际模型、明确未完成工作与原预算，不复制旧验收为新 PASS。
+本段优先于下文旧流程默认；通用授权、独立验收、失败归因及计量纪律仍适用。
 
 本 Skill 供技术宿主选择入口、交接配置、定时查看角色卡片和接续已有任务。采用独立 Delivery 时，
 Delivery 执行启动、流程控制、技术定位、宿主交接、恢复和证据交接；CQ 私有审核及平台代码／

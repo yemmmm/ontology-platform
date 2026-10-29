@@ -83,6 +83,32 @@ def test_delegate_dynamic_members_and_exact_replay(binding, workspace):
     assert len(plan.binding(binding).data["work_units"]) == 1
 
 
+def test_four_parent_thirty_slice_navigation_and_reconstruction_stays_bounded(binding, workspace):
+    plan = WorkPlan(binding.data, workspace)
+    for p in range(4):
+        parent = f"part-{p}"
+        plan.delegate(parent, f"Business part {p}", material_ids=["source"])
+        children = WorkPlan(binding.data, workspace, parent)
+        for child in range(30):
+            children.delegate(
+                f"{parent}-{child}", f"Bounded slice {child}", material_ids=["source"]
+            )
+    reconstructed = WorkPlan(binding.data, workspace)
+    root = reconstructed.tree()
+    assert root["total"] == 4 and all(u["child_count"] == 30 for u in root["units"])
+    assert len(json.dumps(root)) < 5000
+    for p in range(4):
+        ids, offset = [], 0
+        while offset is not None:
+            page = reconstructed.tree(f"part-{p}", offset, 7)
+            assert len(page["units"]) <= 7 and page["coverage"] == "direct_children_only"
+            ids.extend(u["unit_id"] for u in page["units"])
+            offset = page["next_offset"]
+        assert len(set(ids)) == 30 and all(i.startswith(f"part-{p}-") for i in ids)
+    selected = reconstructed.binding(binding).for_unit("part-2-15")
+    assert selected.data["assigned_material_ids"] == ["source"] and not selected.direct_units
+
+
 def test_recursive_delegation_dependency_and_selective_reentry(binding, workspace):
     binding.data["work_management"] = True
     platform = Platform()

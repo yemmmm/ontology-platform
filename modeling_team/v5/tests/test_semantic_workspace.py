@@ -91,6 +91,29 @@ def test_project_scope_survives_new_task_without_loading_other_task_records(work
     )
 
 
+def test_newly_created_platform_project_becomes_available_without_rewriting_task_binding(
+    workspace, binding
+):
+    from ontoweave_modeling.flow import WorkUnitFlow
+
+    original = dict(binding.data)
+
+    class Platform:
+        def call(self, action, payload):
+            assert action == "prepare_scope"
+            return {"project_id": "created-project", "model_revisions": {"ontology": 0}}
+
+    flow = WorkUnitFlow(binding, workspace, Platform(), None)
+    flow._prepare(flow.initialize())
+    space = SemanticWorkspace(workspace, binding.data)
+    assert space.context()["project_ref"] == "created-project"
+    space.write("p", "proposition", "Shared", "Shared condition", scope="project")
+    notes = SharedMemory(workspace, "modeling", task=binding.data).scoped("project")
+    notes.write("rule", "decision", "Shared", "Reusable meaning")
+    assert notes.read("rule")["body"] == "Reusable meaning"
+    assert binding.data == original
+
+
 def test_source_withdrawal_marks_review_not_false_and_preserves_old_revision(workspace, binding):
     space = SemanticWorkspace(workspace, binding.data)
     before = space.write(
@@ -140,8 +163,49 @@ def test_views_and_private_execution_content_are_not_workspace_records(workspace
         )
 
 
+def test_actual_model_change_invalidates_navigation_without_changing_source_truth(
+    workspace, binding
+):
+    task = {**binding.data, "project_ref": "shared-project"}
+    space = SemanticWorkspace(workspace, task)
+    space.observe_models({"ontology": 3})
+    space.write("p", "proposition", "Original condition", "Only after approval")
+    summary = space.write("s", "summary", "Overview", "Approval condition is expressed")["record"]
+    assert summary["model_basis"] == {"ontology": 3}
+    # A different task observes a newer actual model; an older late observation cannot rewind it.
+    other = WorkspaceRepository(workspace.connection, workspace.schema, "second-task")
+    observer = SemanticWorkspace(other, {**task, "task_ref": "second-task"})
+    observer.observe_models({"ontology": 4})
+    space.observe_models({"ontology": 3})
+    assert space.read("s")["freshness"]["state"] == "needs_review"
+    assert space.read("p")["freshness"]["state"] == "current"
+    space.observe_models({"ontology": 4})
+    refreshed = space.write(
+        "s", "summary", "Overview", "Rechecked actual model", expected_revision=1
+    )
+    assert refreshed["record"]["freshness"]["state"] == "current"
+    assert space.read("s", revision=1)["freshness"]["state"] == "historical"
+
+
+def test_explicit_new_source_impact_can_reopen_prior_task_project_record(workspace, binding):
+    first = {**binding.data, "project_ref": "shared-project", "task_ref": "first-task"}
+    SemanticWorkspace(workspace, first).write(
+        "unknown-format", "open_item", "Format", "Format not specified", scope="project"
+    )
+    second = SemanticWorkspace(workspace, {**first, "task_ref": "second-task"})
+    second.invalidate_sources(
+        first["source_manifest"],
+        ["new-format"],
+        "format-added",
+        [],
+        [{"scope": "project", "record_id": "unknown-format"}],
+    )
+    assert second.read("unknown-format", scope="project")["freshness"]["state"] == "needs_review"
+
+
+@pytest.mark.parametrize("read_only", [False, True])
 def test_real_isolated_workspace_tools_with_bound_project(
-    workspace, binding, tmp_path, monkeypatch
+    workspace, binding, tmp_path, monkeypatch, read_only
 ):
     from openai_codex.generated.v2_all import McpServerToolCallResponse
 
@@ -166,6 +230,15 @@ def test_real_isolated_workspace_tools_with_bound_project(
 
     class Probe(CodexAgent):
         def run_turn(self, prompt):
+            if read_only:
+                events = [
+                    json.loads(line)
+                    for line in (self.root / "events.jsonl").read_text().splitlines()
+                ]
+                mcp = next(e["params"] for e in events if e["method"] == "mcpServerStatus/list")
+                assert set(mcp["data"][0]["tools"]) == {"read_material", "query_semantic_context"}
+                assert self.team_config is None
+                return {"status": "completed"}
             for tool, args in [
                 ("get_modeling_context", {}),
                 (
@@ -198,8 +271,12 @@ def test_real_isolated_workspace_tools_with_bound_project(
     monkeypatch.setattr("ontoweave_modeling.codex_agent.CodexAgent", Probe)
     root = tmp_path / "execution"
     root.mkdir()
-    CodexInvocation(binding, Bridge())(root, "modeling", "No inference", [])
-    assert (
-        SemanticWorkspace(workspace, binding.data).read("p", scope="project")["body"]
-        == "With rare exception"
+    result = CodexInvocation(binding, Bridge(), read_only=read_only)(
+        root, "overview" if read_only else "modeling", "No inference", []
     )
+    assert result["status"] == "completed"
+    if not read_only:
+        assert (
+            SemanticWorkspace(workspace, binding.data).read("p", scope="project")["body"]
+            == "With rare exception"
+        )

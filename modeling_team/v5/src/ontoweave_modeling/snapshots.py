@@ -81,7 +81,9 @@ class RunSnapshots:
             "capture_note": "Components are read observations with their own versions; "
             "this is not a cross-store transaction or a model rollback.",
         }
-        if self.binding.data.get("project_ref"):
+        if self.binding.data.get("project_ref") or self.repository.get(
+            "run:" + self.binding.data["run_id"] + ":project-binding"
+        ):
             from .semantic_workspace import SemanticWorkspace
 
             project = SemanticWorkspace(self.repository, self.binding.data).project

@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from .contracts import FrameworkError, digest
+from .contracts import FrameworkError, bound_project_ref, digest
 
 WORKSPACE_TOOLS = (
     "write_semantic_record",
@@ -17,13 +17,35 @@ class SemanticWorkspace:
         from .workspace import WorkspaceRepository
 
         self.repository, self.task, self.actor, self.view = repository, task, actor, view
+        self.model_revisions = {}
+        self.project_ref = bound_project_ref(task, repository)
         self.project = (
             WorkspaceRepository(
-                repository.connection, repository.schema, "project:" + task["project_ref"]
+                repository.connection, repository.schema, "project:" + self.project_ref
             )
-            if task.get("project_ref")
+            if self.project_ref
             else None
         )
+
+    def observe_models(self, model_revisions):
+        """Host snapshots or successful governed reads supply these, never note arguments."""
+        self.model_revisions = dict(model_revisions)
+        repository = self.project or self.repository
+        for ontology_id, revision in model_revisions.items():
+            repository.put_reference(
+                f"model-observation:{ontology_id}:{revision}",
+                "model_observation",
+                {"ontology_id": ontology_id, "model_revision": revision},
+                0,
+            )
+
+    def observed_models(self):
+        revisions = {}
+        for row in (self.project or self.repository).list_kind("model_observation"):
+            content = row["content"]
+            ontology_id = content["ontology_id"]
+            revisions[ontology_id] = max(revisions.get(ontology_id, -1), content["model_revision"])
+        return revisions
 
     def scoped(self, scope):
         if scope == "task":
@@ -72,6 +94,10 @@ class SemanticWorkspace:
             "origin_run_id": self.task["run_id"],
             "author": self.actor,
         }
+        if self.model_revisions and (
+            kind in {"summary", "coverage", "definition"} or self.view != "production"
+        ):
+            content["model_basis"] = dict(self.model_revisions)
         prior = repository.get(identity)
         if prior and all(prior["content"].get(k) == v for k, v in content.items()):
             return {
@@ -104,6 +130,13 @@ class SemanticWorkspace:
         if identity in seen:
             return {"state": "needs_review", "reason": "dependency_cycle"}
         changed = []
+        model_basis = content.get("model_basis", {})
+        observed = self.observed_models() if model_basis else {}
+        changed_models = {
+            key: {"basis": revision, "observed": observed.get(key)}
+            for key, revision in model_basis.items()
+            if observed.get(key) != revision
+        }
         for ref in content.get("depends_on", []):
             dependency = self.scoped(ref.get("scope", "task")).get("semantic:" + ref["record_id"])
             if (
@@ -115,9 +148,15 @@ class SemanticWorkspace:
             ):
                 changed.append(ref)
         return {
-            "state": "needs_review" if changed else "current",
+            "state": "needs_review" if changed or changed_models else "current",
             "changed_dependencies": changed,
-            "basis": "workspace source/dependency versions; actual model validity is checked by governed reads",
+            "changed_models": changed_models,
+            "model_state": "changed"
+            if changed_models
+            else "observed"
+            if model_basis
+            else "not_checked",
+            "basis": "source/dependency versions and last observed actual model revisions; exact judgments require governed reads",
         }
 
     def read(self, record_id, revision=None, scope="task"):
@@ -144,7 +183,9 @@ class SemanticWorkspace:
                 "revision": row["revision"],
                 "digest": digest(row["content"]),
             },
-            "authority": "candidate_workspace",
+            "authority": "model_navigation"
+            if self.view in {"consumer", "user"}
+            else "candidate_workspace",
             **row["content"],
             "freshness": freshness,
         }
@@ -181,7 +222,8 @@ class SemanticWorkspace:
             "objective": self.task["objective"],
             "unit_id": self.actor,
             "source_manifest": self.task["source_manifest"],
-            "project_ref": self.task.get("project_ref"),
+            "assigned_material_ids": self.task.get("assigned_material_ids", []),
+            "project_ref": self.project_ref,
             "local": self.search(unit_id=self.actor, limit=10),
             "open_items": self.search(kind="open_item", limit=10),
             "project_navigation": self.search(kind="summary", scope="project", limit=10)
@@ -190,7 +232,9 @@ class SemanticWorkspace:
             "instruction": "Search and read exact records as needed. Navigate to approved originals and actual models; notes and summaries are not application or acceptance proof. Page open_items to inspect remaining scope.",
         }
 
-    def invalidate_sources(self, previous_manifest, changed_ids, change_id, affected_units=None):
+    def invalidate_sources(
+        self, previous_manifest, changed_ids, change_id, affected_units=None, affected_records=()
+    ):
         old = {
             key: previous_manifest[key]["sha256"] for key in changed_ids if key in previous_manifest
         }
@@ -209,10 +253,18 @@ class SemanticWorkspace:
                     ) and content.get("unit_id", content.get("author")) in (
                         set(affected_units or []) | {"modeling"}
                     )
-                    if not local_impact and not any(
-                        ref.get("material_id") in old
-                        and ref.get("sha256") == old[ref["material_id"]]
-                        for ref in content.get("source_refs", [])
+                    explicit = {
+                        "scope": scope,
+                        "record_id": row["object_id"].removeprefix("semantic:"),
+                    }
+                    if (
+                        explicit not in affected_records
+                        and not local_impact
+                        and not any(
+                            ref.get("material_id") in old
+                            and ref.get("sha256") == old[ref["material_id"]]
+                            for ref in content.get("source_refs", [])
+                        )
                     ):
                         continue
                     updated = {

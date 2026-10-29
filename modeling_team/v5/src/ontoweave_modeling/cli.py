@@ -1,4 +1,4 @@
-"""Explicit v5 task entry; the legacy Team entry and default routing are unchanged."""
+"""OntoWeave v5 task entry. scripts/modeling selects this stack for new tasks."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def repository(binding: TaskBinding) -> tuple[WorkspaceRepository, dict]:
 
 
 def evaluate(
-    binding, repo, bridge, package: Path, evaluation_id: str, required_artifacts=()
+    binding, repo, bridge, package: Path, evaluation_id: str, required_artifacts=(), scope=None
 ) -> dict:
     """An independent native context with its own immutable inputs and control record."""
     safe_id(evaluation_id)
@@ -41,6 +41,21 @@ def evaluate(
     if work["status"] != "handoff_ready":
         raise FrameworkError("handoff_not_ready")
     handoff = repo.read_reference(work["handoff_ref"])
+    if scope is not None:
+        if scope["base_freeze_id"] != handoff["evaluation"]["freeze_id"]:
+            raise FrameworkError("evaluation_scope_base_mismatch")
+        selected = scope.get("source_ids", list(handoff["source_revisions"]))
+        if set(selected) - handoff["source_revisions"].keys():
+            raise FrameworkError("evaluation_scope_source_forbidden")
+        handoff = {
+            **handoff,
+            "evaluation": scope["evaluation"],
+            "evaluation_scope": {
+                "scope_id": scope["scope_id"],
+                "base_freeze_id": scope["base_freeze_id"],
+            },
+            "source_revisions": {key: handoff["source_revisions"][key] for key in selected},
+        }
     manifest = _check_sources(package)
     if set(required_artifacts) - manifest.keys():
         raise FrameworkError(
@@ -50,8 +65,8 @@ def evaluate(
     questions = manifest.get("frozen-questions", {})
     if questions.get("sha256") != handoff["evaluation"]["sha256"]:
         raise FrameworkError("evaluation_freeze_mismatch")
-    for material_id, source in binding.data["source_manifest"].items():
-        if manifest.get(material_id, {}).get("sha256") != source["sha256"]:
+    for material_id, sha256 in handoff["source_revisions"].items():
+        if manifest.get(material_id, {}).get("sha256") != sha256:
             raise FrameworkError("evaluation_source_mismatch", material_id=material_id)
     root = binding.root / "evaluations" / evaluation_id
     if not root.exists():
@@ -112,7 +127,12 @@ def evaluate(
     )
     prompt = json.dumps(
         {
-            "objective": binding.data["objective"],
+            "objective": scope.get("objective", binding.data["objective"])
+            if scope
+            else binding.data["objective"],
+            "evaluation_scope": handoff.get("evaluation_scope"),
+            "required_artifacts": list(required_artifacts),
+            "artifact_contract": "Read required artifacts as scoped targets or attributed subordinate reports. They cannot supply facts missing from the actual model. Judge overall conditions independently, not by adding subordinate PASS scores.",
             "materials": list(manifest),
             "target": handoff["target"],
             "evaluation": handoff["evaluation"],
@@ -159,6 +179,8 @@ def evaluate(
     if bridge.call("snapshot")["model_revisions"] != handoff["target"]["model_revisions"]:
         raise FrameworkError("frozen_target_changed")
     write_json(root / "private-report.json", report)
+    if scope is not None:
+        public["evaluation_scope"] = handoff["evaluation_scope"]
     write_json(root / "public-feedback.json", public)
     return public
 
@@ -180,6 +202,11 @@ def parser() -> argparse.ArgumentParser:
     commands[-1].add_argument("--package", type=Path, required=True)
     commands[-1].add_argument("--evaluation-id", required=True)
     commands[-1].add_argument("--required-artifact", action="append", default=[])
+    commands[-1].add_argument(
+        "--scope-file",
+        type=Path,
+        help="Frozen bounded/additional evaluation scope; preserves primary reports",
+    )
     commands.append(sub.add_parser("questions", help="List durable questions and reply states"))
     commands.append(sub.add_parser("budget", help="Read and refresh the bound amount budget"))
     budget_add = sub.add_parser("budget-add", help="Apply a Host-authorized budget addition file")
@@ -211,6 +238,19 @@ def parser() -> argparse.ArgumentParser:
     fork.add_argument("--authorization-reference", required=True)
     fork.add_argument("--archive-source", action="store_true")
     commands.append(fork)
+    overview = sub.add_parser(
+        "overview-refresh", help="Generate authorized actual-model navigation"
+    )
+    overview.add_argument("--overview-id", required=True)
+    overview.add_argument("--topic", required=True)
+    overview.add_argument("--view", choices=("consumer", "user"), default="consumer")
+    commands.append(overview)
+    overview_show = sub.add_parser(
+        "overview-show", help="Read navigation with current access and freshness"
+    )
+    overview_show.add_argument("--overview-id", required=True)
+    overview_show.add_argument("--view", choices=("consumer", "user"), default="consumer")
+    commands.append(overview_show)
     revise = sub.add_parser(
         "source-revise", help="Queue an explicit source version and affected units"
     )
@@ -282,6 +322,12 @@ def dispatch(args) -> dict:
         binding = plan.binding(binding)
     control, bridge = TaskControl(repo), HostBridge(binding.root)
     human = HumanInput(binding, repo, control)
+    if args.command in {"overview-refresh", "overview-show"}:
+        from .overviews import read_overview, refresh_overview
+
+        if args.command == "overview-show":
+            return read_overview(binding, repo, bridge, args.overview_id, args.view)
+        return refresh_overview(binding, repo, bridge, args.overview_id, args.topic, args.view)
     if args.command == "work-tree":
         return plan.tree(args.parent_id, args.offset, args.limit)
     if args.command == "snapshot-fork":
@@ -379,6 +425,7 @@ def dispatch(args) -> dict:
             args.package.resolve(),
             args.evaluation_id,
             args.required_artifact,
+            json.loads(args.scope_file.read_text()) if args.scope_file else None,
         )
     repo.setup()
 

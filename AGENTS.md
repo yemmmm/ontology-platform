@@ -143,6 +143,13 @@ versioned requirements.
 
 ## 工作流与按需读取
 
+- 2026-10-30 持续 v5 授权下的新任务默认入口为 `scripts/modeling`，采用 LangGraph＋Codex
+  harness 和 v5 持续语义工作空间方法；Host 操作见
+  [v5 runbook](skills/modeling-dev-loop/references/v5-runbook.md)。旧活跃／挂起任务继续
+  其绑定版本，使用 `scripts/modeling --legacy` 或原入口，不读取不兼容的新 checkpoint。
+  本轮已知工程判据及机制证据不升级为完整业务盲测或净降耗证明。
+  下条模型与金额默认继续适用，新的启动仍需当次真实授权。
+
 - 2026-10-22 用户确认后续建模启动默认采用：通用建模方法
   （`modeling_team/profiles/unified-modeling.yaml`）＋最小业务链
   （`modeling_team/tasks/r4-3-026-minimal-installation-chain.yaml`），全部托管角色含 Delivery

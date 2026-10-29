@@ -131,8 +131,7 @@ class SnapshotFork:
                 ):
                     if key in old:
                         task[key] = old[key]
-                if old.get("project_ref"):
-                    task["project_ref"] = target_id
+                task["project_ref"] = target_id
                 write_json(inputs / "task.json", task)
                 new = TaskBinding.prepare(inputs / "task.json", destination)
                 write_json(destination / "private-runtime.json", config)

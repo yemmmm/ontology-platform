@@ -187,6 +187,25 @@ def test_no_change_path_still_self_checks_actual_model_without_apply(binding, wo
     assert actor.calls == ["modeling", "self_check"]
 
 
+def test_self_check_diagnostics_do_not_force_an_extra_model_turn(binding, workspace, saver):
+    platform = Platform()
+    actor = Actor(binding, platform)
+
+    def invoke(root, purpose, prompt, inputs):
+        result = actor(root, purpose, prompt, inputs)
+        if purpose == "self_check":
+            value = json.loads(result["final_response"])
+            value["self_check"] = {"observed_versions": {"ontology": 1}}
+            result["final_response"] = json.dumps(value)
+        return result
+
+    assert (
+        WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)["status"]
+        == "handoff_ready"
+    )
+    assert actor.calls == ["modeling", "self_check"]
+
+
 def test_external_model_drift_reenters_modeling_before_any_owned_apply(binding, workspace, saver):
     platform = Platform()
     inserted = False

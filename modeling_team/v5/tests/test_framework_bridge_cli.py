@@ -211,6 +211,61 @@ print(json.dumps({"reused_plan":True, "batches":len(json.loads(original)["batche
     assert json.loads(process.stdout) == {"reused_plan": True, "batches": 1}
 
 
+def test_multiple_authorized_ontologies_need_explicit_create_placement_and_keep_update_identity(
+    task_file, tmp_path
+):
+    binding = TaskBinding.prepare(task_file, tmp_path / "multi-run")
+    bridge = HostBridge(binding.root)
+    program = r"""
+import json,sys
+from pathlib import Path
+from types import SimpleNamespace
+from ontoweave_modeling.contracts import TaskBinding
+from modeling_team.v5.host.worker import PlatformWorker
+import modeling_team.direct_binding as direct
+w=PlatformWorker(TaskBinding.load(Path(sys.argv[1])))
+w.scope=lambda:SimpleNamespace(ontology_id="one",ontology_ids=["one","two"])
+w.save_scope=lambda scope:None
+w.forwarder=lambda scope:SimpleNamespace(stop=lambda:None)
+w.executor=lambda *a,**k:None
+w._close_applied_sessions=lambda *a,**k:None
+def execute(executor,batches,source_map):
+    return {"status":"completed","batches":[{"ontology_id":b["ontology_id"],"resource_bindings":[
+        {"change_id":i["client_item_id"],"resource_kind":"class",**({} if i["client_item_id"].startswith("update-") else
+          {"resource_id":"urn:class:"+i["client_item_id"],"resource_iri":"urn:class:"+i["client_item_id"]})}
+        for i in b["items"]]} for b in batches]}
+direct.execute_bound_model_changes=execute
+def create(key):
+    return {"change_id":key,"action":"create","resource_kind":"class","item_id":None,"target_ref":None,"fields":{"name":key,"description":"Approved definition"}}
+request={"schema_version":"r4-3-025-model-changes/v1","candidate_ref":None,"changes":[create("a"),create("b")]}
+def call(key,targets=None):
+    return w.apply({"operation_id":key,"candidate":None,"changes":request,"ontology_targets":targets})
+missing=call("missing")
+assert missing["status"]=="not_written" and any(e["code"]=="scope_binding_required" for e in missing["errors"])
+assert call("outside",{"a":"forbidden","b":"two"})["errors"][0]["code"]=="ontology_target_forbidden"
+result=call("placed",{"a":"one","b":"two"})
+assert {b["ontology_id"] for b in result["batches"]}=={"one","two"}
+bindings=json.loads((w.root/"applied-bindings.json").read_text())
+assert bindings["b"]["ontology_id"]=="two"
+request["changes"]=[{"change_id":"update-b","action":"update","resource_kind":"class","item_id":None,
+"target_ref":{"artifact_ref":"applied-bindings.json","path":"/b"},"fields":{"description":"Revised definition"}}]
+update=call("updated")
+assert update["batches"][0]["ontology_id"]=="two"
+assert json.loads((w.root/"applied-bindings.json").read_text())["update-b"]["resource_iri"]=="urn:class:b"
+assert call("conflict",{"update-b":"one"})["errors"][0]["code"]=="ontology_target_conflict"
+print(json.dumps({"placed":True,"updated_second":True}))
+"""
+    process = subprocess.run(
+        [bridge.command[0], "-c", program, str(binding.root)],
+        env=bridge.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert process.returncode == 0, process.stderr
+    assert json.loads(process.stdout) == {"placed": True, "updated_second": True}
+
+
 def test_old_public_exports_and_cli_bootstrap_remain_compatible(tmp_path):
     bridge = HostBridge(tmp_path)
     program = """

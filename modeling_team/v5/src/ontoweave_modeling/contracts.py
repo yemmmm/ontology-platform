@@ -62,6 +62,39 @@ def safe_id(value: str) -> str:
     return value
 
 
+def bound_project_ref(task, repository):
+    if task.get("project_ref"):
+        return task["project_ref"]
+    row = repository.get("run:" + task["run_id"] + ":project-binding")
+    return row["content"]["project_id"] if row else None
+
+
+def modeling_instructions(task_instructions):
+    """Freeze the current method and reusable platform grammar for a new task only."""
+    package = Path(__file__).resolve().parents[2]
+    instructions = task_instructions
+    if not instructions.startswith("# Bounded v5 modeling and self-check"):
+        instructions = (
+            (package / "instructions/modeling.md").read_text()
+            + "\n\nTask-specific instructions:\n"
+            + instructions
+        )
+    if "Technical representation contracts (not business sources):" not in instructions:
+        references = package.parent / "references"
+        direct = json.loads((references / "r4-3-025-direct-modeling-contract.json").read_text())
+        semantics = json.loads((references / "r4-0-012-modeling-contract.json").read_text())
+        contract = {
+            "change": direct["change"],
+            "candidate": direct["candidate"],
+            "semantic_definition": semantics["multiview_semantic_definition"],
+        }
+        instructions += (
+            "\n\nTechnical representation contracts (not business sources):\n"
+            + json.dumps(contract, ensure_ascii=False)
+        )
+    return instructions
+
+
 def _check_sources(root: Path) -> dict:
     manifest = json.loads((root / "manifest.json").read_text())
     if not isinstance(manifest, dict) or not manifest:
@@ -194,6 +227,7 @@ class TaskBinding:
             "source_manifest": manifest,
             "source_manifest_digest": digest(manifest),
         }
+        data["instructions"] = modeling_instructions(task["instructions"])
         root.mkdir(parents=True, exist_ok=False, mode=0o700)
         for entry in manifest.values():
             destination = root / "materials" / entry["path"]
@@ -269,6 +303,7 @@ class TaskBinding:
                 "work_generation": unit.get("generation", 0),
                 "work_unit_id": unit_id,
                 "objective": unit["objective"],
+                "assigned_material_ids": unit.get("material_ids", []),
                 "instructions": self.data["instructions"] + "\n" + unit.get("instructions", ""),
             },
         )
@@ -323,6 +358,11 @@ WORK_RESULT_SCHEMA = {
         },
         "candidate": {"type": ["object", "null"]},
         "changes": {"type": ["object", "null"]},
+        "ontology_targets": {
+            "type": ["object", "null"],
+            "additionalProperties": {"type": "string"},
+            "description": "change_id to actual authorized ontology_id placement; required for ambiguous multi-Ontology creates.",
+        },
         "source_refs": {
             "type": "array",
             "items": {
@@ -342,7 +382,7 @@ WORK_RESULT_SCHEMA = {
 
 SELF_CHECK_SCHEMA = {
     "type": "object",
-    "additionalProperties": False,
+    "additionalProperties": True,
     "properties": {
         "status": {"enum": ["ready", "revise", "waiting_input"]},
         "issues": {"type": "array", "items": {"type": "string"}},

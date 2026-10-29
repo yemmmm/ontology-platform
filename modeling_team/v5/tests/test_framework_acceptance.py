@@ -154,11 +154,13 @@ def test_tool_completion_is_not_successful_governed_or_source_read(frozen_report
         validate_report(report, handoff, path)
 
 
+@pytest.mark.parametrize("bounded_scope", [False, True])
 def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_production(
     task_file,
     tmp_path,
     workspace,
     monkeypatch,
+    bounded_scope,
 ):
     from ontoweave_modeling import cli
     from ontoweave_modeling.contracts import TaskBinding, write_json
@@ -170,6 +172,22 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
     task["evaluation"]["sha256"] = question_sha
     task_file.write_text(json.dumps(task))
     binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    scope = None
+    selected_evaluation = binding.data["evaluation"]
+    if bounded_scope:
+        questions = b'{"cases":["bounded first", "bounded second"]}'
+        question_sha = hashlib.sha256(questions).hexdigest()
+        selected_evaluation = {
+            **selected_evaluation,
+            "freeze_id": "bounded-freeze",
+            "sha256": question_sha,
+        }
+        scope = {
+            "scope_id": "direct-child",
+            "base_freeze_id": binding.data["evaluation"]["freeze_id"],
+            "source_ids": ["source"],
+            "evaluation": selected_evaluation,
+        }
     source = binding.data["source_manifest"]["source"]
     handoff = {
         "target": {"model_revisions": {"ontology": 3}},
@@ -275,7 +293,7 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
             (folder / "events.jsonl").write_text("\n".join(map(json.dumps, events)))
             report = {
                 "verdict": "PASS",
-                "freeze_id": task["evaluation"]["freeze_id"],
+                "freeze_id": selected_evaluation["freeze_id"],
                 "model_revisions": {"ontology": 3},
                 "cases": [
                     {
@@ -301,11 +319,17 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
     monkeypatch.setattr(cli, "CodexInvocation", IndependentActor)
     TaskControl(workspace).enqueue("production-input", "input", "Pending production correction")
     with pytest.raises(FrameworkError, match="evaluation_report_needs_correction"):
-        cli.evaluate(binding, workspace, Platform(), package, "evaluation-1")
+        cli.evaluate(binding, workspace, Platform(), package, "evaluation-1", scope=scope)
     assert (
-        cli.evaluate(binding, workspace, Platform(), package, "evaluation-1")["verdict"] == "PASS"
+        cli.evaluate(binding, workspace, Platform(), package, "evaluation-1", scope=scope)[
+            "verdict"
+        ]
+        == "PASS"
     )
-    cli.evaluate(binding, workspace, Platform(), package, "evaluation-1")
+    public = cli.evaluate(binding, workspace, Platform(), package, "evaluation-1", scope=scope)
+    if bounded_scope:
+        assert public["evaluation_scope"]["scope_id"] == "direct-child"
+        assert workspace.read_reference(ref)["evaluation"] == binding.data["evaluation"]
     assert len(calls) == 2 and calls[0] != calls[1]
     assert workspace.get(binding.identity + ":work")["content"] == work
     control = TaskControl(workspace).view()

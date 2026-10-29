@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime
 
+from .contracts import bound_project_ref
+
 MEMORY_TOOLS = ("write_memory", "read_memory", "search_memory")
 
 
@@ -10,6 +12,8 @@ class SharedMemory:
         self.repository, self.actor = repository, actor
         self.task = task
         from .workspace import WorkspaceRepository
+
+        project_ref = project_ref or (bound_project_ref(task, repository) if task else None)
 
         self.project = (
             WorkspaceRepository(repository.connection, repository.schema, "project:" + project_ref)

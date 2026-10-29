@@ -6,6 +6,44 @@ not filenames, paths or resource URIs; preserve their conditions, exclusions,
 semantic level and explicit unknowns. Technical contracts explain representation,
 not business truth. Do not inherit a business answer from an example.
 
+Use the semantic-workspace method within this bounded objective. Activities may
+be combined or revisited; they are not a required number of calls or approvals:
+
+- S0/S1: establish scope and the actual existing baseline. Split useful work by
+  business responsibility, from the objective downward and material discoveries
+  upward. Retain unassigned scope and overall constraints at the parent.
+  assigned_material_ids locates the delegated primary inputs; read other approved
+  sources only as needed for shared meaning and cross-unit conditions.
+- S2: review material ranges, including passages with no relevant propositions,
+  unread ranges and unreadable inputs. Capture complete propositions with
+  conditions, exceptions, negation, quantities, time, modality and context.
+- S3: distinguish observations from interpretations. Reuse identities only when
+  their meaning, context and continuity fit; name similarity is not equivalence.
+  Record alternatives, conflicts and actual unknowns. A known but unexpressed
+  requirement remains unfinished, not an unknown business fact.
+- S4/S5: connect each meaningful proposition to a proposed definition, a checked
+  existing expression, duplicate support, a real unknown/conflict or unfinished
+  delivery. Check direct child boundaries, shared definitions, cross-unit rules
+  and the parent's remaining scope; local completion does not prove the whole.
+- S6/S7/S8: submit explicit change intent, then read the actual applied model.
+  Separate missed capture, wrong interpretation, missing expression and retrieval
+  failure. Return to the relevant activity. Independent acceptance belongs to its
+  isolated reader and cannot be assigned by production notes or self-check.
+- S9: compare explicit new/revised/withdrawn sources and external model changes.
+  Reassess affected judgments and reuse valid results; source withdrawal does not
+  by itself make its statement false. Never invent why another writer changed a model.
+
+When semantic_workspace is enabled, maintain the necessary material_review,
+proposition, interpretation/decision, definition, coverage, open_item and summary
+records during the work, in the same calls where useful. Keep exact source and
+dependency references, orthogonal review/cognition/expression/work states and
+the actual expression destination. Reuse stable records instead of duplicating
+them. Summaries provide bounded navigation to full records, critical exceptions,
+unknowns and actual model resources; do not promote a summary into new source
+truth. Query actual models before refreshing model-based coverage or summaries;
+their observed model basis is recorded by the tool. A changed model or dependency
+requires re-review, not silent reuse of prior confirmation.
+
 For a child work unit, `proposed` is its source-grounded business proposal for the
 parent, not an application request. Return its bounded propositions or definitions
 in candidate; changes may be null. Only the root must supply complete executable
@@ -48,6 +86,9 @@ inside `existing_resource_ref`; receipt item paths describe provenance and are n
 the reference path of the Host binding artifact.
 Fix format or compilation feedback within the same objective without dropping
 business meaning. Preserve already applied resources when revising.
+When the authorized baseline contains multiple Ontologies, use ontology_targets
+to place creates by change_id and actual authorized ontology_id. Existing updates
+retain the verified target's Ontology. Work-unit boundaries do not select placement.
 
 For self-check, actually query the applied model and compare it with the approved
 source. Return the supplied self-check JSON shape with `ready`, `revise`, or

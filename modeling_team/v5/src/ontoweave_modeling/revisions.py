@@ -54,6 +54,7 @@ class SourceRevisions:
             "manifest": manifest,
             "changed_materials": changed,
             "affected_units": affected,
+            "affected_records": change.get("affected_records", []),
             "reason": change["reason"],
             "evaluation": change.get("evaluation", self.binding.data["evaluation"]),
         }
@@ -138,6 +139,7 @@ class SourceRevisions:
                 change["changed_materials"],
                 change["change_id"],
                 change["affected_units"],
+                change.get("affected_records", []),
             )
             self.repository.put_reference(
                 row["object_id"],

@@ -124,6 +124,19 @@ class WorkUnitFlow:
             if not admitted["admitted"]:
                 raise FrameworkError("execution_not_admitted", control=admitted)
         result = self.bridge.call(action, payload or {})
+        if result.get("project_id"):
+            self.repository.put_reference(
+                "run:" + self.binding.data["run_id"] + ":project-binding",
+                "project_binding",
+                {"project_id": result["project_id"]},
+                0,
+            )
+        if self.binding.data.get("semantic_workspace") and "model_revisions" in result:
+            from .semantic_workspace import SemanticWorkspace
+
+            SemanticWorkspace(self.repository, self.binding.data).observe_models(
+                result["model_revisions"]
+            )
         if result.get("status") != "uncertain":
             self.control.finish_turn(unit, operation_id)
         return result
@@ -201,6 +214,7 @@ class WorkUnitFlow:
             "objective": self.binding.data["objective"],
             "previous_proposal": previous_proposal,
             "source_manifest": self.binding.data["source_manifest"],
+            "assigned_material_ids": self.binding.data.get("assigned_material_ids", []),
             "actual_baseline": self.repository.read_reference(
                 state.get("target_ref", state["baseline_ref"])
             ),
@@ -252,6 +266,10 @@ class WorkUnitFlow:
             "Preserve unknowns; never invent business facts. consumed_ids may only contain IDs from "
             "Queued inputs, never material IDs; return [] when that queue is empty. "
             "Execution IDs, platform scope, leases and Batch fields are Host-owned.",
+            "placement_contract": "The actual baseline lists authorized ontology_ids. In a multi-Ontology scope, "
+            "return ontology_targets mapping each create change_id to its chosen actual authorized ontology_id. "
+            "Existing updates can inherit placement from their verified target_ref. "
+            "Work units do not determine Ontology placement; never invent or derive ontology IDs.",
             "human_input_contract": "When required business information is missing, return "
             "waiting_input with human_requests containing question, reason and impact. "
             "Questions are persisted and shown directly to the user after this native turn. "
@@ -597,6 +615,7 @@ class WorkUnitFlow:
                 "operation_id": operation_id,
                 "candidate": candidate["candidate"],
                 "changes": candidate["changes"],
+                "ontology_targets": candidate.get("ontology_targets"),
             },
         )
         previous = self.repository.get(self.binding.identity + ":" + operation_id)

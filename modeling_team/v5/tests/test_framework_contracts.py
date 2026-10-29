@@ -15,6 +15,11 @@ def test_frozen_binding_keeps_material_and_model_after_original_changes(task_fil
     assert TaskBinding.load(root).data == binding.data
     assert (root / "materials" / "source.md").read_text().startswith("A source")
     assert binding.model("modeling").model == "glm-5.3-flash"
+    assert "S0/S1" in binding.data["instructions"]
+    assert (
+        "Technical representation contracts (not business sources):" in binding.data["instructions"]
+    )
+    assert "Preserve conditions and unknowns." in binding.data["instructions"]
     with pytest.raises(FileExistsError):
         TaskBinding.prepare(task_file, root)
 

@@ -198,6 +198,8 @@ class PlatformWorker:
         root = self.root / "operations" / operation_id
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         intent = {key: payload[key] for key in ("candidate", "changes")}
+        if payload.get("ontology_targets"):
+            intent["ontology_targets"] = payload["ontology_targets"]
         frozen = root / "intent.json"
         if frozen.exists():
             if json.loads(frozen.read_text()) != intent:
@@ -215,20 +217,60 @@ class PlatformWorker:
         else:
             bindings_path = self.root / "applied-bindings.json"
             bindings = json.loads(bindings_path.read_text()) if bindings_path.exists() else {}
+            resolved = {}
 
             def resolve(ref):
-                if ref.get("artifact_ref") == "applied-bindings.json":
-                    return bindings.get(ref.get("path", "").removeprefix("/"))
-                return self.read_binding(scope, ref)
+                key = digest(ref)
+                if key not in resolved:
+                    resolved[key] = (
+                        bindings.get(ref.get("path", "").removeprefix("/"))
+                        if ref.get("artifact_ref") == "applied-bindings.json"
+                        else self.read_binding(scope, ref)
+                    )
+                return resolved[key]
 
             changes = intent["changes"]
             raw_changes = changes.get("changes", []) if isinstance(changes, dict) else []
             raw_changes = raw_changes if isinstance(raw_changes, list) else []
-            ontology_by_item = {
-                item.get("item_id") or item.get("change_id"): scope.ontology_id
-                for item in raw_changes
-                if isinstance(item, dict)
-            }
+            authorized = getattr(scope, "ontology_ids", []) or [scope.ontology_id]
+            targets = intent.get("ontology_targets", {})
+            outside = set(targets.values()) - set(authorized)
+            if outside:
+                return {
+                    "status": "not_written",
+                    "errors": [
+                        {
+                            "code": "ontology_target_forbidden",
+                            "path": "/ontology_targets",
+                            "message": "Choose from actual authorized ontology_ids",
+                            "authorized_ids": authorized,
+                        }
+                    ],
+                }
+            ontology_by_item, target_bindings = {}, {}
+            for item in raw_changes:
+                if not isinstance(item, dict):
+                    continue
+                change_id = item.get("change_id")
+                target = resolve(item["target_ref"]) if item.get("target_ref") else None
+                if target:
+                    target_bindings[change_id] = target
+                    if targets.get(change_id) not in {None, target.get("ontology_id")}:
+                        return {
+                            "status": "not_written",
+                            "errors": [
+                                {
+                                    "code": "ontology_target_conflict",
+                                    "path": "/ontology_targets/" + change_id,
+                                    "message": "An existing resource stays in its verified target Ontology",
+                                }
+                            ],
+                        }
+                ontology_id = targets.get(change_id) or (target or {}).get("ontology_id")
+                if ontology_id is None and len(authorized) == 1:
+                    ontology_id = authorized[0]
+                if ontology_id:
+                    ontology_by_item[change_id] = ontology_id
             try:
                 batches, source_map = compile_model_changes(
                     changes,
@@ -238,7 +280,12 @@ class PlatformWorker:
                 )
             except ModelChangeCompilationError as error:
                 return {"status": "not_written", "errors": error.errors}
-            plan = {"intent_digest": digest(intent), "batches": batches, "source_map": source_map}
+            plan = {
+                "intent_digest": digest(intent),
+                "batches": batches,
+                "source_map": source_map,
+                "target_bindings": target_bindings,
+            }
             write_json(plan_path, plan)
         forwarder = self.forwarder(scope)
         try:
@@ -252,8 +299,9 @@ class PlatformWorker:
                 for binding in batch.get("resource_bindings", []):
                     if binding.get("change_id"):
                         bindings[binding["change_id"]] = {
+                            **plan.get("target_bindings", {}).get(binding["change_id"], {}),
                             **binding,
-                            "ontology_id": scope.ontology_id,
+                            "ontology_id": batch.get("ontology_id", scope.ontology_id),
                         }
             write_json(bindings_path, bindings)
             return result

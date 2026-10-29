@@ -3,13 +3,20 @@
 归属：[R5.0-001](../../docs/requirements/requirements-v5.0.md#r5-0-001)、
 [实施计划 P0](../../docs/delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md#5-p0在全面改造前验证什么)。
 
-当前实现包含 **P0 接入与 P1.1 整体框架**：显式 CLI、不可变任务绑定、版本化引用、单工作单元 LangGraph、原生执行登记／结果复用、自然回合控制、Host 平台桥和独立交接合同。后续[真实小链](../../docs/delivery/records/2026-10-29-v5-runtime-capability-progression.md)已完成实际应用、治理自查、自然暂停／原 run 接续与独立只读评价，已知六题基准 6/6 PASS，v5 开发测试 83 项通过；其余故障窗口及完整阶段范围继续分项验证。首批框架范围见[实施记录](../../docs/delivery/records/2026-10-29-v5-p1-1-framework-delivery.md)。
+新任务默认入口为 `scripts/modeling`：LangGraph＋Codex harness、动态递归工作树、直接 HITL、
+通信／卡片／固定版本材料、项目记忆、持续语义工作空间、增量修模、实际应用与治理读回、
+模型版本总览、数据快照分叉，以及独立全范围／有界评价。prepare 自动冻结当前方法和
+平台技术合同，Task instructions 只需任务补充。最新验证及限制见
+[持续推进记录](../../docs/delivery/records/2026-10-29-v5-autonomous-progression.md)，
+公开工程用例不代表完整业务盲测或净降耗证明。
 
 独立包 `ontoweave_modeling` 不导入旧
-`modeling_team`／Runner，独立依赖环境不修改后端、默认任务入口或现有任务。
+`modeling_team`／Runner，独立依赖环境不修改后端或旧任务入口。
 Host-only 探针暂时复用旧工具模块，不代表 P1 生产依赖切分已经完成。
 P0 的 47 项开发测试、独立工程 PASS、冻结平台小目标 6/6，以及计量 PARTIAL 边界见
-[验证记录](../../docs/delivery/test-docs/2026-10-28-v5-codex-p0-validation.md)。默认入口未切换。
+[验证记录](../../docs/delivery/test-docs/2026-10-28-v5-codex-p0-validation.md)。
+旧 `python -m modeling_team` 保留，`scripts/modeling --legacy ...` 继续历史任务；旧 checkpoint
+不交给 v5，已有 v5 run 也不因默认入口回退转交旧 Runner。
 
 ## 复跑
 
@@ -76,7 +83,7 @@ Host 私有连接文件及自有资源运行；本批原目录用于只读证据
 共享记忆有界验证与边界见[专门记录](../../docs/delivery/test-docs/2026-10-28-v5-shared-memory-validation.md)，
 未据此声明完整记忆方案或净降耗通过。
 跨批部分成功的恢复只复用原回执并保留已拒绝项，不自动更改分批或冒称全部完成。
-P0 选型阶段曾按用户要求暂停，后续已继续共享记忆子集验证；P1—P4、完整计量和默认切换仍须后续交付。
+P0 的原型边界按原证据保留；当前生产接线见后文及最新交付记录。完整供应商结算仍为 PARTIAL。
 
 ## P1.1 框架入口
 
@@ -99,7 +106,8 @@ env UV_PROJECT_ENVIRONMENT=$PWD/workspaces/v5-codex-p0/.venv \
 ```
 
 去掉 `--prepare-only`，或对已准备目录执行 `resume`，会按获准任务真正调用模型／平台；
-首批框架验证没有执行这类真实调用，后续真实小链证据见上述推进记录。旧 `python -m modeling_team` 入口与新任务默认路由未切换。
+首批框架验证没有执行这类真实调用，后续真实结果见上述推进记录。
+日常新任务可将同样参数交给 `scripts/modeling`，无需手写 uv 环境命令。
 PostgreSQL 业务 schema 默认 `ontoweave_v5_workspace`，checkpoint 默认
 `ontoweave_v5_checkpoints`，可由 Host 显式指定独立名称。私有连接文件为 psycopg 连接参数 JSON，
 不会挂给生产 Agent。
@@ -116,6 +124,9 @@ objective: 本次有界业务目标
 materials: /absolute/path/approved-materials
 model_profile: /absolute/path/glm-flash-low.yaml
 instructions: 本次获准建模方法和角色说明
+semantic_workspace: true
+shared_memory: true
+work_management: true
 authorization:
   mode: usage_only
   reference: 当次真实Host授权引用
@@ -132,8 +143,8 @@ evaluation:
 `approved-materials/manifest.json` 使用已有材料合同，按材料 ID 列出相对 `path`、
 `source_ref`、`sha256` 及可选 `source_ranges`。准备后从 run 内材料快照接续；原材料、Profile
 变化不静默改变原绑定，快照篡改会返回准确错误。当前 Host 路由只接入 `glm-direct`，按
-Profile 精确保留模型／effort；现支持下述金额模式，次数模式仍待对应阶段接入，
-不自动降为 `usage_only`。
+Profile 精确保留模型／effort；新任务使用下述金额模式或明确授权的 usage_only，
+不自动降级。历史次数任务沿旧绑定继续，不通过新 run 重置原授权。
 
 ### 金额累计与自然回合控制
 
@@ -223,7 +234,8 @@ collaboration:
 
 建模 Agent 需要等待协作时返回 `waiting_peer`。当前原生 turn 完成后，LangGraph
 `collaborate` 节点按队列执行有输入的 peer，再把回复交给原建模步骤；没有消息时保存等待
-并结束，不启动轮询模型。当前按消息串行推进，不是完整 P2 并行／递归调度。正常输入不
+并结束，不启动轮询模型。该兼容 peer 模式按消息串行；下述 work_management 工作树支持
+独立单元并发及递归。正常输入不
 steer／interrupt；工具结束或输出 item 结束不等于整个 turn 结束。程序重建沿原执行登记
 和检查点接续，已经确认的应用不重放。已退出的等待仍需显式 resume。
 
@@ -241,7 +253,8 @@ python -m ontoweave_modeling board --run-dir /path/to/run --agent-id modeling --
 
 ## 多工作单元子集
 
-任务可添加 `work_units` 及 `unit_concurrency`；当前支持一个父级与显式直接子级：
+任务可添加 `work_units` 及 `unit_concurrency` 作为初始工作树，也可用 work_management
+让 Agent 按需动态委派。下例只展示最小直接子级：
 
 ```yaml
 unit_concurrency: 2
@@ -264,7 +277,7 @@ python -m ontoweave_modeling input --run-dir /absolute/path/run \
   --unit-id installation --text '本单元的实际补充'
 ```
 
-快照同时保留各子图 checkpoint。当前是直接子级能力，完整递归规划及大型业务收口另按
+快照同时保留各子图 checkpoint。动态递归使用相同执行图；大型业务的语义质量仍另按
 P2 验证；[工程及真实运行记录](../../docs/delivery/records/2026-10-29-v5-multi-unit-delivery.md)
 区分已实现机制与实际父级闭环的验证范围。测试阶段可按用户授权构造并署名 HITL 答复。
 父级可按真实依赖分批应用；后续提交前从原快照恢复并关闭此前已确认完成的 Session。
@@ -298,7 +311,8 @@ python -m ontoweave_modeling snapshot-diff --run-dir /path/to/run --before befor
 只读 list／show／diff 直接读取保存文件，不要求原任务、原材料或当前工作流版本仍能加载。
 
 各组件保留各自版本，不声称跨存储全局事务。模型读取不可用时保存原引用和读取错误；
-该快照用于观察、复盘与对比，当前不执行模型回滚／分叉恢复，不是完整平台数据备份。
+默认快照用于观察、复盘与对比；下述 include-platform／snapshot-fork 另接真实数据捕获及
+显式源归档分叉，不将默认引用快照称作平台数据备份，也不执行原地模型回滚。
 设计见[最小记忆与快照](../../docs/delivery/designs/2026-10-29-v5-memory-snapshot-minimal-design.md)。
 
 ## 最小 HITL：问题、答复与主动输入
@@ -360,7 +374,8 @@ uv run --locked --project modeling_team/v5 python -m ontoweave_modeling input \
 这些明确依赖显示待重审，不把材料撤回判断为业务事实为假。各自的 review、cognition、
 expression、work、applicability 独立记录，应用及独立验收不由笔记赋值。
 
-Host 显式绑定 `project_ref` 后，语义记录及共享记忆工具可指定 `scope="project"`，在获准
+Host 显式绑定 `project_ref` 或平台实际创建项目并完成运行期关联后，语义记录及共享记忆
+工具可指定 `scope="project"`，在获准
 新任务／run 中复用同一项目的判断；默认仍为任务范围。新上下文使用 get_modeling_context
 获得有界导航，再按需读原文和完整记录，不能把摘要作为当前实际模型的证明。
 
@@ -375,3 +390,30 @@ Host 显式绑定 `project_ref` 后，语义记录及共享记忆工具可指定
 原任务／预算关联保持，以 workspace_ref 隔离新控制和认知记录；新 run 使用 resume 真实
 启动，重新自查和验收。普通观察快照可继续查看／比较；数据分叉需使用带平台数据的快照。
 具体取舍见[复用说明](../../docs/research/2026-10-30-v5-snapshot-fork-reuse.md)。
+
+## 总览与分层独立评价
+
+`overview-refresh --overview-id ID --topic TEXT --view consumer|user` 使用全新只读上下文，
+仅从获准实际模型生成总体／主题导航、精确资源引用、未知与限制。`overview-show` 在读取前
+核对当前访问及模型版本；来源／依赖／模型变化使相关记录 needs_review，旧依据保留。
+生成期间变化的结果不标为当前。消费者视图不挂载生产笔记或隐藏验收材料。
+
+`evaluate --scope-file SCOPE.json` 可在原主冻结下执行独立有界或追加评价。范围文件包含：
+
+```json
+{
+  "scope_id": "bounded-unit",
+  "base_freeze_id": "original-primary-freeze",
+  "source_ids": ["approved-material-id"],
+  "objective": "本次范围及与父级的连接",
+  "evaluation": {"freeze_id": "scoped-freeze", "sha256": "实际题集摘要", "case_count": 2}
+}
+```
+
+评价包只需选定原始依据、冻结题及所需待验产物，目标仍是确切实际模型。公开报告带范围
+及主冻结引用；原主报告保留。父级不能以子级分数代替整体规则和原始依据核对。
+`--required-artifact ID` 保证待验记忆、摘要或公开子报告被实际读取；它们不成为模型事实来源。
+
+多个获准 Ontology 的新建变更使用 WorkResult `ontology_targets: {change_id: ontology_id}`；
+更新通过实际 target_ref 继承目标。未选明的多本体创建返回可修正反馈，不静默写入第一个。
+新任务、历史迁移及收尾的完整操作边界见 [Host runbook](../../skills/modeling-dev-loop/references/v5-runbook.md)。

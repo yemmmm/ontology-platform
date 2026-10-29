@@ -1,5 +1,11 @@
 # Modeling Team Host 工具
 
+新任务默认使用 [v5 入口](v5/README.md)：`scripts/modeling start ...`，采用
+LangGraph＋Codex harness、持续语义工作空间和动态 HITL。启动前仍须有真实授权、
+获准材料及独立冻结标准；默认入口本身不授予调用或写入权限。
+旧任务继续使用原环境及 `scripts/modeling --legacy ...`，本页下文的历史命令不接管 v5 run。
+Host 操作见 [v5 runbook](../skills/modeling-dev-loop/references/v5-runbook.md)。
+
 ## 整轮用量与账单对账（Host离线）
 
 R4.3-019提供 `python -m modeling_team.usage_report --scope <scope.json> --output-dir <新目录>`，
