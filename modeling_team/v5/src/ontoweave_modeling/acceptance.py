@@ -61,7 +61,8 @@ def successful_reads(events_path: Path) -> list[tuple[str, dict, dict]]:
 
 def require_governed_read(events_path: Path, model_revisions: dict) -> None:
     for tool, _, data in successful_reads(events_path):
-        if tool != "query_semantic_context" or data.get("ok") is not True:
+        # The scoped MCP adapter returns the successful REST body without an `ok` envelope.
+        if tool != "query_semantic_context" or data.get("ok") is False:
             continue
         actual = {
             row["ontology_id"]: row["model_revision"]

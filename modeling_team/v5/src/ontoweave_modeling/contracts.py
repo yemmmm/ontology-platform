@@ -194,7 +194,13 @@ WORK_RESULT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "status": {"enum": ["proposed", "waiting_input", "recoverable_issue"]},
+        "status": {
+            "enum": ["proposed", "waiting_input", "recoverable_issue"],
+            "description": "proposed: complete changes ready for the Host to apply; waiting_input: "
+            "required business input is missing; recoverable_issue: a current technical gap prevents "
+            "a complete proposal. Previous errors and pending application/self-check alone do not "
+            "prevent status proposed.",
+        },
         "candidate": {"type": ["object", "null"]},
         "changes": {"type": ["object", "null"]},
         "source_refs": {

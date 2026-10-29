@@ -95,6 +95,87 @@ print('compatible')
     assert process.stdout.strip() == "compatible"
 
 
+def test_snapshot_references_compile_followup_against_existing_resources(task_file, tmp_path):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    bridge = HostBridge(binding.root)
+    program = r"""
+import json, sys
+from types import SimpleNamespace
+from pathlib import Path
+from ontoweave_modeling.contracts import TaskBinding, write_json
+from modeling_team.v5.host.worker import PlatformWorker
+worker = PlatformWorker(TaskBinding.load(Path(sys.argv[1])))
+worker.scope = lambda: SimpleNamespace(ontology_id="ontology", ontology_ids=[],
+                                      project_id="project", protocol_key="test-key")
+worker.save_scope = lambda scope: None
+worker.forwarder = lambda scope: SimpleNamespace(stop=lambda: None,
+    forward=lambda *args: {"data":{"workspace":{"model_revision":1}}})
+class Executor:
+    def execute(self, batches, source_map):
+        return {"status":"completed", "batches":[], "errors":[], "pending_changes":[]}
+worker.executor = lambda *args, **kwargs: Executor()
+left, right = "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"
+write_json(worker.root / "applied-bindings.json", {
+    "left": {"resource_kind":"class", "resource_id":left, "resource_iri":"urn:left"},
+    "right": {"resource_kind":"class", "resource_id":right, "resource_iri":"urn:right"}})
+snapshot = worker.snapshot()
+refs = snapshot["resource_refs"]
+request = {"schema_version":"r4-3-025-model-changes/v1", "candidate_ref":None, "changes":[{
+    "change_id":"followup", "action":"create", "resource_kind":"relation_type", "item_id":None,
+    "target_ref":None, "fields":{"name":"Related to",
+        "source_class_id":{"existing_resource_ref":refs["left"]},
+        "target_class_id":{"existing_resource_ref":refs["right"]}}}]}
+result = worker.apply({"operation_id":"followup", "candidate":None, "changes":request})
+assert result["status"] == "completed", result
+compiled = json.loads((worker.root / "operations/followup/compiled.json").read_text())
+payload = compiled["batches"][0]["items"][0]["payload"]
+assert payload["source_class_id"] == left and payload["target_class_id"] == right, payload
+print("existing-resource-followup-compiled")
+"""
+    process = subprocess.run(
+        [bridge.command[0], "-c", program, str(binding.root)],
+        env=bridge.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stdout.strip() == "existing-resource-followup-compiled"
+
+
+def test_cleanup_resource_retention_does_not_infer_legacy_producer_failure(task_file, tmp_path):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    bridge = HostBridge(binding.root)
+    program = r"""
+import json, sys
+from types import SimpleNamespace
+from pathlib import Path
+from ontoweave_modeling.contracts import TaskBinding
+from modeling_team.v5.host.worker import PlatformWorker
+worker = PlatformWorker(TaskBinding.load(Path(sys.argv[1])))
+scope = SimpleNamespace(cleanup=lambda: {
+    "scope_disposition":"failed-written-retained", "sessions_terminal":True,
+    "no_in_flight_attempts":True, "aggregate_keys_non_active":True})
+worker.scope = lambda: scope
+worker.save_scope = lambda scope: None
+result = worker.cleanup()
+assert result["scope_disposition"] == "written-retained", result
+assert result["legacy_scope_disposition"] == "failed-written-retained"
+assert result["aggregate_keys_non_active"] and result["no_in_flight_attempts"]
+assert scope.scope_disposition == "written-retained"
+print("resource-retention-is-not-a-semantic-verdict")
+"""
+    process = subprocess.run(
+        [bridge.command[0], "-c", program, str(binding.root)],
+        env=bridge.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stdout.strip() == "resource-retention-is-not-a-semantic-verdict"
+
+
 def test_prepare_status_and_controls_use_real_postgres_without_live_calls(
     task_file,
     tmp_path,

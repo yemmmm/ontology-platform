@@ -183,12 +183,17 @@ class PlatformWorker:
             versions = {
                 oid: value["data"]["workspace"]["model_revision"] for oid, value in contexts.items()
             }
-            bindings = self.root / "applied-bindings.json"
+            bindings_path = self.root / "applied-bindings.json"
+            bindings = json.loads(bindings_path.read_text()) if bindings_path.exists() else {}
             return {
                 "project_id": scope.project_id,
                 "ontology_ids": ids,
                 "model_revisions": versions,
-                "resource_bindings": json.loads(bindings.read_text()) if bindings.exists() else {},
+                "resource_bindings": bindings,
+                "resource_refs": {
+                    identity: {"artifact_ref": "applied-bindings.json", "path": "/" + identity}
+                    for identity in bindings
+                },
             }
         finally:
             forwarder.stop()
@@ -268,6 +273,12 @@ class PlatformWorker:
                 raise FrameworkError("read_key_revocation_unconfirmed")
         scope.retain_nonempty = True
         result = scope.cleanup()
+        if result.get("scope_disposition") == "failed-written-retained":
+            # Legacy cleanup infers producer outcome from old Runner terminal_results.
+            # v5 records its task/evaluation outcome separately from resource disposition.
+            result["legacy_scope_disposition"] = result["scope_disposition"]
+            result["scope_disposition"] = "written-retained"
+            scope.scope_disposition = "written-retained"
         write_json(self.root / "cleanup.json", result)
         self.save_scope(scope)
         return result

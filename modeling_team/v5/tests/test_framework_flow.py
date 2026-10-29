@@ -168,6 +168,24 @@ def test_pause_preserves_candidate_and_never_dispatches_application(binding, wor
     assert actor.calls == ["modeling", "self_check"]
 
 
+def test_pause_keeps_first_result_error_for_resume(binding, workspace, saver):
+    platform = Platform()
+    control = TaskControl(workspace)
+    actor = Actor(
+        binding,
+        platform,
+        lambda purpose: control.enqueue("pause", "pause") if len(actor.calls) == 1 else None,
+    )
+    actor.bad_first_result = True
+    flow = WorkUnitFlow(binding, workspace, platform, actor)
+    paused = flow.advance(saver)
+    assert paused["status"] == "paused"
+    assert paused["issue"]["code"] == "work_result_invalid"
+    control.enqueue("resume", "resume")
+    assert flow.advance(saver)["status"] == "handoff_ready"
+    assert len(platform.effects) == 1
+
+
 def test_unknown_apply_keeps_original_activity_and_operation(binding, workspace, saver):
     platform = Platform()
     platform.uncertain = True
@@ -180,6 +198,51 @@ def test_unknown_apply_keeps_original_activity_and_operation(binding, workspace,
     platform.uncertain = False
     assert flow.advance(saver)["status"] == "handoff_ready"
     assert len(platform.effects) == 1
+
+
+def test_corrected_self_check_uses_new_snapshot_without_overwriting_history(
+    binding, workspace, saver, monkeypatch
+):
+    platform = Platform()
+    control = TaskControl(workspace)
+    actor = Actor(binding, platform)
+    targets = []
+    original_put = workspace.put_reference
+    original_call = platform.call
+    refreshed = False
+
+    def put(object_id, kind, content, revision):
+        ref = original_put(object_id, kind, content, revision)
+        if ":target:" in object_id:
+            targets.append(ref)
+        return ref
+
+    def platform_call(action, payload):
+        value = original_call(action, payload)
+        if action == "snapshot" and refreshed:
+            value["resource_refs"] = {
+                "definition": {"artifact_ref": "applied-bindings.json", "path": "/definition"}
+            }
+        return value
+
+    def invoke(root, purpose, prompt, inputs):
+        value = actor(root, purpose, prompt, inputs)
+        if purpose == "self_check" and actor.calls.count("self_check") == 1:
+            control.enqueue("pause", "pause")
+            value["final_response"] = "invalid JSON"
+        return value
+
+    monkeypatch.setattr(workspace, "put_reference", put)
+    monkeypatch.setattr(platform, "call", platform_call)
+    flow = WorkUnitFlow(binding, workspace, platform, invoke)
+    assert flow.advance(saver)["status"] == "paused"
+    refreshed = True
+    control.enqueue("resume", "resume")
+    assert flow.advance(saver)["status"] == "handoff_ready"
+    assert len(platform.effects) == 1 and len(targets) == 2
+    assert targets[0] != targets[1]
+    assert "resource_refs" not in workspace.read_reference(targets[0])
+    assert "resource_refs" in workspace.read_reference(targets[1])
 
 
 def test_missing_business_input_waits_without_guessing(binding, workspace, saver):

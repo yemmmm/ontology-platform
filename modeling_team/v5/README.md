@@ -3,12 +3,12 @@
 归属：[R5.0-001](../../docs/requirements/requirements-v5.0.md#r5-0-001)、
 [实施计划 P0](../../docs/delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md#5-p0在全面改造前验证什么)。
 
-当前实现包含 **P0 接入与 P1.1 整体框架**：显式 CLI、不可变任务绑定、版本化引用、单工作单元 LangGraph、原生执行登记／结果复用、自然回合控制、Host 平台桥和独立交接合同。P1.1 的真实小业务链及独立语义验收尚未完成，不能用工程 fixture 关闭 P1.1。框架范围见[实施记录](../../docs/delivery/records/2026-10-29-v5-p1-1-framework-delivery.md)。
+当前实现包含 **P0 接入与 P1.1 整体框架**：显式 CLI、不可变任务绑定、版本化引用、单工作单元 LangGraph、原生执行登记／结果复用、自然回合控制、Host 平台桥和独立交接合同。后续[真实小链](../../docs/delivery/records/2026-10-29-v5-runtime-capability-progression.md)已完成实际应用、治理自查、自然暂停／原 run 接续与独立只读评价，已知六题基准 6/6 PASS，v5 开发测试 83 项通过；其余故障窗口及完整阶段范围继续分项验证。首批框架范围见[实施记录](../../docs/delivery/records/2026-10-29-v5-p1-1-framework-delivery.md)。
 
 独立包 `ontoweave_modeling` 不导入旧
 `modeling_team`／Runner，独立依赖环境不修改后端、默认任务入口或现有任务。
 Host-only 探针暂时复用旧工具模块，不代表 P1 生产依赖切分已经完成。
-当前 47 项开发测试、独立工程 PASS、冻结平台小目标 6/6，以及计量 PARTIAL 边界见
+P0 的 47 项开发测试、独立工程 PASS、冻结平台小目标 6/6，以及计量 PARTIAL 边界见
 [验证记录](../../docs/delivery/test-docs/2026-10-28-v5-codex-p0-validation.md)。默认入口未切换。
 
 ## 复跑
@@ -99,7 +99,7 @@ env UV_PROJECT_ENVIRONMENT=$PWD/workspaces/v5-codex-p0/.venv \
 ```
 
 去掉 `--prepare-only`，或对已准备目录执行 `resume`，会按获准任务真正调用模型／平台；
-本轮框架验证没有执行这类真实调用。旧 `python -m modeling_team` 入口与新任务默认路由未切换。
+首批框架验证没有执行这类真实调用，后续真实小链证据见上述推进记录。旧 `python -m modeling_team` 入口与新任务默认路由未切换。
 PostgreSQL 业务 schema 默认 `ontoweave_v5_workspace`，checkpoint 默认
 `ontoweave_v5_checkpoints`，可由 Host 显式指定独立名称。私有连接文件为 psycopg 连接参数 JSON，
 不会挂给生产 Agent。
@@ -138,6 +138,14 @@ Profile 精确保留模型／effort；普通金额／次数模式仍待对应阶
 保存精确引用，实际应用仍走已有统一图／明确变更、编译器、跨批绑定及 executor；Host worker
 使用 backend 环境，不导入旧 CLI 或启动 `TeamRunner`。原始原生事件、返回、用量及 executor
 意图／回执各保留原件。缺失业务输入停在 `waiting_input`；动态 HITL 在 P1.3 接入。
+
+当次任务的 `instructions` 应采用[有界建模提示](instructions/modeling.md)，并附入适用的
+现有统一图／直接变更／语义定义技术合同；只提供合同名称不足以让隔离 Agent 获得其内容。
+业务材料继续以 `source_manifest` 的精确 ID 读取。准备好交给 Host 应用的完整变更返回
+`proposed`，应用尚未发生不构成 `recoverable_issue`。后续变更复制 Host snapshot 的
+`resource_refs` 到 `existing_resource_ref`；`receipt_item_path` 仅为来源位置，不是该绑定
+引用的 path，`artifact_ref` 由 Host 解析，无需 Agent 尝试读取同名文件或 MCP resource。
+真实任务中的缺口及修复见[推进记录](../../docs/delivery/records/2026-10-29-v5-runtime-capability-progression.md)。
 
 暂停／停止先登记，等待在途原生回合自然结束，不调用 steer／interrupt；已返回候选保留。
 `stop` 不会由 `resume` 静默撤销。未知原执行保持 `reconciliation_required`，有原完成事件或

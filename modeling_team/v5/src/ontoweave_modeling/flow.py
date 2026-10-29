@@ -130,7 +130,17 @@ class WorkUnitFlow:
             ),
             "result_schema": WORK_RESULT_SCHEMA,
             "contract": "Return the existing unified graph and explicit r4-3-025 model changes. "
-            "Read approved sources with read_material. Preserve unknowns; never invent business facts. "
+            "Return exactly one JSON object matching result_schema. Read approved sources with "
+            "read_material using source_manifest keys as material_id, not filenames or source paths. "
+            "actual_baseline.resource_refs contains Host-verified existing_resource_ref objects: "
+            "copy their artifact_ref and path exactly when referring to an applied resource. "
+            "receipt_item_path is provenance, not a binding-artifact path. The Host resolves these "
+            "references; do not try to read artifact_ref with read_mcp_resource or read_material. "
+            "Use status proposed when the complete request is ready for Host application; "
+            "application is the next program step, not a prerequisite for proposing. Historical "
+            "errors or the need for subsequent self-check do not make a ready request recoverable_issue. "
+            "Preserve unknowns; never invent business facts. consumed_ids may only contain IDs from "
+            "Queued inputs, never material IDs; return [] when that queue is empty. "
             "Execution IDs, platform scope, leases and Batch fields are Host-owned.",
         }
         ref = self.executions.run(
@@ -253,7 +263,7 @@ class WorkUnitFlow:
             return state
         target = self._host("snapshot", f"snapshot-{state['round']:05d}")
         target_ref = self.repository.put_reference(
-            f"{self.binding.identity}:target:{state['round']}",
+            f"{self.binding.identity}:target:{state['round']}:{digest(target)}",
             "model_reference",
             target,
             0,
@@ -266,7 +276,11 @@ class WorkUnitFlow:
                 "feedback": state.get("issue"),
                 "instruction": "Read the actual model with query_semantic_context. Check business meaning "
                 "against approved sources; a candidate or successful application is not proof. "
-                "Return ready, revise or waiting_input without inventing missing information.",
+                "Return exactly one JSON object matching result_schema: ready, revise or waiting_input. "
+                "Describe needed model corrections in issues for the modeling stage; do not include "
+                "a draft change request or additional JSON blocks. Do not invent missing information. "
+                "consumed_ids may only contain IDs from Queued inputs, never material IDs; "
+                "return [] when that queue is empty.",
                 "result_schema": SELF_CHECK_SCHEMA,
             }
         )
@@ -390,7 +404,12 @@ class WorkUnitFlow:
             )
             if error.code == "task_not_running" and status == "blocked":
                 status = "paused"
-            return self._save({**current, "status": status, "issue": error.as_dict()})
+            issue = (
+                current["issue"]
+                if status in {"paused", "stopped"} and current.get("issue")
+                else error.as_dict()
+            )
+            return self._save({**current, "status": status, "issue": issue})
         except GraphRecursionError:
             current = self.repository.get(self.work_id)["content"]
             return self._save(

@@ -78,6 +78,15 @@ def test_valid_report_public_projection_contains_no_hidden_answers(frozen_report
     assert "actual_answer" not in json.dumps(public) and "reason" not in json.dumps(public)
 
 
+def test_actual_rest_governed_response_needs_no_synthetic_ok_field(frozen_report):
+    report, handoff, path, events = frozen_report
+    data = events[-1]["params"]["item"]["result"]["structuredContent"]
+    data.pop("ok")
+    data["result_status"] = "complete"
+    path.write_text("\n".join(map(json.dumps, events)))
+    assert validate_report(report, handoff, path)["verdict"] == "PASS"
+
+
 @pytest.mark.parametrize(
     "defect", ["missing_case", "wrong_revision", "failed_case", "wrong_freeze"]
 )
