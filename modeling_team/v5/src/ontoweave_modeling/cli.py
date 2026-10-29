@@ -31,6 +31,8 @@ def repository(binding: TaskBinding) -> tuple[WorkspaceRepository, dict]:
 def evaluate(binding, repo, bridge, package: Path, evaluation_id: str) -> dict:
     """An independent native context with its own immutable inputs and control record."""
     safe_id(evaluation_id)
+    if any(r["content"]["status"] == "queued" for r in repo.list_kind("source_change")):
+        raise FrameworkError("source_change_pending", next_action="resume")
     work = repo.get(binding.identity + ":work")["content"]
     if work["status"] != "handoff_ready":
         raise FrameworkError("handoff_not_ready")
@@ -184,6 +186,11 @@ def parser() -> argparse.ArgumentParser:
     snapshot_diff.add_argument("--before", required=True)
     snapshot_diff.add_argument("--after", required=True)
     commands.append(snapshot_diff)
+    revise = sub.add_parser(
+        "source-revise", help="Queue an explicit source version and affected units"
+    )
+    revise.add_argument("--change-file", type=Path, required=True)
+    commands.append(revise)
     for name in ("reply", "input"):
         command = sub.add_parser(name, help="Persist a human reply or unsolicited input")
         commands.append(command)
@@ -231,6 +238,20 @@ def dispatch(args) -> dict:
     repo, config = repository(binding)
     control, bridge = TaskControl(repo), HostBridge(binding.root)
     human = HumanInput(binding, repo, control)
+    if args.command == "source-revise":
+        from .revisions import SourceRevisions
+
+        change = json.loads(args.change_file.read_text())
+        revisions = SourceRevisions(binding, repo)
+        staged = revisions.stage(change, (args.change_file.parent / change["materials"]).resolve())
+        with (binding.root / "run.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {"change": staged, "status": "queued"}
+            selected = revisions.activate()
+        recorded = repo.get(binding.identity + ":source-change:" + change["change_id"])["content"]
+        return {"change": recorded, "cycle_id": selected.data.get("cycle_id"), "status": "recorded"}
     if args.command in {"budget", "budget-add"}:
         addition = (
             json.loads(args.authorization_file.read_text())
@@ -248,6 +269,13 @@ def dispatch(args) -> dict:
             "work": row["content"] if row else None,
             "control": control.view(),
             "budget": budget,
+            "source_changes": [
+                {
+                    k: r["content"][k]
+                    for k in ("change_id", "status", "changed_materials", "affected_units")
+                }
+                for r in repo.list_kind("source_change")
+            ],
             "units": {
                 unit["unit_id"]: row["content"] if row else None
                 for unit in binding.data.get("work_units", [])
@@ -289,14 +317,16 @@ def dispatch(args) -> dict:
     if args.command == "evaluate":
         return evaluate(binding, repo, bridge, args.package.resolve(), args.evaluation_id)
     repo.setup()
-    if binding.data.get("work_units"):
-        from .multi_unit import MultiUnitFlow
 
-        flow = MultiUnitFlow(binding, repo, bridge, config["checkpoint_schema"])
-    else:
-        flow = WorkUnitFlow(binding, repo, bridge, CodexInvocation(binding, bridge))
+    def create_flow(selected):
+        if selected.data.get("work_units") or selected.data.get("work_management"):
+            from .multi_unit import MultiUnitFlow
+
+            return MultiUnitFlow(selected, repo, bridge, config["checkpoint_schema"])
+        return WorkUnitFlow(selected, repo, bridge, CodexInvocation(selected, bridge))
+
     if args.command == "start" and args.prepare_only:
-        return {"status": "prepared", "work": flow.initialize()}
+        return {"status": "prepared", "work": create_flow(binding).initialize()}
     if args.command == "resume":
         control.enqueue(uuid.uuid4().hex, "resume")
         if control.synchronize()["mode"] == "stopped":
@@ -306,10 +336,20 @@ def dispatch(args) -> dict:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise FrameworkError("run_already_active") from error
-        if binding.data.get("work_units"):
-            return flow.advance()
-        with repo.checkpointer(config["checkpoint_schema"]) as saver:
-            return flow.advance(saver)
+        from .revisions import SourceRevisions
+
+        binding = SourceRevisions(binding, repo).activate()
+        while True:
+            flow = create_flow(binding)
+            if binding.data.get("work_units") or binding.data.get("work_management"):
+                result = flow.advance()
+            else:
+                with repo.checkpointer(config["checkpoint_schema"]) as saver:
+                    result = flow.advance(saver)
+            revised = SourceRevisions(binding, repo).activate()
+            if revised.data == binding.data:
+                return result
+            binding = revised
 
 
 def main(argv: list[str] | None = None) -> int:

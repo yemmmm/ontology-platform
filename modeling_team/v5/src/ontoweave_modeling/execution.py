@@ -183,7 +183,7 @@ class CodexInvocation:
         model_revisions: dict | None = None,
     ):
         self.binding, self.bridge = binding, bridge
-        self.materials = materials or binding.root / "materials"
+        self.materials = materials or binding.materials
         self.instructions = instructions or binding.data["instructions"]
         self.model_revisions = model_revisions
 
@@ -191,6 +191,7 @@ class CodexInvocation:
         from .codex_agent import CodexAgent
         from .memory import MEMORY_TOOLS
         from .team import TEAM_TOOLS
+        from .work_plan import WORK_TOOLS
 
         role = "acceptance" if purpose == "acceptance" else "modeling"
         tools = ("read_material", "query_semantic_context")
@@ -200,9 +201,16 @@ class CodexInvocation:
             self.binding.data.get("collaboration")
             or self.binding.data.get("shared_memory")
             or self.binding.data.get("work_units")
+            or self.binding.data.get("work_management")
         ):
-            if self.binding.data.get("collaboration") or self.binding.data.get("work_units"):
+            if (
+                self.binding.data.get("collaboration")
+                or self.binding.data.get("work_units")
+                or self.binding.data.get("work_management")
+            ):
                 tools += TEAM_TOOLS
+            if self.binding.data.get("work_units") or self.binding.data.get("work_management"):
+                tools += WORK_TOOLS
             if self.binding.data.get("shared_memory"):
                 tools += MEMORY_TOOLS
             private = json.loads((self.binding.root / "private-runtime.json").read_text())
@@ -222,7 +230,11 @@ class CodexInvocation:
                     }
                 )
             )
-            if self.binding.data.get("collaboration") or self.binding.data.get("work_units"):
+            if (
+                self.binding.data.get("collaboration")
+                or self.binding.data.get("work_units")
+                or self.binding.data.get("work_management")
+            ):
                 instructions += (
                     "\nUse team tools for signed work cards, peer messages and frozen materials. "
                     "Queued is not read. Ordinary text and material refs are separate. "
@@ -232,6 +244,16 @@ class CodexInvocation:
                     "To await a peer, return waiting_peer; never ask the human to forward peer messages."
                     " On a persistent infrastructure tool error, end this turn with recoverable_issue "
                     "and the exact blocker; repeated identical tool retries cannot repair Host infrastructure."
+                )
+            if self.binding.data.get("work_units") or self.binding.data.get("work_management"):
+                instructions += (
+                    " Use delegate_work to create bounded direct children only when useful. "
+                    "They may delegate further. Keep unallocated scope and overall rules in your own work. "
+                    "After delegation return waiting_children with null candidate/changes; "
+                    "on reentry use get_work_tree and read direct child results as needed. "
+                    "Only the root applies; child proposals are not final acceptance. "
+                    "Use reopen_work_unit for explicit rework; ordinary notifications do not require "
+                    "recreating a finished proposal."
                 )
             if self.binding.is_child:
                 instructions += (

@@ -106,7 +106,14 @@ class TaskBinding:
         }
         if (
             not isinstance(task, dict)
-            or set(task) - {"collaboration", "shared_memory", "work_units", "unit_concurrency"}
+            or set(task)
+            - {
+                "collaboration",
+                "shared_memory",
+                "work_units",
+                "unit_concurrency",
+                "work_management",
+            }
             != required
         ):
             raise FrameworkError("task_schema_mismatch", required=sorted(required))
@@ -201,7 +208,10 @@ class TaskBinding:
         data = envelope["binding"]
         if envelope["digest"] != digest(data) or data["workflow_version"] != WORKFLOW_VERSION:
             raise FrameworkError("binding_changed_or_incompatible")
-        if _check_sources(root / "materials") != data["source_manifest"]:
+        if (
+            _check_sources(root / data.get("source_directory", "materials"))
+            != data["source_manifest"]
+        ):
             raise FrameworkError("source_manifest_changed")
         if (
             hashlib.sha256((root / "model-profile.yaml").read_bytes()).hexdigest()
@@ -214,6 +224,10 @@ class TaskBinding:
         from .preflight import ModelBinding
 
         return ModelBinding(**self.data["models"][role])
+
+    @property
+    def materials(self) -> Path:
+        return self.root / self.data.get("source_directory", "materials")
 
     @property
     def identity(self) -> str:
@@ -230,7 +244,12 @@ class TaskBinding:
 
     @property
     def thread_id(self) -> str:
-        return self.identity if self.is_child else self.data["run_id"]
+        identity = self.identity if self.is_child else self.data["run_id"]
+        if self.data.get("cycle_id"):
+            identity += ":cycle:" + self.data["cycle_id"]
+        if self.data.get("work_generation"):
+            identity += ":generation:" + str(self.data["work_generation"])
+        return identity
 
     def execution_id(self, local_id: str) -> str:
         return self.data["_unit_id"] + "--" + local_id if self.is_child else local_id
@@ -243,11 +262,21 @@ class TaskBinding:
                 **self.data,
                 "_unit_id": unit_id,
                 "_parent_work_unit_id": self.data["work_unit_id"],
+                "_parent_actor": unit.get("parent_id", "modeling"),
+                "work_generation": unit.get("generation", 0),
                 "work_unit_id": unit_id,
                 "objective": unit["objective"],
                 "instructions": self.data["instructions"] + "\n" + unit.get("instructions", ""),
             },
         )
+
+    @property
+    def direct_units(self) -> list[dict]:
+        return [
+            u
+            for u in self.data.get("work_units", [])
+            if u.get("parent_id", "modeling") == self.actor
+        ]
 
 
 HUMAN_REQUESTS_SCHEMA = {
@@ -276,7 +305,13 @@ WORK_RESULT_SCHEMA = {
     "additionalProperties": False,
     "properties": {
         "status": {
-            "enum": ["proposed", "waiting_input", "waiting_peer", "recoverable_issue"],
+            "enum": [
+                "proposed",
+                "waiting_input",
+                "waiting_peer",
+                "waiting_children",
+                "recoverable_issue",
+            ],
             "description": "proposed: complete changes ready for the Host to apply; waiting_input: "
             "required business input is missing; recoverable_issue: a current technical gap prevents "
             "a complete proposal. Previous errors and pending application/self-check alone do not "

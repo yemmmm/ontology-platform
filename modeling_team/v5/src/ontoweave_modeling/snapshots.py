@@ -17,7 +17,12 @@ class RunSnapshots:
         self.root = (Path(root) if root is not None else binding.root) / "snapshots"
 
     def save(self, name, graph, bridge):
-        config = {"configurable": {"thread_id": self.binding.data["run_id"]}}
+        from .work_plan import WorkPlan
+
+        plan = WorkPlan(self.binding.data, self.repository)
+        if self.repository.get(plan.identity):
+            self.binding = plan.binding(self.binding)
+        config = {"configurable": {"thread_id": self.binding.thread_id}}
         state = graph.get_state(config)
         with self.repository.connect() as connection:
             rows = connection.execute(
@@ -62,6 +67,7 @@ class RunSnapshots:
             "task_ref": self.binding.data["task_ref"],
             "run_id": self.binding.data["run_id"],
             "binding_digest": digest(self.binding.data),
+            "binding": self.binding.data,
             "source_hashes": source_hashes,
             "workflow": {
                 "checkpoint_config": state.config,

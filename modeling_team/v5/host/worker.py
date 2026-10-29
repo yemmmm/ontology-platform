@@ -336,10 +336,19 @@ def provider(binding, payload):
     tools = set(payload["tools"])
     from ontoweave_modeling.memory import MEMORY_TOOLS
     from ontoweave_modeling.team import TEAM_TOOLS
+    from ontoweave_modeling.work_plan import WORK_TOOLS
 
     allowed_tools = {"read_material", "query_semantic_context"}
-    if role == "modeling" and (binding.data.get("collaboration") or binding.data.get("work_units")):
+    if role == "modeling" and (
+        binding.data.get("collaboration")
+        or binding.data.get("work_units")
+        or binding.data.get("work_management")
+    ):
         allowed_tools.update(TEAM_TOOLS)
+    if role == "modeling" and (
+        binding.data.get("work_units") or binding.data.get("work_management")
+    ):
+        allowed_tools.update(WORK_TOOLS)
     if role == "modeling" and binding.data.get("shared_memory"):
         allowed_tools.update(MEMORY_TOOLS)
     if not tools.issubset(allowed_tools):

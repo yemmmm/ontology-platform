@@ -337,3 +337,19 @@ uv run --locked --project modeling_team/v5 python -m ontoweave_modeling input \
 重启／checkpoint 重入复用原始执行、问答及应用身份；应用后等待不重放创建。停止或
 交接后的新输入不静默重新打开目标。只读评价获得冻结的有归属人工材料并必须实际读取，
 不消费生产输入队列，也不获得写入权限。
+
+## 显式材料修订与动态工作树
+
+`source-revise --run-dir RUN --change-file CHANGE.json` 接收下一版完整材料包。变化文件包含
+`change_id`、相对路径 `materials`、`reason`、可选 `affected_units` 及下一冻结 `evaluation`。
+旧材料、绑定版本、原生回执和模型身份保留；已完成单元可按明确影响范围重新进入，未变
+成果复用。忙碌时先入队，在自然回合结束后处理，防止旧候选继续应用；`resume` 沿原 run
+激活待处理变化。材料撤回不自动证明原业务判断为假。
+
+任务设置 `work_management: true` 可从零个预设单元开始，使用 `delegate_work`、
+`get_work_tree`、`reopen_work_unit`、`update_work_unit`。已有 `work_units` 也进入同一工作树；
+子级可以继续委派，依赖就绪才组合，根单元是唯一模型写方。委派后返回 `waiting_children`，
+父级按需读取直接子级成果并保留未分配范围。`get_work_tree` 默认返回本层直接子级，
+可指定 `parent_id` 和分页下钻。显式重开同时使祖先重新整合，兄弟成果保留。
+
+当前真实验证及尚未证明范围见[持续开发记录](../../docs/delivery/records/2026-10-29-v5-autonomous-progression.md)。

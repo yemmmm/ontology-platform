@@ -47,6 +47,7 @@ class FlowState(TypedDict, total=False):
     refresh_baseline: bool
     peer_round: int
     peer_next: str
+    work_generation: int
 
 
 class WorkUnitFlow:
@@ -65,7 +66,7 @@ class WorkUnitFlow:
 
     def initialize(self) -> dict:
         binding_ref = self.repository.put_reference(
-            self.binding.identity + ":binding",
+            self.binding.identity + ":binding:" + digest(self.binding.data),
             "task_binding",
             self.binding.data,
             0,
@@ -73,7 +74,11 @@ class WorkUnitFlow:
         prior = self.repository.get(self.work_id)
         if prior:
             if prior["content"]["binding_ref"] != binding_ref:
-                raise FrameworkError("binding_changed_or_incompatible")
+                original = self.repository.read_reference(prior["content"]["binding_ref"])
+                fixed = ("task_ref", "run_id", "models", "profile_sha256", "authorization", "scope")
+                if any(original.get(key) != self.binding.data.get(key) for key in fixed):
+                    raise FrameworkError("binding_changed_or_incompatible")
+                return self._save({**prior["content"], "binding_ref": binding_ref})
             return prior["content"]
         return self._save(
             {
@@ -82,6 +87,7 @@ class WorkUnitFlow:
                 "round": 0,
                 "binding_ref": binding_ref,
                 "semantic_acceptance": "unverified",
+                "work_generation": self.binding.data.get("work_generation", 0),
             }
         )
 
@@ -182,9 +188,8 @@ class WorkUnitFlow:
                     "material_ref": row["content"].get("result_material_ref"),
                     "status": row["content"]["status"],
                 }
-                for unit in self.binding.data.get("work_units", [])
-                if not self.binding.is_child
-                and (
+                for unit in self.binding.direct_units
+                if (
                     row := self.repository.get(
                         self.binding.for_unit(unit["unit_id"]).identity + ":work"
                     )
@@ -261,18 +266,59 @@ class WorkUnitFlow:
                     "issue": error.as_dict(),
                 }
             )
+        plan = self.repository.get("run:" + self.binding.data["run_id"] + ":work-plan")
+        if plan and result["status"] == "proposed":
+            pending_children = [
+                unit["unit_id"]
+                for unit in plan["content"]["units"].values()
+                if unit["parent_id"] == self.binding.actor
+                and unit["status"] == "active"
+                and (
+                    not (
+                        work := self.repository.get(
+                            "run:"
+                            + self.binding.data["run_id"]
+                            + ":unit:"
+                            + unit["unit_id"]
+                            + ":work"
+                        )
+                    )
+                    or work["content"]["status"] != "proposal_ready"
+                )
+            ]
+            if pending_children:
+                result = {
+                    **result,
+                    "status": "waiting_children",
+                    "issues": [
+                        *result["issues"],
+                        "Await direct children: " + ", ".join(pending_children),
+                    ],
+                }
         candidate = self.repository.put_reference(
             f"{self.binding.identity}:candidate:{state['round']}",
             "candidate",
             result,
             0,
         )
+        if result["status"] == "waiting_children":
+            return self._save(
+                {
+                    **state,
+                    "status": "waiting_children",
+                    "activity": "model",
+                    "round": state["round"] + 1,
+                    "execution_ref": ref,
+                    "candidate_ref": candidate,
+                    "issue": {"issues": result["issues"]},
+                }
+            )
         if self.binding.is_child and result["status"] == "proposed":
             material = self.team.publish(
                 "result-" + digest(candidate)[:24], text=json.dumps(result, ensure_ascii=False)
             )
             self.team.send(
-                "modeling",
+                self.binding.data.get("_parent_actor", "modeling"),
                 "Child proposal is ready for parent semantic integration.",
                 "result-" + digest(candidate)[:24],
                 material_refs=[material],
@@ -670,12 +716,20 @@ class WorkUnitFlow:
             "human_context": self.human.context(),
         }
         ref = self.repository.put_reference(
-            self.binding.identity + ":handoff", "handoff", handoff, 0
+            self.binding.identity + ":handoff:" + digest(handoff), "handoff", handoff, 0
         )
         return self._save({**state, "handoff_ref": ref, "status": "handoff_ready"})
 
-    @staticmethod
-    def _route(state):
+    def _route(self, state):
+        pending = [
+            r["content"]
+            for r in self.repository.list_kind("source_change")
+            if r["content"]["status"] == "queued"
+            and (not self.binding.is_child or self.binding.actor in r["content"]["affected_units"])
+        ]
+        if pending:
+            self._save({**state, "status": "source_change_pending"})
+            return END
         if state["status"] == "waiting_input":
             return "wait_input"
         return state["activity"] if state["status"] == "ready" else END

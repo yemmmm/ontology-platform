@@ -1,32 +1,65 @@
-"""Independent child checkpoints, followed by a parent-owned model application."""
+"""Independent work-tree checkpoints, ready dependencies, and root-owned application."""
 
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from .execution import CodexInvocation
 from .flow import WorkUnitFlow
+from .work_plan import WorkPlan
 
 
 class MultiUnitFlow:
     def __init__(self, binding, repository, bridge, checkpoint_schema, invoke_factory=None):
-        self.binding, self.repository, self.bridge = binding, repository, bridge
+        self.original, self.repository, self.bridge = binding, repository, bridge
         self.checkpoint_schema = checkpoint_schema
         self.invoke_factory = invoke_factory or (lambda selected: CodexInvocation(selected, bridge))
-        self.parent = WorkUnitFlow(binding, repository, bridge, self.invoke_factory(binding))
-        self.children = [
-            WorkUnitFlow(selected, repository, bridge, self.invoke_factory(selected))
-            for unit in binding.data["work_units"]
-            if (selected := binding.for_unit(unit["unit_id"]))
+        self.plan = WorkPlan(binding.data, repository)
+        self.refresh()
+
+    def refresh(self):
+        self.binding = self.plan.binding(self.original)
+        selected = [self.binding] + [
+            self.binding.for_unit(u["unit_id"]) for u in self.binding.data["work_units"]
         ]
+        self.flows = {}
+        active = WorkUnitFlow(self.binding, self.repository, self.bridge, None).control.view()[
+            "active"
+        ]
+        for binding in selected:
+            flow = WorkUnitFlow(binding, self.repository, self.bridge, self.invoke_factory(binding))
+            prior = self.repository.get(flow.work_id)
+            unit_active = (
+                binding.data["work_unit_id"] in active
+                or binding.data["work_unit_id"] + ":platform" in active
+            )
+            state = prior["content"] if prior and unit_active else flow.initialize()
+            generation = binding.data.get("work_generation", 0)
+            if state.get("work_generation", 0) != generation and not unit_active:
+                flow._save(
+                    {
+                        **state,
+                        "status": "ready",
+                        "activity": "model",
+                        "round": state["round"] + 1,
+                        "work_generation": generation,
+                        "refresh_baseline": True,
+                        "semantic_acceptance": "unverified",
+                        "issue": {
+                            "code": "work_reentry",
+                            "instruction": "Reassess only this scope and direct child changes against the actual model; reuse valid siblings.",
+                        },
+                    }
+                )
+            self.flows[binding.actor] = flow
+        self.parent = self.flows["modeling"]
+        self.children = [f for actor, f in self.flows.items() if actor != "modeling"]
 
     def initialize(self):
-        state = self.parent.initialize()
-        for child in self.children:
-            child.initialize()
-        return state
+        self.refresh()
+        return self.repository.get(self.parent.work_id)["content"]
 
     def states(self):
         return {
-            child.binding.data["work_unit_id"]: self.repository.get(child.work_id)["content"]
+            child.binding.actor: self.repository.get(child.work_id)["content"]
             for child in self.children
         }
 
@@ -35,57 +68,69 @@ class MultiUnitFlow:
         if state["status"] == "handoff_ready":
             return {"work": state, "units": self.states()}
         if state["activity"] == "prepare":
-            state = self.parent._prepare(state)
-        # Shared scope/read key and checkpointer DDL are prepared once, before concurrent children.
+            self.parent._prepare(state)
         self.bridge.call("read_config", {"role": "modeling"})
         with self.repository.checkpointer(self.checkpoint_schema):
             pass
 
-        def advance_child(child):
+        def advance_unit(flow):
             with self.repository.checkpointer(self.checkpoint_schema) as saver:
-                return child.advance(saver)
+                return flow.advance(saver)
 
-        states = self.states()
-        pending = [
-            child
-            for child in self.children
-            if states[child.binding.data["work_unit_id"]]["status"] != "proposal_ready"
-            or child.human.pending("model")
-        ]
         with ThreadPoolExecutor(max_workers=self.binding.data.get("unit_concurrency", 2)) as pool:
-            seen_inputs = {child.binding.actor: set() for child in self.children}
-
-            def submit(child):
-                phase = self.repository.get(child.work_id)["content"].get(
-                    "resume_activity", "model"
-                )
-                seen_inputs[child.binding.actor].update(m["id"] for m in child.human.pending(phase))
-                return pool.submit(advance_child, child)
-
-            running = {submit(child): child for child in pending}
-            while running:
+            running, seen = {}, {}
+            while True:
+                self.refresh()
+                states = {
+                    actor: self.repository.get(flow.work_id)["content"]
+                    for actor, flow in self.flows.items()
+                }
+                control = self.parent.control.synchronize()
+                if control["mode"] == "running" and control["budget_open"]:
+                    busy = set(running.values())
+                    for actor, flow in self.flows.items():
+                        state = states[actor]
+                        phase = state.get("resume_activity", "model")
+                        incoming = {m["id"] for m in flow.human.pending(phase)}
+                        marker = (flow.binding.data.get("work_generation", 0), frozenset(incoming))
+                        if (
+                            actor in busy
+                            or seen.get(actor) == marker
+                            or state["status"] == "handoff_ready"
+                        ):
+                            continue
+                        if state["status"] in {"proposal_ready", "waiting_input"} and not incoming:
+                            continue
+                        unit = next(
+                            (u for u in self.binding.data["work_units"] if u["unit_id"] == actor),
+                            {},
+                        )
+                        dependencies = [
+                            *unit.get("dependencies", []),
+                            *[u["unit_id"] for u in flow.binding.direct_units],
+                        ]
+                        answered_wait = state["status"] == "waiting_input" and incoming
+                        if not answered_wait and any(
+                            states.get(dep, {}).get("status") != "proposal_ready"
+                            for dep in dependencies
+                        ):
+                            continue
+                        seen[actor] = marker
+                        running[pool.submit(advance_unit, flow)] = actor
+                if not running:
+                    break
                 completed, _ = wait(running, timeout=0.5, return_when=FIRST_COMPLETED)
                 for future in completed:
                     future.result()
                     del running[future]
-                control = self.parent.control.view()
-                if control.get("mode") == "running" and control.get("budget_open", True):
-                    active_units = {child.binding.actor for child in running.values()}
-                    for child in self.children:
-                        phase = self.repository.get(child.work_id)["content"].get(
-                            "resume_activity", "model"
-                        )
-                        incoming = {m["id"] for m in child.human.pending(phase)}
-                        if (
-                            child.binding.actor not in active_units
-                            and incoming - seen_inputs[child.binding.actor]
-                        ):
-                            running[submit(child)] = child
-        states = self.states()
-        if all(unit["status"] == "proposal_ready" for unit in states.values()):
-            with self.repository.checkpointer(self.checkpoint_schema) as saver:
-                state = self.parent.advance(saver)
-        else:
+        state = self.repository.get(self.parent.work_id)["content"]
+        if state["status"] not in {
+            "handoff_ready",
+            "waiting_input",
+            "blocked",
+            "recoverable_issue",
+            "source_change_pending",
+        }:
             control = self.parent.control.synchronize()
             state = self.parent._save(
                 {
@@ -97,4 +142,4 @@ class MultiUnitFlow:
                     else "paused",
                 }
             )
-        return {"work": state, "units": states}
+        return {"work": state, "units": self.states()}

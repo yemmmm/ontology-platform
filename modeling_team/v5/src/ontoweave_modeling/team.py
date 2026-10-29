@@ -32,11 +32,22 @@ class TeamChannel:
         self.task, self.repository, self.control, self.actor = task, repository, control, actor
         self.materials = Path(materials) if materials is not None else None
         self.peers = {p["agent_id"]: p for p in task.get("collaboration", {}).get("peers", [])}
-        self.work_units = {unit["unit_id"] for unit in task.get("work_units", [])}
-        self.members = {"modeling", *self.peers, *self.work_units}
         if actor not in self.members:
             raise FrameworkError("team_actor_forbidden")
         self.prefix = f"run:{task['run_id']}:team:"
+
+    @property
+    def work_units(self):
+        row = self.repository.get("run:" + self.task["run_id"] + ":work-plan")
+        return (
+            set(row["content"]["units"])
+            if row
+            else {u["unit_id"] for u in self.task.get("work_units", [])}
+        )
+
+    @property
+    def members(self):
+        return {"modeling", *self.peers, *self.work_units}
 
     def unit(self, actor):
         if actor in self.work_units:
