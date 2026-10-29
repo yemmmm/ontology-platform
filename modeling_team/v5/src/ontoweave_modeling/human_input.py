@@ -180,11 +180,17 @@ class HumanInput:
         allowed = {
             m.get("metadata", {}).get("request_id")
             for m in inputs
-            if m["id"] in consumed_ids and not m.get("metadata", {}).get("partial", False)
+            if m["id"] in consumed_ids
+            and m.get("metadata", {}).get("source") == "user"
+            and not m.get("metadata", {}).get("partial", False)
         }
         already_resolved = {r["request_id"] for r in self.requests() if r["status"] == "resolved"}
         if not set(resolved_ids).issubset((allowed - {None}) | already_resolved):
-            raise FrameworkError("human_resolution_unconfirmed")
+            raise FrameworkError(
+                "human_resolution_unconfirmed",
+                allowed_human_request_ids=sorted((allowed - {None}) | already_resolved),
+                hint="team work requests use resolve_work_request, not resolved_request_ids",
+            )
 
     def resolve(self, execution, consumed_ids, resolved_ids):
         for identity in resolved_ids:

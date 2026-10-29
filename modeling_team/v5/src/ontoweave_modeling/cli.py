@@ -164,6 +164,10 @@ def parser() -> argparse.ArgumentParser:
     commands[-1].add_argument("--package", type=Path, required=True)
     commands[-1].add_argument("--evaluation-id", required=True)
     commands.append(sub.add_parser("questions", help="List durable questions and reply states"))
+    board = sub.add_parser("board", help="Read task member cards and signed requests")
+    board.add_argument("--agent-id")
+    board.add_argument("--revision", type=int)
+    commands.append(board)
     for name in ("reply", "input"):
         command = sub.add_parser(name, help="Persist a human reply or unsolicited input")
         commands.append(command)
@@ -205,6 +209,10 @@ def dispatch(args) -> dict:
         return {"work": row["content"] if row else None, "control": control.view()}
     if args.command == "questions":
         return {"questions": human.requests()}
+    if args.command == "board":
+        from .team import TeamChannel
+
+        return TeamChannel(binding.data, repo, control).board(args.agent_id, args.revision)
     if args.command in {"reply", "input"}:
         text = args.text if args.text is not None else args.text_file.read_text()
         return human.submit(

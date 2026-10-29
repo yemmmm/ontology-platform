@@ -160,6 +160,51 @@ Host 统一统计所有在途角色供暂停／停止判断。私有题目、答
 仅投影 verdict、范围及目标身份。格式或必需读取错误可沿同一评价身份重试，保持原冻结标准；
 未知在途执行不会借新报告尝试重启。当前工程 fixture 的 PASS 不代表真实语义 PASS。
 
+## 可选生产成员通信与任务卡
+
+任务可增加 `collaboration`，例如：
+
+```yaml
+collaboration:
+  peers:
+    - agent_id: reviewer
+      objective: 按实际收到的请求校验原材料范围，提供有来源的分析并回复发起者。
+```
+
+`modeling` 是当前建模工作单元的稳定生产身份；配置中的 peer 同样使用已授权 modeling
+模型配置。独立验收不在生产成员列表中，不获得通信／工作卡工具。未配置的任务保留原路径。
+
+生产成员获得 `send_team_message`、`publish_handoff_material`、`read_handoff_material`、
+`update_work_card`、`get_work_board`、`resolve_work_request`。普通消息可附固定版本材料
+引用及署名 `work_request`（summary、可选 blocking），同一请求在双方卡片关联展示。
+本人计划由本人更新，只有发起者判断请求 satisfied／withdrawn；回复不自动满足依赖。
+`message_id` 在发送者／run 内稳定，同内容重提复用队列记录，不同内容冲突可纠正。
+
+材料可发布本人分析 `text`，或用 `source_material_id` 冻结获准原文，不需重抄全文。
+消息仅携带 object_id／revision／digest 引用，接收方按 offset／limit 字符范围读取；
+读取参数的 object_id／revision 在工具 schema 中明确列出，digest 可省略，由工具补全；
+显式提供的摘要仍须匹配。消息／材料 ID 是数据库内的不透明标识，不按文件路径限制格式。
+材料的新版本不替换已交接旧版本。接收者只能读本人材料或实际收到的对应版本。
+同伴消息标记 source=agent，不成为人工答复或新增获准业务事实。
+
+建模 Agent 需要等待协作时返回 `waiting_peer`。当前原生 turn 完成后，LangGraph
+`collaborate` 节点按队列执行有输入的 peer，再把回复交给原建模步骤；没有消息时保存等待
+并结束，不启动轮询模型。当前按消息串行推进，不是完整 P2 并行／递归调度。正常输入不
+steer／interrupt；工具结束或输出 item 结束不等于整个 turn 结束。程序重建沿原执行登记
+和检查点接续，已经确认的应用不重放。已退出的等待仍需显式 resume。
+
+```bash
+python -m ontoweave_modeling board --run-dir /path/to/run
+python -m ontoweave_modeling board --run-dir /path/to/run --agent-id modeling --revision 1
+```
+
+工作卡保存本人当前工作、范围、近期计划、等待说明、成果引用及更新时间；历史版本复用
+现有 PostgreSQL 对象版本。指定 revision 读取历史本人卡，关联请求／运行活动仍是当前
+投影，不冒充历史快照。无卡如实返回空记录。
+
+通信工具由 Agent 专属 MCP 进程执行；连接配置只挂载到受限工具环境。连接地址在 Host
+进入隔离环境前解析，沿已验证 P0 的 hostaddr 路径，避免隔离环境缺 DNS 文件导致失联。
+
 ## 最小 HITL：问题、答复与主动输入
 
 Agent 回合结束返回 `waiting_input` 和 `human_requests`，每个问题包含 `question`、

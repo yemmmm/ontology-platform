@@ -300,7 +300,12 @@ def provider(binding, payload):
     if model["provider"] != "glm-direct":
         raise FrameworkError("provider_route_not_implemented")
     tools = set(payload["tools"])
-    if not tools.issubset({"read_material", "query_semantic_context"}):
+    from ontoweave_modeling.team import TEAM_TOOLS
+
+    allowed_tools = {"read_material", "query_semantic_context"}
+    if role == "modeling" and binding.data.get("collaboration"):
+        allowed_tools.update(TEAM_TOOLS)
+    if not tools.issubset(allowed_tools):
         raise FrameworkError("tool_not_allowed")
     credential = preflight_glm_credential()
     usage = NumericReceiptWriter(

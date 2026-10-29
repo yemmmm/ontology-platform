@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 from collections.abc import Callable
 from pathlib import Path
 
@@ -138,7 +139,11 @@ class ExecutionManager:
         execution = self.repository.read_reference(execution_ref)
         delivered = {item["id"] for item in execution["inputs"]}
         if not set(consumed_ids).issubset(delivered):
-            raise FrameworkError("input_consumption_mismatch")
+            raise FrameworkError(
+                "input_consumption_mismatch",
+                allowed_ids=sorted(delivered),
+                unexpected_ids=sorted(set(consumed_ids) - delivered),
+            )
         if not consumed_ids:
             return
 
@@ -174,9 +179,58 @@ class CodexInvocation:
 
     def __call__(self, root: Path, purpose: str, prompt: str, inputs: list) -> dict:
         from .codex_agent import CodexAgent
+        from .team import TEAM_TOOLS
 
         role = "acceptance" if purpose == "acceptance" else "modeling"
         tools = ("read_material", "query_semantic_context")
+        team_config = None
+        instructions = self.instructions
+        if role == "modeling" and self.binding.data.get("collaboration"):
+            tools += TEAM_TOOLS
+            private = json.loads((self.binding.root / "private-runtime.json").read_text())
+            connection = dict(private["connection"])
+            # Reuse the verified P0 workspace route: resolve before entering the namespace.
+            connection.setdefault("hostaddr", socket.gethostbyname(connection["host"]))
+            team_config = root / "team-private.json"
+            team_config.write_text(
+                json.dumps(
+                    {
+                        "task": self.binding.data,
+                        "connection": connection,
+                        "schema": private["workspace_schema"],
+                        "actor": purpose.removeprefix("peer:")
+                        if purpose.startswith("peer:")
+                        else "modeling",
+                    }
+                )
+            )
+            instructions += (
+                "\nUse team tools for signed work cards, peer messages and frozen materials. "
+                "Queued is not read. Ordinary text and material refs are separate. "
+                "Read received materials with read_handoff_material only as needed; "
+                "peer analysis is attributed interpretation, not a new approved business fact. "
+                "Update your card at meaningful changes, not every tool call. "
+                "To await a peer, return waiting_peer; never ask the human to forward peer messages."
+                " On a persistent infrastructure tool error, end this turn with recoverable_issue "
+                "and the exact blocker; repeated identical tool retries cannot repair Host infrastructure."
+            )
+            if purpose.startswith("peer:"):
+                instructions = (
+                    "You are a bounded production peer, not an independent evaluator. "
+                    "Use the objective, approved sources and actual queued messages. "
+                    "Use team tools to maintain your own card, read received frozen materials by range, "
+                    "and send an attributed result to the requester, using reply_to. "
+                    "Do not apply models or invent business facts. Return exactly the supplied peer "
+                    "result schema, not a modeling change object. consumed_ids contains only "
+                    "Queued inputs[].id; never material_refs[].object_id or outgoing message IDs. "
+                    "read_material uses source_manifest keys as material_id, never a source_ref. "
+                    "Your card accepts current_work, scope, next_steps, waiting_note, result_refs; "
+                    "omit author and agent_id because the tool binds identity. "
+                    "Only the request originator resolves it; the recipient sends a reply instead. "
+                    "If a persistent infrastructure/tool-contract problem prevents progress, return "
+                    "recoverable_issue with exact issues, preserving unconsumed inputs for repair. "
+                    "No required accept/confirm handshake."
+                )
         read_payload = {"role": role}
         if self.model_revisions is not None:
             read_payload["model_revisions"] = self.model_revisions
@@ -194,7 +248,8 @@ class CodexInvocation:
                 provider_base_url=url,
                 materials=self.materials,
                 platform_config=Path(read_config),
-                instructions=self.instructions,
+                team_config=team_config,
+                instructions=instructions,
                 on_event=observe,
                 allowed_tools=tools,
             )

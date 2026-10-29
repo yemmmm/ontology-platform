@@ -104,12 +104,20 @@ class TaskBinding:
             "scope",
             "evaluation",
         }
-        if not isinstance(task, dict) or set(task) != required:
+        if not isinstance(task, dict) or set(task) - {"collaboration"} != required:
             raise FrameworkError("task_schema_mismatch", required=sorted(required))
         if task["schema_version"] != "ontoweave-task/v1":
             raise FrameworkError("task_schema_mismatch")
         for field in ("task_ref", "run_id", "work_unit_id"):
             safe_id(task[field])
+        if "collaboration" in task:
+            peers = task["collaboration"].get("peers", [])
+            if not peers or len({p["agent_id"] for p in peers}) != len(peers):
+                raise FrameworkError("team_roster_invalid")
+            for peer in peers:
+                safe_id(peer["agent_id"])
+                if peer["agent_id"] in {"modeling", "acceptance"} or not peer.get("objective"):
+                    raise FrameworkError("team_roster_invalid")
         for field in ("objective", "instructions"):
             if not isinstance(task[field], str) or not task[field].strip():
                 raise FrameworkError("task_field_required", field=field)
@@ -203,14 +211,20 @@ HUMAN_REQUESTS_SCHEMA = {
         "required": ["question", "reason", "impact"],
     },
 }
-RESOLVED_REQUESTS_SCHEMA = {"type": "array", "uniqueItems": True, "items": {"type": "string"}}
+RESOLVED_REQUESTS_SCHEMA = {
+    "type": "array",
+    "uniqueItems": True,
+    "items": {"type": "string"},
+    "description": "Only human HITL request IDs. Team work requests are resolved "
+    "with resolve_work_request, never included here.",
+}
 
 WORK_RESULT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
         "status": {
-            "enum": ["proposed", "waiting_input", "recoverable_issue"],
+            "enum": ["proposed", "waiting_input", "waiting_peer", "recoverable_issue"],
             "description": "proposed: complete changes ready for the Host to apply; waiting_input: "
             "required business input is missing; recoverable_issue: a current technical gap prevents "
             "a complete proposal. Previous errors and pending application/self-check alone do not "

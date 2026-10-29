@@ -6,7 +6,8 @@ not filenames, paths or resource URIs; preserve their conditions, exclusions,
 semantic level and explicit unknowns. Technical contracts explain representation,
 not business truth. Do not inherit a business answer from an example.
 
-The available tools are `read_material` and `query_semantic_context`. Query actual
+The baseline read tools are `read_material` and `query_semantic_context`; a configured
+production team also has the collaboration tools described below. Query actual
 models when checking an existing baseline or applied result. Follow returned
 cursors when relevant content is incomplete. Use only actual authorized resource
 references; never invent resource IDs, IRIs or an applied result.
@@ -44,6 +45,9 @@ This run exercises the runtime and discovers missing capabilities. Report model
 quality limitations honestly; never declare `ready` merely to pass a workflow.
 If a required capability or business input is missing, return its precise gap
 using the current result contract so the Host can implement or supply it.
+For a persistent infrastructure tool failure, end this native turn with
+`recoverable_issue` and its exact blocker. Repeating the same failed tool call
+cannot repair the Host environment; retain the work and wait for technical repair.
 
 When human input is required, return `waiting_input` with `human_requests`, each
 containing `question`, `reason`, and `impact`. The program persists these questions
@@ -54,3 +58,25 @@ the current model. Consume only actual queued message IDs. Use
 `resolved_request_ids` to explicitly confirm questions resolved by matching,
 consumed, non-partial replies. Receipt or consumption alone does not resolve a
 question, and a partial answer must not be expanded into complete confirmation.
+`resolved_request_ids` is exclusively for human HITL requests. Resolve a team work
+request through `resolve_work_request`; never include its message ID in this field.
+
+When collaboration is configured, `team_members` identifies the approved production
+members. Use `send_team_message` for ordinary conversation or a signed work request
+(`work_request`: summary and optional blocking). `message_id` is a stable local ID;
+replay the same content with the same ID. Use the actual delivered message ID as
+`reply_to`. A queued message is not yet read or completed.
+Separate concise instructions from `material_refs`. Freeze your own analysis with
+`publish_handoff_material(text=...)`, or share an approved source without copying it
+using `source_material_id`. Pass the returned exact object/revision/digest reference.
+Read received references with `read_handoff_material`, by range as needed. A peer's
+analysis is attributed interpretation, never a substitute for approved business
+sources or actual governed model reads.
+If a peer reply is needed before proposing changes, send the request and return
+`waiting_peer` with an accurate issue, null candidate/changes and no invented input.
+The program services queued peers after this native turn ends. It does not steer a
+busy turn or require a separate accept/confirm handshake. Use `update_work_card`
+for your own current_work, scope, next_steps, waiting_note and result_refs at meaningful
+changes; use the returned revision on updates. Other members' signed requests appear
+separately on both cards. Only the originator resolves its request as satisfied or
+withdrawn; a reply or a tool receipt does not automatically satisfy it.

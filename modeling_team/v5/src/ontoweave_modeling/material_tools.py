@@ -15,7 +15,10 @@ from mcp.types import ToolAnnotations
 
 
 def material_server(
-    root: Path, workspace_config: Path | None = None, platform_config: Path | None = None
+    root: Path,
+    workspace_config: Path | None = None,
+    platform_config: Path | None = None,
+    team_config: Path | None = None,
 ) -> FastMCP:
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     server = FastMCP("ontoweave-materials")
@@ -171,6 +174,16 @@ def material_server(
                     )
             return result
 
+    if team_config is not None:
+        from .control import TaskControl
+        from .team import TeamChannel, register_team_tools
+        from .workspace import WorkspaceRepository
+
+        scope = json.loads(team_config.read_text())
+        repo = WorkspaceRepository(scope["connection"], scope["schema"], scope["task"]["task_ref"])
+        register_team_tools(
+            server, TeamChannel(scope["task"], repo, TaskControl(repo), scope["actor"], root)
+        )
     return server
 
 
@@ -179,8 +192,11 @@ def main() -> None:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--workspace-config", type=Path)
     parser.add_argument("--platform-config", type=Path)
+    parser.add_argument("--team-config", type=Path)
     args = parser.parse_args()
-    material_server(args.root, args.workspace_config, args.platform_config).run(transport="stdio")
+    material_server(args.root, args.workspace_config, args.platform_config, args.team_config).run(
+        transport="stdio"
+    )
 
 
 if __name__ == "__main__":

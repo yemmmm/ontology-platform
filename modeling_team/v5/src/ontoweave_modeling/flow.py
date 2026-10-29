@@ -22,6 +22,7 @@ from .control import TaskControl
 from .execution import ExecutionManager
 from .human_input import HumanInput
 from .results import ResultContractError, decode_json_result
+from .team import TeamChannel
 from .workspace import WorkspaceRepository
 
 
@@ -43,6 +44,8 @@ class FlowState(TypedDict, total=False):
     resume_activity: str
     human_request_ids: list[str]
     refresh_baseline: bool
+    peer_round: int
+    peer_next: str
 
 
 class WorkUnitFlow:
@@ -56,6 +59,7 @@ class WorkUnitFlow:
         self.control = TaskControl(repository)
         self.executions = ExecutionManager(repository, self.control, binding)
         self.human = HumanInput(binding, repository, self.control)
+        self.team = TeamChannel(binding.data, repository, self.control)
         self.work_id = binding.identity + ":work"
 
     def initialize(self) -> dict:
@@ -120,6 +124,10 @@ class WorkUnitFlow:
         state = self._fresh(state)
         if state["activity"] != "model":
             return state
+        if any(self.team.pending(actor) for actor in self.team.peers):
+            return self._save(
+                {**state, "activity": "collaborate", "peer_next": "model", "status": "ready"}
+            )
         if state.get("refresh_baseline"):
             target = self._host("snapshot", f"human-baseline-{state['round']:05d}")
             target_ref = self.repository.put_reference(
@@ -145,6 +153,7 @@ class WorkUnitFlow:
             ),
             "result_schema": WORK_RESULT_SCHEMA,
             "human_context": self.human.context(),
+            "team_members": sorted(self.team.members),
             "contract": "Return the existing unified graph and explicit r4-3-025 model changes. "
             "Return exactly one JSON object matching result_schema. Read approved sources with "
             "read_material using source_manifest keys as material_id, not filenames or source paths. "
@@ -165,6 +174,8 @@ class WorkUnitFlow:
             "Acknowledge only supplied Queued input IDs in consumed_ids. Explicitly list a request "
             "in resolved_request_ids only when its consumed non-partial reply actually resolves it. "
             "Partial replies do not resolve a whole request. Preserve other pending questions; "
+            "resolved_request_ids contains human HITL IDs only. Team work requests use the "
+            "resolve_work_request tool and must not be included in this result field. "
             "do not repeat an unchanged pending question. Reassess old replies against the actual baseline.",
         }
         ref = self.executions.run(
@@ -221,7 +232,7 @@ class WorkUnitFlow:
             0,
         )
         if result["status"] == "waiting_input":
-            return self._wait_for_human(
+            waiting = self._wait_for_human(
                 {
                     **state,
                     "candidate_ref": candidate,
@@ -233,6 +244,39 @@ class WorkUnitFlow:
                 result,
                 ref,
                 state.get("target_ref", state["baseline_ref"]),
+            )
+            if any(self.team.pending(actor) for actor in self.team.peers):
+                return self._save(
+                    {
+                        **waiting,
+                        "activity": "collaborate",
+                        "status": "ready",
+                        "peer_next": "wait_input",
+                    }
+                )
+            return waiting
+        if result["status"] == "waiting_peer" or any(
+            self.team.pending(actor) for actor in self.team.peers
+        ):
+            if not self.team.peers:
+                return self._save(
+                    {
+                        **state,
+                        "status": "recoverable_issue",
+                        "issue": {"code": "team_not_configured"},
+                    }
+                )
+            return self._save(
+                {
+                    **state,
+                    "activity": "collaborate",
+                    "status": "ready",
+                    "round": state["round"] + 1,
+                    "candidate_ref": candidate,
+                    "execution_ref": ref,
+                    "peer_next": "apply" if result["status"] == "proposed" else "model",
+                    "issue": {"issues": result["issues"]},
+                }
             )
         if result["status"] == "recoverable_issue":
             return self._save(
@@ -254,6 +298,76 @@ class WorkUnitFlow:
                 "issue": {"issues": result["issues"]},
             }
         )
+
+    def _collaborate(self, state):
+        state = self._fresh(state)
+        pending = [actor for actor in self.team.peers if self.team.pending(actor)]
+        if not pending:
+            next_activity = state.get("peer_next", "model")
+            if next_activity == "wait_input":
+                return self._save({**state, "activity": "wait_input", "status": "waiting_input"})
+            if self.team.pending("modeling") or self.human.pending(
+                "self_check" if next_activity == "self_check" else "model"
+            ):
+                next_activity = "self_check" if next_activity == "self_check" else "model"
+            elif next_activity == "model":
+                return self._save({**state, "status": "waiting_peer"})
+            return self._save({**state, "activity": next_activity, "status": "ready"})
+        actor = pending[0]
+        execution_id = f"peer-{actor}-{state.get('peer_round', 0):05d}"
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "status": {"enum": ["ready", "waiting_peer", "recoverable_issue"]},
+                "issues": {"type": "array", "items": {"type": "string"}},
+                "consumed_ids": WORK_RESULT_SCHEMA["properties"]["consumed_ids"],
+            },
+            "required": ["status", "issues", "consumed_ids"],
+        }
+        prompt = json.dumps(
+            {
+                "objective": self.team.peers[actor]["objective"],
+                "source_manifest": self.binding.data["source_manifest"],
+                "team_members": sorted(self.team.members),
+                "actor_id": actor,
+                "feedback": state.get("issue"),
+                "result_schema": schema,
+            }
+        )
+        manager = ExecutionManager(
+            self.repository, self.control, self.binding, unit_id=self.team.unit(actor)
+        )
+        ref = manager.run(execution_id, "peer:" + actor, prompt, self.invoke, resume_original=True)
+        native = self.repository.read_reference(ref)["result"]
+        update = {**state, "peer_round": state.get("peer_round", 0) + 1}
+        try:
+            if native["status"] != "completed":
+                raise FrameworkError("peer_turn_failed", layer="runtime/infrastructure")
+            result = decode_json_result(native["final_response"], schema)
+            if result["status"] == "recoverable_issue":
+                return self._save(
+                    {
+                        **update,
+                        "status": "recoverable_issue",
+                        "issue": {"code": "peer_runtime_issue", "issues": result["issues"]},
+                    }
+                )
+            manager.confirm_consumption(ref, result["consumed_ids"])
+        except (FrameworkError, ResultContractError) as error:
+            return self._save(
+                {
+                    **update,
+                    "status": "recoverable_issue",
+                    "issue": {
+                        "code": "peer_result_needs_correction",
+                        "detail": error.as_dict()
+                        if isinstance(error, FrameworkError)
+                        else str(error),
+                    },
+                }
+            )
+        return self._save({**update, "status": "ready", "issue": {"issues": result["issues"]}})
 
     def _apply(self, state):
         state = self._fresh(state)
@@ -377,16 +491,36 @@ class WorkUnitFlow:
             "self_check_ref": check_ref,
             "issue": {"issues": result["issues"]},
         }
-        if result["status"] == "revise":
-            return self._save({**update, "activity": "model", "round": state["round"] + 1})
         if result["status"] == "waiting_input":
-            return self._wait_for_human(
+            waiting = self._wait_for_human(
                 {**update, "check_round": state.get("check_round", 0) + 1},
                 "self_check",
                 result,
                 ref,
                 target_ref,
             )
+            if any(self.team.pending(actor) for actor in self.team.peers):
+                return self._save(
+                    {
+                        **waiting,
+                        "activity": "collaborate",
+                        "status": "ready",
+                        "peer_next": "wait_input",
+                    }
+                )
+            return waiting
+        if any(self.team.pending(actor) for actor in self.team.peers):
+            return self._save(
+                {
+                    **update,
+                    "activity": "collaborate",
+                    "peer_next": "self_check",
+                    "check_round": state.get("check_round", 0) + 1,
+                    "status": "ready",
+                }
+            )
+        if result["status"] == "revise":
+            return self._save({**update, "activity": "model", "round": state["round"] + 1})
         return self._save(
             {
                 **update,
@@ -473,7 +607,7 @@ class WorkUnitFlow:
         builder = StateGraph(FlowState)
         builder.add_node("dispatch", lambda state: self._fresh(state))
         builder.add_edge(START, "dispatch")
-        names = ("prepare", "model", "apply", "self_check", "wait_input", "handoff")
+        names = ("prepare", "model", "collaborate", "apply", "self_check", "wait_input", "handoff")
         builder.add_conditional_edges("dispatch", self._route, [*names, END])
         for name in names:
             builder.add_node(name, getattr(self, "_" + name))

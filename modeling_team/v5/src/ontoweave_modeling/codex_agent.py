@@ -32,6 +32,7 @@ class CodexAgent:
         allowed_tools: tuple[str, ...] = ("read_material",),
         workspace_config: Path | None = None,
         platform_config: Path | None = None,
+        team_config: Path | None = None,
         config_overrides: dict | None = None,
     ):
         self.root = root.resolve()
@@ -43,6 +44,7 @@ class CodexAgent:
         self.allowed_tools = allowed_tools
         self.workspace_config = workspace_config
         self.platform_config = platform_config
+        self.team_config = team_config
         self.config_overrides = config_overrides or {}
         self.thread_id: str | None = None
         self.active_turn: str | None = None
@@ -82,6 +84,9 @@ class CodexAgent:
         if self.platform_config is not None:
             args.extend(("--platform-config", "/agent/platform.json"))
             mounts.append((self.platform_config, "/agent/platform.json"))
+        if self.team_config is not None:
+            args.extend(("--team-config", "/agent/team.json"))
+            mounts.append((self.team_config, "/agent/team.json"))
         config_text += '\n[mcp_servers.workspace]\ncommand = "/agent/venv/bin/python"\n'
         config_text += f"args = {json.dumps(args)}\nenabled_tools = {json.dumps(self.allowed_tools)}\nrequired = true\n"
         for tool in self.allowed_tools:
