@@ -3,30 +3,11 @@
 import json
 
 import pytest
-from psycopg import sql
 
-from ontoweave_modeling.contracts import FrameworkError, TaskBinding
+from ontoweave_modeling.contracts import FrameworkError
 from ontoweave_modeling.control import TaskControl
 from ontoweave_modeling.execution import ExecutionManager
 from ontoweave_modeling.flow import WorkUnitFlow
-
-
-@pytest.fixture
-def binding(task_file, tmp_path):
-    return TaskBinding.prepare(task_file, tmp_path / "run")
-
-
-@pytest.fixture
-def saver(workspace):
-    namespace = workspace.schema + "_cp"
-    try:
-        with workspace.checkpointer(namespace) as saver:
-            yield saver
-    finally:
-        with workspace.connect(autocommit=True) as connection:
-            connection.execute(
-                sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(namespace))
-            )
 
 
 def tool_event(tool, data, arguments=None):

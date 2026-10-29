@@ -137,7 +137,8 @@ Profile 精确保留模型／effort；普通金额／次数模式仍待对应阶
 框架正常链为 `prepare → model → apply → self_check → handoff`。工作空间和 checkpoint
 保存精确引用，实际应用仍走已有统一图／明确变更、编译器、跨批绑定及 executor；Host worker
 使用 backend 环境，不导入旧 CLI 或启动 `TeamRunner`。原始原生事件、返回、用量及 executor
-意图／回执各保留原件。缺失业务输入停在 `waiting_input`；动态 HITL 在 P1.3 接入。
+意图／回执各保留原件。缺失业务输入已接入下述最小 HITL 问答与持久等待；完整 P1.3
+范围继续按阶段验证。
 
 当次任务的 `instructions` 应采用[有界建模提示](instructions/modeling.md)，并附入适用的
 现有统一图／直接变更／语义定义技术合同；只提供合同名称不足以让隔离 Agent 获得其内容。
@@ -158,3 +159,40 @@ Profile 精确保留模型／effort；普通金额／次数模式仍待对应阶
 Host 统一统计所有在途角色供暂停／停止判断。私有题目、答案和理由只保存于评价原件，公开反馈
 仅投影 verdict、范围及目标身份。格式或必需读取错误可沿同一评价身份重试，保持原冻结标准；
 未知在途执行不会借新报告尝试重启。当前工程 fixture 的 PASS 不代表真实语义 PASS。
+
+## 最小 HITL：问题、答复与主动输入
+
+Agent 回合结束返回 `waiting_input` 和 `human_requests`，每个问题包含 `question`、
+`reason`、`impact`。程序保存请求、版本、来源和原步骤后进入 LangGraph 等待节点，
+不增加每步审批或常驻 Delivery LLM。工程与真实授权代答证据见
+[最小 HITL 交付记录](../../docs/delivery/records/2026-10-29-v5-minimal-hitl-delivery.md)。
+
+在上述锁定 v5 环境中执行，替换为当前实际 run、请求和消息身份：
+
+```bash
+uv run --locked --project modeling_team/v5 python -m ontoweave_modeling questions \
+  --run-dir workspaces/v5-runs/my-run
+uv run --locked --project modeling_team/v5 python -m ontoweave_modeling reply \
+  --run-dir workspaces/v5-runs/my-run --request-id human-request-from-questions \
+  --request-revision 1 --message-id stable-user-message-id \
+  --author user --text-file /absolute/path/answer.txt
+uv run --locked --project modeling_team/v5 python -m ontoweave_modeling resume \
+  --run-dir workspaces/v5-runs/my-run
+uv run --locked --project modeling_team/v5 python -m ontoweave_modeling input \
+  --run-dir workspaces/v5-runs/my-run --message-id another-stable-message-id \
+  --text '用户主动补充的内容'
+```
+
+`questions` 展示原问题、版本、答复和状态，不调用模型。`reply` 关联原请求；`input`
+无需先有问题。两者支持 `--text`／`--text-file`、`--author`、`--message-id`、`--partial`。
+作者是本机操作者声明的来源标签，不是新增身份认证。未知提交结果重试时复用消息 ID；
+同身份不同内容返回冲突。授权宿主代答时保留用户原授权及实际代答作者。
+
+答复先入队；busy 时不打断当前回合，下一适用回合消费。已退出等待的进程用 resume
+恢复原 run，没有后台轮询模型服务。收到／交付／消费都不自动关闭问题；Agent 使用
+`resolved_request_ids` 明确确认匹配非部分答复解决了哪些请求。重复确认已解决请求为
+幂等，其他问题保持未决；基线变化保留旧问题／答复，刷新实际基线供 Agent 判断适用性。
+
+重启／checkpoint 重入复用原始执行、问答及应用身份；应用后等待不重放创建。停止或
+交接后的新输入不静默重新打开目标。只读评价获得冻结的有归属人工材料并必须实际读取，
+不消费生产输入队列，也不获得写入权限。

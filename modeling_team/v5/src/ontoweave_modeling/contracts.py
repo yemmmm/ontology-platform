@@ -190,6 +190,21 @@ class TaskBinding:
         return f"run:{self.data['run_id']}"
 
 
+HUMAN_REQUESTS_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "question": {"type": "string", "minLength": 1},
+            "reason": {"type": "string", "minLength": 1},
+            "impact": {"type": "string", "minLength": 1},
+        },
+        "required": ["question", "reason", "impact"],
+    },
+}
+RESOLVED_REQUESTS_SCHEMA = {"type": "array", "uniqueItems": True, "items": {"type": "string"}}
+
 WORK_RESULT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -214,6 +229,8 @@ WORK_RESULT_SCHEMA = {
         },
         "issues": {"type": "array", "items": {"type": "string"}},
         "consumed_ids": {"type": "array", "uniqueItems": True, "items": {"type": "string"}},
+        "human_requests": HUMAN_REQUESTS_SCHEMA,
+        "resolved_request_ids": RESOLVED_REQUESTS_SCHEMA,
     },
     "required": ["status", "candidate", "changes", "source_refs", "issues", "consumed_ids"],
 }
@@ -225,6 +242,8 @@ SELF_CHECK_SCHEMA = {
         "status": {"enum": ["ready", "revise", "waiting_input"]},
         "issues": {"type": "array", "items": {"type": "string"}},
         "consumed_ids": WORK_RESULT_SCHEMA["properties"]["consumed_ids"],
+        "human_requests": HUMAN_REQUESTS_SCHEMA,
+        "resolved_request_ids": RESOLVED_REQUESTS_SCHEMA,
     },
     "required": ["status", "issues", "consumed_ids"],
 }

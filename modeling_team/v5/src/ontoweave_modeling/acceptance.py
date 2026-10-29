@@ -73,7 +73,13 @@ def require_governed_read(events_path: Path, model_revisions: dict) -> None:
     raise FrameworkError("actual_governed_read_missing")
 
 
-def validate_report(report: dict, handoff: dict, events_path: Path) -> dict:
+def validate_report(
+    report: dict,
+    handoff: dict,
+    events_path: Path,
+    *,
+    required_materials: dict[str, str] | None = None,
+) -> dict:
     validate_schema(report, REPORT_SCHEMA)
     frozen, target = handoff["evaluation"], handoff["target"]
     if (
@@ -97,6 +103,9 @@ def validate_report(report: dict, handoff: dict, events_path: Path) -> dict:
     for material_id, sha256 in handoff["source_revisions"].items():
         if material_reads.get(material_id, {}).get("sha256") != sha256:
             raise FrameworkError("evaluation_original_source_not_read", material_id=material_id)
+    for material_id, sha256 in (required_materials or {}).items():
+        if material_reads.get(material_id, {}).get("sha256") != sha256:
+            raise FrameworkError("evaluation_human_source_not_read", material_id=material_id)
     require_governed_read(events_path, target["model_revisions"])
     return {
         "verdict": report["verdict"],

@@ -87,6 +87,37 @@ def test_actual_rest_governed_response_needs_no_synthetic_ok_field(frozen_report
     assert validate_report(report, handoff, path)["verdict"] == "PASS"
 
 
+def test_required_human_dialogue_must_be_actually_read(frozen_report):
+    report, handoff, path, events = frozen_report
+    with pytest.raises(FrameworkError, match="evaluation_human_source_not_read"):
+        validate_report(report, handoff, path, required_materials={"human-inputs": "c" * 64})
+    events.append(
+        {
+            "method": "item/completed",
+            "params": {
+                "item": {
+                    "tool": "read_material",
+                    "status": "completed",
+                    "arguments": {"material_id": "human-inputs"},
+                    "result": {
+                        "structuredContent": {
+                            "text": "Attributed approved reply",
+                            "sha256": "c" * 64,
+                        }
+                    },
+                }
+            },
+        }
+    )
+    path.write_text("\n".join(map(json.dumps, events)))
+    assert (
+        validate_report(report, handoff, path, required_materials={"human-inputs": "c" * 64})[
+            "verdict"
+        ]
+        == "PASS"
+    )
+
+
 @pytest.mark.parametrize(
     "defect", ["missing_case", "wrong_revision", "failed_case", "wrong_freeze"]
 )
@@ -144,6 +175,23 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
         "target": {"model_revisions": {"ontology": 3}},
         "evaluation": binding.data["evaluation"],
         "source_revisions": {"source": source["sha256"]},
+        "human_context": {
+            "requests": [
+                {"request_id": "question", "question": "Which meaning?", "basis_ref": None}
+            ],
+            "answers": [
+                {
+                    "message_id": "human-answer",
+                    "body": "Approved meaning from a user",
+                    "metadata": {"source": "user", "author": "test-user", "partial": False},
+                },
+                {
+                    "message_id": "host-private",
+                    "body": "Private technical input",
+                    "metadata": {"source": "host"},
+                },
+            ],
+        },
     }
     ref = workspace.put_reference(binding.identity + ":handoff", "handoff", handoff, 0)
     work = {"status": "handoff_ready", "handoff_ref": ref}
@@ -169,6 +217,7 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
         def __init__(self, binding, bridge, **kwargs):
             assert kwargs["materials"] != binding.root / "materials"
             assert kwargs["model_revisions"] == {"ontology": 3}
+            self.materials = kwargs["materials"]
 
         def __call__(self, root, purpose, prompt, inputs):
             calls.append(root.name)
@@ -176,9 +225,16 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
             folder = root / "agent"
             folder.mkdir()
             events = []
+            human_material = json.loads((self.materials / "human-inputs.json").read_text())
+            assert len(human_material["answers"]) == 1
+            assert human_material["answers"][0]["metadata"]["author"] == "test-user"
+            human_sha = json.loads((self.materials / "manifest.json").read_text())["human-inputs"][
+                "sha256"
+            ]
             for material_id, sha in [
                 ("source", source["sha256"]),
                 ("frozen-questions", question_sha),
+                ("human-inputs", human_sha),
             ]:
                 events.append(
                     {

@@ -52,12 +52,23 @@ class ExecutionManager:
         self.repository, self.control, self.binding = repository, control, binding
         self.unit_id = unit_id or binding.data["work_unit_id"]
 
-    def run(self, execution_id: str, purpose: str, prompt: str, invoke: Callable) -> dict:
+    def run(
+        self,
+        execution_id: str,
+        purpose: str,
+        prompt: str,
+        invoke: Callable,
+        *,
+        resume_original: bool = False,
+    ) -> dict:
         safe_id(execution_id)
         root = self.binding.root / "executions" / execution_id
         record_id = f"{self.binding.identity}:execution:{execution_id}"
         intent = {"purpose": purpose, "prompt_digest": digest(prompt), "execution_id": execution_id}
         prior = self.repository.get(record_id)
+        if prior and resume_original and prior["content"]["intent"]["purpose"] == purpose:
+            prompt = prior["content"].get("prompt", prompt)
+            intent["prompt_digest"] = digest(prompt)
         if prior and prior["content"]["intent"] != intent:
             raise FrameworkError("execution_intent_conflict")
         if prior:
@@ -75,7 +86,11 @@ class ExecutionManager:
                 )
         else:
             admission = self.control.begin_activity(
-                self.unit_id, execution_id, deliver_inputs=purpose != "acceptance"
+                self.unit_id,
+                execution_id,
+                deliver_inputs=purpose != "acceptance",
+                input_phase="self_check" if purpose == "self_check" else "model",
+                input_run_id=self.binding.data["run_id"],
             )
             if not admission["admitted"]:
                 raise FrameworkError("execution_not_admitted", control=admission)
@@ -85,6 +100,7 @@ class ExecutionManager:
                 "execution",
                 {
                     "intent": intent,
+                    "prompt": prompt,
                     "state": "dispatching",
                     "owner_pid": os.getpid(),
                     "inputs": admission["inputs"],

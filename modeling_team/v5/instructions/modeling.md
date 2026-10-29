@@ -44,3 +44,13 @@ This run exercises the runtime and discovers missing capabilities. Report model
 quality limitations honestly; never declare `ready` merely to pass a workflow.
 If a required capability or business input is missing, return its precise gap
 using the current result contract so the Host can implement or supply it.
+
+When human input is required, return `waiting_input` with `human_requests`, each
+containing `question`, `reason`, and `impact`. The program persists these questions
+and enters a durable LangGraph wait after the native turn ends. Reuse unresolved
+questions from `human_context` rather than repeating them. Human answers retain
+their author, request/version and baseline; reassess their applicability against
+the current model. Consume only actual queued message IDs. Use
+`resolved_request_ids` to explicitly confirm questions resolved by matching,
+consumed, non-partial replies. Receipt or consumption alone does not resolve a
+question, and a partial answer must not be expanded into complete confirmation.

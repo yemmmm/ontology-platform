@@ -37,14 +37,27 @@ class TaskControl:
                 raise RuntimeError(saved)
             return result
 
-    def enqueue(self, message_id: str, kind: str, body: str = "", target: str | None = None):
+    def enqueue(
+        self,
+        message_id: str,
+        kind: str,
+        body: str = "",
+        target: str | None = None,
+        *,
+        metadata: dict | None = None,
+    ):
         if kind not in {"input", "pause", "stop", "resume", "budget_pause", "budget_resume"}:
             raise ValueError("unsupported control message kind")
 
         def change(state):
             existing = next((m for m in state["messages"] if m["id"] == message_id), None)
             if existing:
-                if (existing["kind"], existing["body"], existing["target"]) != (kind, body, target):
+                if (
+                    existing["kind"],
+                    existing["body"],
+                    existing["target"],
+                    existing.get("metadata"),
+                ) != (kind, body, target, metadata):
                     raise ValueError("message identity has different content")
                 return existing
             message = {
@@ -55,6 +68,8 @@ class TaskControl:
                 "status": "queued",
                 "queued_at": time.time(),
             }
+            if metadata is not None:
+                message["metadata"] = metadata
             state["messages"].append(message)
             return message
 
@@ -84,7 +99,15 @@ class TaskControl:
     def begin_turn(self, unit: str, execution_id: str) -> dict:
         return self.begin_activity(unit, execution_id, deliver_inputs=True)
 
-    def begin_activity(self, unit: str, execution_id: str, *, deliver_inputs: bool = False) -> dict:
+    def begin_activity(
+        self,
+        unit: str,
+        execution_id: str,
+        *,
+        deliver_inputs: bool = False,
+        input_phase: str | None = None,
+        input_run_id: str | None = None,
+    ) -> dict:
         def change(state):
             self._controls(state)
             if unit in state["active"]:
@@ -106,6 +129,8 @@ class TaskControl:
                 if deliver_inputs
                 and m["kind"] == "input"
                 and m["target"] in {None, unit}
+                and m.get("metadata", {}).get("phase") in {None, input_phase}
+                and m.get("metadata", {}).get("run_id") in {None, input_run_id}
                 and (
                     m["status"] == "queued"
                     or (m["status"] == "delivered" and m.get("delivered_to") == unit)

@@ -15,6 +15,7 @@ from .control import TaskControl
 from .execution import CodexInvocation, ExecutionManager
 from .flow import WorkUnitFlow
 from .host_bridge import HostBridge
+from .human_input import HumanInput
 from .results import ResultContractError, decode_json_result
 from .workspace import WorkspaceRepository
 
@@ -47,6 +48,27 @@ def evaluate(binding, repo, bridge, package: Path, evaluation_id: str) -> dict:
             path = root / "materials" / entry["path"]
             path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             path.write_bytes((package / entry["path"]).read_bytes())
+        human = handoff.get("human_context", {})
+        answers = [
+            {key: answer[key] for key in ("message_id", "body", "metadata")}
+            for answer in human.get("answers", [])
+            if answer.get("metadata", {}).get("source") == "user"
+        ]
+        if answers:
+            dialogue = {
+                "answers": answers,
+                "questions": [
+                    {key: question[key] for key in ("request_id", "question", "basis_ref")}
+                    for question in human.get("requests", [])
+                ],
+            }
+            human_bytes = json.dumps(dialogue, ensure_ascii=False, sort_keys=True).encode()
+            (root / "materials/human-inputs.json").write_bytes(human_bytes)
+            manifest["human-inputs"] = {
+                "path": "human-inputs.json",
+                "source_ref": "approved-attributed-human-inputs",
+                "sha256": hashlib.sha256(human_bytes).hexdigest(),
+            }
         target_bytes = json.dumps(handoff["target"]).encode()
         (root / "materials" / "target.json").write_bytes(target_bytes)
         manifest["target"] = {
@@ -58,7 +80,7 @@ def evaluate(binding, repo, bridge, package: Path, evaluation_id: str) -> dict:
         write_json(root / "handoff.json", handoff)
     elif json.loads((root / "handoff.json").read_text()) != handoff:
         raise FrameworkError("evaluation_binding_mismatch")
-    _check_sources(root / "materials")
+    manifest = _check_sources(root / "materials")
     attempt_path = root / "report-attempt.json"
     attempt = json.loads(attempt_path.read_text()) if attempt_path.exists() else {"index": 0}
     execution_id = f"evaluation-{digest(evaluation_id)[:20]}-{attempt['index']:03d}"
@@ -70,7 +92,9 @@ def evaluate(binding, repo, bridge, package: Path, evaluation_id: str) -> dict:
         materials=root / "materials",
         model_revisions=handoff["target"]["model_revisions"],
         instructions="You are an independent read-only semantic evaluator. Read the original sources, "
-        "every frozen case and target using read_material; query the actual governed model. "
+        "every frozen case, target and any human-inputs using read_material; query the actual "
+        "governed model. Attributed human replies are additional approved sources; preserve "
+        "their partial status and scope rather than assuming every question was resolved. "
         "Never create, continue, repair or modify production work. A candidate or production "
         "self-check is not model evidence. Keep questions, answers and private reasons private.",
     )
@@ -101,7 +125,14 @@ def evaluate(binding, repo, bridge, package: Path, evaluation_id: str) -> dict:
     events = binding.root / "executions" / execution_id / "agent/events.jsonl"
     try:
         report = decode_json_result(native["final_response"], REPORT_SCHEMA)
-        public = validate_report(report, handoff, events)
+        public = validate_report(
+            report,
+            handoff,
+            events,
+            required_materials={"human-inputs": manifest["human-inputs"]["sha256"]}
+            if "human-inputs" in manifest
+            else None,
+        )
     except (ResultContractError, FrameworkError) as error:
         # Correct only report structure/reads; the independent frozen standard stays intact.
         write_json(
@@ -132,6 +163,19 @@ def parser() -> argparse.ArgumentParser:
         commands.append(sub.add_parser(name))
     commands[-1].add_argument("--package", type=Path, required=True)
     commands[-1].add_argument("--evaluation-id", required=True)
+    commands.append(sub.add_parser("questions", help="List durable questions and reply states"))
+    for name in ("reply", "input"):
+        command = sub.add_parser(name, help="Persist a human reply or unsolicited input")
+        commands.append(command)
+        text = command.add_mutually_exclusive_group(required=True)
+        text.add_argument("--text")
+        text.add_argument("--text-file", type=Path)
+        command.add_argument("--message-id", default=None)
+        command.add_argument("--author", default="user")
+        command.add_argument("--partial", action="store_true")
+        if name == "reply":
+            command.add_argument("--request-id", required=True)
+            command.add_argument("--request-revision", type=int)
     for command in commands:
         command.add_argument("--run-dir", type=Path, required=True)
     return result
@@ -155,9 +199,22 @@ def dispatch(args) -> dict:
         binding = TaskBinding.load(args.run_dir)
     repo, config = repository(binding)
     control, bridge = TaskControl(repo), HostBridge(binding.root)
+    human = HumanInput(binding, repo, control)
     if args.command == "status":
         row = repo.get(binding.identity + ":work")
         return {"work": row["content"] if row else None, "control": control.view()}
+    if args.command == "questions":
+        return {"questions": human.requests()}
+    if args.command in {"reply", "input"}:
+        text = args.text if args.text is not None else args.text_file.read_text()
+        return human.submit(
+            text,
+            args.message_id or uuid.uuid4().hex,
+            request_id=getattr(args, "request_id", None),
+            partial=args.partial,
+            author=args.author,
+            request_revision=getattr(args, "request_revision", None),
+        )
     if args.command in {"pause", "stop"}:
         control.enqueue(uuid.uuid4().hex, args.command)
         return {"control": control.synchronize()}

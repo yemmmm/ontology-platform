@@ -77,6 +77,16 @@ class WorkspaceRepository:
             row = conn.execute(query, params).fetchone()
             return self.view(row) if row else None
 
+    def list_kind(self, kind: str) -> list[dict]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                sql.SQL("SELECT * FROM {} WHERE task_ref=%s AND kind=%s ORDER BY object_id").format(
+                    self.table("business_objects")
+                ),
+                (self.task_ref, kind),
+            ).fetchall()
+            return [self.view(row) for row in rows]
+
     def put(
         self,
         object_id: str,

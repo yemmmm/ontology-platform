@@ -7,6 +7,7 @@ from typing import TypedDict
 
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 
 from .acceptance import require_governed_read, successful_reads
 from .contracts import (
@@ -19,6 +20,7 @@ from .contracts import (
 )
 from .control import TaskControl
 from .execution import ExecutionManager
+from .human_input import HumanInput
 from .results import ResultContractError, decode_json_result
 from .workspace import WorkspaceRepository
 
@@ -38,6 +40,9 @@ class FlowState(TypedDict, total=False):
     handoff_ref: dict
     issue: dict
     semantic_acceptance: str
+    resume_activity: str
+    human_request_ids: list[str]
+    refresh_baseline: bool
 
 
 class WorkUnitFlow:
@@ -50,6 +55,7 @@ class WorkUnitFlow:
         )
         self.control = TaskControl(repository)
         self.executions = ExecutionManager(repository, self.control, binding)
+        self.human = HumanInput(binding, repository, self.control)
         self.work_id = binding.identity + ":work"
 
     def initialize(self) -> dict:
@@ -114,6 +120,15 @@ class WorkUnitFlow:
         state = self._fresh(state)
         if state["activity"] != "model":
             return state
+        if state.get("refresh_baseline"):
+            target = self._host("snapshot", f"human-baseline-{state['round']:05d}")
+            target_ref = self.repository.put_reference(
+                f"{self.binding.identity}:human-baseline:{digest(target)}",
+                "model_reference",
+                target,
+                0,
+            )
+            state = self._save({**state, "target_ref": target_ref, "refresh_baseline": False})
         prompt = {
             "objective": self.binding.data["objective"],
             "source_manifest": self.binding.data["source_manifest"],
@@ -129,6 +144,7 @@ class WorkUnitFlow:
                 else state.get("issue")
             ),
             "result_schema": WORK_RESULT_SCHEMA,
+            "human_context": self.human.context(),
             "contract": "Return the existing unified graph and explicit r4-3-025 model changes. "
             "Return exactly one JSON object matching result_schema. Read approved sources with "
             "read_material using source_manifest keys as material_id, not filenames or source paths. "
@@ -142,9 +158,21 @@ class WorkUnitFlow:
             "Preserve unknowns; never invent business facts. consumed_ids may only contain IDs from "
             "Queued inputs, never material IDs; return [] when that queue is empty. "
             "Execution IDs, platform scope, leases and Batch fields are Host-owned.",
+            "human_input_contract": "When required business information is missing, return "
+            "waiting_input with human_requests containing question, reason and impact. "
+            "Questions are persisted and shown directly to the user after this native turn. "
+            "Use prior human_context answers as attributed business input, not platform facts. "
+            "Acknowledge only supplied Queued input IDs in consumed_ids. Explicitly list a request "
+            "in resolved_request_ids only when its consumed non-partial reply actually resolves it. "
+            "Partial replies do not resolve a whole request. Preserve other pending questions; "
+            "do not repeat an unchanged pending question. Reassess old replies against the actual baseline.",
         }
         ref = self.executions.run(
-            f"model-{state['round']:05d}", "modeling", json.dumps(prompt), self.invoke
+            f"model-{state['round']:05d}",
+            "modeling",
+            json.dumps(prompt),
+            self.invoke,
+            resume_original=True,
         )
         native = self.repository.read_reference(ref)["result"]
         if native["status"] != "completed":
@@ -176,7 +204,7 @@ class WorkUnitFlow:
                     for r in result["source_refs"]
                 ):
                     raise FrameworkError("source_read_missing")
-            self.executions.confirm_consumption(ref, result["consumed_ids"])
+            self._confirm_inputs(ref, result)
         except FrameworkError as error:
             return self._save(
                 {
@@ -192,6 +220,20 @@ class WorkUnitFlow:
             result,
             0,
         )
+        if result["status"] == "waiting_input":
+            return self._wait_for_human(
+                {
+                    **state,
+                    "candidate_ref": candidate,
+                    "execution_ref": ref,
+                    "round": state["round"] + 1,
+                    "issue": {"issues": result["issues"]},
+                },
+                "model",
+                result,
+                ref,
+                state.get("target_ref", state["baseline_ref"]),
+            )
         if result["status"] == "recoverable_issue":
             return self._save(
                 {
@@ -282,10 +324,18 @@ class WorkUnitFlow:
                 "consumed_ids may only contain IDs from Queued inputs, never material IDs; "
                 "return [] when that queue is empty.",
                 "result_schema": SELF_CHECK_SCHEMA,
+                "human_context": self.human.context(),
+                "human_input_contract": "Ask missing business facts with human_requests "
+                "(question, reason, impact) and waiting_input. Consume actual Queued input IDs; "
+                "resolve only explicitly matched, consumed non-partial replies with "
+                "resolved_request_ids. Reassess replies against actual target versions; "
+                "do not repeat unchanged pending questions or infer unresolved facts.",
             }
         )
         execution_id = f"self-check-{state['round']:05d}-{state.get('check_round', 0):03d}"
-        ref = self.executions.run(execution_id, "self_check", prompt, self.invoke)
+        ref = self.executions.run(
+            execution_id, "self_check", prompt, self.invoke, resume_original=True
+        )
         native = self.repository.read_reference(ref)["result"]
         if native["status"] != "completed":
             return self._save(
@@ -302,7 +352,7 @@ class WorkUnitFlow:
                 self.binding.root / "executions" / execution_id / "agent/events.jsonl",
                 target["model_revisions"],
             )
-            self.executions.confirm_consumption(ref, result["consumed_ids"])
+            self._confirm_inputs(ref, result)
         except (ResultContractError, FrameworkError) as error:
             return self._save(
                 {
@@ -329,12 +379,61 @@ class WorkUnitFlow:
         }
         if result["status"] == "revise":
             return self._save({**update, "activity": "model", "round": state["round"] + 1})
+        if result["status"] == "waiting_input":
+            return self._wait_for_human(
+                {**update, "check_round": state.get("check_round", 0) + 1},
+                "self_check",
+                result,
+                ref,
+                target_ref,
+            )
         return self._save(
             {
                 **update,
                 "activity": "handoff" if result["status"] == "ready" else "self_check",
                 "status": "ready" if result["status"] == "ready" else "waiting_input",
             }
+        )
+
+    def _confirm_inputs(self, execution_ref, result):
+        consumed = result["consumed_ids"]
+        resolved = result.get("resolved_request_ids", [])
+        self.human.validate_resolutions(execution_ref, consumed, resolved)
+        self.executions.confirm_consumption(execution_ref, consumed)
+        self.human.resolve(execution_ref, consumed, resolved)
+
+    def _wait_for_human(self, state, phase, result, execution_ref, basis_ref):
+        self.human.ask(phase, result.get("human_requests", []), basis_ref, execution_ref)
+        pending = [
+            r["request_id"]
+            for r in self.human.requests()
+            if r["status"] != "resolved" and r["phase"] == phase
+        ]
+        return self._save(
+            {
+                **state,
+                "activity": "wait_input",
+                "status": "waiting_input",
+                "resume_activity": phase,
+                "human_request_ids": pending,
+            }
+        )
+
+    def _wait_input(self, state):
+        state = self._fresh(state)
+        phase = state["resume_activity"]
+        control = self.control.synchronize()
+        if control["mode"] != "running" or not control["budget_open"]:
+            raise FrameworkError("task_not_running", control=control["mode"])
+        while not self.human.pending(phase):
+            interrupt(
+                {
+                    "work_unit_id": self.binding.data["work_unit_id"],
+                    "request_ids": state.get("human_request_ids", []),
+                }
+            )
+        return self._save(
+            {**state, "activity": phase, "status": "ready", "refresh_baseline": phase == "model"}
         )
 
     def _handoff(self, state):
@@ -357,6 +456,7 @@ class WorkUnitFlow:
             },
             "evaluation": self.binding.data["evaluation"],
             "semantic_acceptance": "unverified",
+            "human_context": self.human.context(),
         }
         ref = self.repository.put_reference(
             self.binding.identity + ":handoff", "handoff", handoff, 0
@@ -365,13 +465,15 @@ class WorkUnitFlow:
 
     @staticmethod
     def _route(state):
+        if state["status"] == "waiting_input":
+            return "wait_input"
         return state["activity"] if state["status"] == "ready" else END
 
     def compile(self, checkpointer):
         builder = StateGraph(FlowState)
         builder.add_node("dispatch", lambda state: self._fresh(state))
         builder.add_edge(START, "dispatch")
-        names = ("prepare", "model", "apply", "self_check", "handoff")
+        names = ("prepare", "model", "apply", "self_check", "wait_input", "handoff")
         builder.add_conditional_edges("dispatch", self._route, [*names, END])
         for name in names:
             builder.add_node(name, getattr(self, "_" + name))
@@ -380,18 +482,41 @@ class WorkUnitFlow:
 
     def advance(self, checkpointer) -> dict:
         state = self.initialize()
-        if state["status"] in {"handoff_ready", "waiting_input"}:
+        if state["status"] == "handoff_ready":
             return state
         if self.control.synchronize()["mode"] == "stopped":
             return self._save({**state, "status": "stopped"})
-        state = self._save({**state, "status": "ready"})
+        if state["status"] == "waiting_input" and state["activity"] != "wait_input":
+            phase = state["activity"]
+            state = self._save(
+                {
+                    **state,
+                    "activity": "wait_input",
+                    "resume_activity": phase,
+                    "round": state["round"] + (phase == "model"),
+                    "check_round": state.get("check_round", 0) + (phase == "self_check"),
+                }
+            )
+        if state["activity"] != "wait_input":
+            state = self._save({**state, "status": "ready"})
+        elif self.control.view()["mode"] == "running":
+            state = self._save({**state, "status": "waiting_input"})
         graph = self.compile(checkpointer)
         config = {
             "configurable": {"thread_id": self.binding.data["run_id"]},
             "recursion_limit": 100,
         }
         try:
-            graph.invoke(None if graph.get_state(config).next else state, config)
+            snapshot = graph.get_state(config)
+            if (
+                state["activity"] == "wait_input"
+                and snapshot.next
+                and not self.human.pending(state["resume_activity"])
+            ):
+                return state
+            interrupted = any(task.interrupts for task in snapshot.tasks)
+            value = Command(resume=True) if interrupted else None if snapshot.next else state
+            graph.invoke(value, config)
             return self.repository.get(self.work_id)["content"]
         except FrameworkError as error:
             current = self.repository.get(self.work_id)["content"]
