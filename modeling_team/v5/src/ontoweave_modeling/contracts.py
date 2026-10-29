@@ -113,6 +113,9 @@ class TaskBinding:
                 "work_units",
                 "unit_concurrency",
                 "work_management",
+                "semantic_workspace",
+                "project_ref",
+                "workspace_ref",
             }
             != required
         ):
@@ -302,7 +305,7 @@ RESOLVED_REQUESTS_SCHEMA = {
 
 WORK_RESULT_SCHEMA = {
     "type": "object",
-    "additionalProperties": False,
+    "additionalProperties": True,
     "properties": {
         "status": {
             "enum": [
@@ -310,6 +313,7 @@ WORK_RESULT_SCHEMA = {
                 "waiting_input",
                 "waiting_peer",
                 "waiting_children",
+                "no_change",
                 "recoverable_issue",
             ],
             "description": "proposed: complete changes ready for the Host to apply; waiting_input: "
@@ -350,7 +354,7 @@ SELF_CHECK_SCHEMA = {
 }
 
 
-def decode_work_result(message: str, manifest: dict) -> dict:
+def decode_work_result(message: str, manifest: dict, *, require_changes: bool = True) -> dict:
     try:
         result = decode_json_result(message, WORK_RESULT_SCHEMA)
     except ResultContractError as error:
@@ -359,10 +363,14 @@ def decode_work_result(message: str, manifest: dict) -> dict:
         entry = manifest.get(ref["material_id"])
         if entry is None or entry["sha256"] != ref["sha256"]:
             raise FrameworkError("source_reference_mismatch", material_id=ref["material_id"])
-    if result["status"] == "proposed":
+    if result["status"] in {"proposed", "no_change"}:
         if (
-            not result["changes"]
-            or result["changes"].get("schema_version") != "r4-3-025-model-changes/v1"
+            result["status"] == "proposed"
+            and require_changes
+            and (
+                not result["changes"]
+                or result["changes"].get("schema_version") != "r4-3-025-model-changes/v1"
+            )
         ):
             raise FrameworkError("model_changes_required")
         if not result["source_refs"]:

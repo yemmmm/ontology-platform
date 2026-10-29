@@ -141,7 +141,16 @@ class WorkPlan:
             work = self.repository.get(
                 "run:" + self.task["run_id"] + ":unit:" + unit["unit_id"] + ":work"
             )
-            units.append({**unit, "work": work["content"] if work else None})
+            units.append(
+                {
+                    **unit,
+                    "work": work["content"] if work else None,
+                    "child_count": sum(
+                        u["parent_id"] == unit["unit_id"] for u in row["content"]["units"].values()
+                    ),
+                    "expand": {"parent_id": unit["unit_id"]},
+                }
+            )
         return {
             "revision": row["revision"],
             "units": units,
@@ -149,6 +158,8 @@ class WorkPlan:
             "parent_id": parent_id or self.actor,
             "total": len(children),
             "next_offset": offset + limit if offset + limit < len(children) else None,
+            "coverage": "direct_children_only",
+            "instruction": "Absence on this page does not mean a unit is absent from the tree; expand a child's parent_id to inspect its direct children.",
         }
 
 

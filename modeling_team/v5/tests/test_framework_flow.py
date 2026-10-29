@@ -6,7 +6,7 @@ import pytest
 
 from ontoweave_modeling.contracts import FrameworkError
 from ontoweave_modeling.control import TaskControl
-from ontoweave_modeling.execution import ExecutionManager
+from ontoweave_modeling.execution import CodexInvocation, ExecutionManager
 from ontoweave_modeling.flow import WorkUnitFlow
 
 
@@ -107,6 +107,54 @@ class Actor:
         }
 
 
+def test_actual_provider_429_pauses_before_next_turn_and_preserves_terminal_receipt(
+    binding, workspace
+):
+    control = TaskControl(workspace)
+    manager = ExecutionManager(workspace, control, binding)
+    calls = []
+
+    def invoke(root, purpose, prompt, inputs):
+        calls.append(root.name)
+        (root / "provider-usage.jsonl").write_text(
+            json.dumps({"http_status": 429, "request_id": "limited-upstream"}) + "\n"
+        )
+        return {"status": "failed", "error": {"message": "upstream rejected"}, "final_response": ""}
+
+    ref = manager.run("limited-turn", "modeling", "bounded task", invoke)
+    assert workspace.read_reference(ref)["result"]["status"] == "failed"
+    assert control.view()["mode"] == "paused" and control.view()["active"] == {}
+    limit = json.loads((binding.root / "provider-limit.json").read_text())
+    assert limit["http_status"] == 429 and limit["window_attribution"] == "unknown"
+    with pytest.raises(FrameworkError, match="execution_not_admitted"):
+        manager.run("next-turn", "modeling", "must not dispatch", invoke)
+    assert calls == ["limited-turn"]
+
+
+def test_provider_preparation_failure_has_no_native_turn_and_can_resume(
+    binding, workspace, tmp_path
+):
+    from contextlib import contextmanager
+
+    class Bridge:
+        def call(self, action, payload):
+            return {"config_ref": str(tmp_path / "read.json")}
+
+        @contextmanager
+        def provider(self, *args):
+            raise FrameworkError("host_operation_failed", layer="runtime/infrastructure")
+            yield  # pragma: no cover
+
+    control = TaskControl(workspace)
+    manager = ExecutionManager(workspace, control, binding)
+    invocation = CodexInvocation(binding, Bridge())
+    ref = manager.run("prepare-failure", "modeling", "bounded task", invocation)
+    result = workspace.read_reference(ref)["result"]
+    assert result["status"] == "failed" and result["native_start_requested"] is False
+    assert not control.view()["active"]
+    assert manager.run("prepare-failure", "modeling", "bounded task", invocation) == ref
+
+
 def test_full_reference_graph_is_separate_from_semantic_acceptance(binding, workspace, saver):
     platform = Platform()
     actor = Actor(binding, platform)
@@ -122,6 +170,40 @@ def test_full_reference_graph_is_separate_from_semantic_acceptance(binding, work
     assert len(actor.calls) == 2
 
 
+def test_no_change_path_still_self_checks_actual_model_without_apply(binding, workspace, saver):
+    platform = Platform()
+    actor = Actor(binding, platform)
+
+    def invoke(root, purpose, prompt, inputs):
+        result = actor(root, purpose, prompt, inputs)
+        if purpose == "modeling":
+            response = json.loads(result["final_response"])
+            response.update(status="no_change", candidate=None, changes=None)
+            result["final_response"] = json.dumps(response)
+        return result
+
+    final = WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)
+    assert final["status"] == "handoff_ready" and not platform.effects
+    assert actor.calls == ["modeling", "self_check"]
+
+
+def test_external_model_drift_reenters_modeling_before_any_owned_apply(binding, workspace, saver):
+    platform = Platform()
+    inserted = False
+
+    def change_actual(purpose):
+        nonlocal inserted
+        if purpose == "modeling" and not inserted:
+            inserted = True
+            platform.effects["external-change"] = {"origin": "another-client"}
+
+    actor = Actor(binding, platform, change_actual)
+    final = WorkUnitFlow(binding, workspace, platform, actor).advance(saver)
+    assert final["status"] == "handoff_ready"
+    assert actor.calls == ["modeling", "modeling", "self_check"]
+    assert set(platform.effects) == {"external-change", "apply-00001"}
+
+
 def test_bad_json_is_corrected_as_new_admitted_turn(binding, workspace, saver):
     platform = Platform()
     actor = Actor(binding, platform)
@@ -129,6 +211,39 @@ def test_bad_json_is_corrected_as_new_admitted_turn(binding, workspace, saver):
     state = WorkUnitFlow(binding, workspace, platform, actor).advance(saver)
     assert state["status"] == "handoff_ready" and state["round"] == 1
     assert actor.calls == ["modeling", "modeling", "self_check"]
+
+
+def test_compiler_correction_receives_original_proposal_not_just_error_paths(
+    binding, workspace, saver
+):
+    platform = Platform()
+    actual_call = platform.call
+    failed = False
+
+    def call(action, payload):
+        nonlocal failed
+        if action == "apply" and not failed:
+            failed = True
+            return {
+                "status": "not_written",
+                "errors": [{"code": "field_needs_correction", "path": "/changes/0"}],
+            }
+        return actual_call(action, payload)
+
+    platform.call = call
+    actor = Actor(binding, platform)
+    previous = []
+
+    def invoke(root, purpose, prompt, inputs):
+        data = json.loads(prompt)
+        if purpose == "modeling" and failed:
+            previous.append(data["previous_proposal"]["content"])
+            assert previous[-1]["changes"]["schema_version"] == "r4-3-025-model-changes/v1"
+        return actor(root, purpose, prompt, inputs)
+
+    final = WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)
+    assert final["status"] == "handoff_ready" and len(previous) == 1
+    assert len(platform.effects) == 1
 
 
 def test_pause_preserves_candidate_and_never_dispatches_application(binding, workspace, saver):

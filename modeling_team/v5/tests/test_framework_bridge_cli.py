@@ -23,6 +23,51 @@ def test_backend_worker_reuses_mechanics_without_loading_legacy_runner(tmp_path)
         bridge.call("arbitrary_python", {"source": "print('not allowed')"})
 
 
+def test_host_resolves_existing_reference_from_authorized_native_read(task_file, tmp_path):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    bridge = HostBridge(binding.root)
+    program = r"""
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from ontoweave_modeling.contracts import TaskBinding, FrameworkError
+from modeling_team.v5.host.worker import PlatformWorker
+from modeling_team.direct_modeling import compile_model_changes
+worker=PlatformWorker(TaskBinding.load(Path(sys.argv[1])))
+iri="https://example.test/model/a-meaning-not-a-native-id"
+calls=[]
+def read(method,path):
+    calls.append((method,path))
+    return {"model_revision":7,"items":[{"id":"native-42","iri":iri}]}
+scope=SimpleNamespace(ontology_ids=["ontology"],ontology_id="ontology",_ok=read)
+ref={"artifact_ref":"model-read:class-detail:ontology","path":"/"+iri}
+binding=worker.read_binding(scope,ref)
+assert binding["resource_id"]=="native-42" and binding["resource_iri"]==iri
+request={"schema_version":"r4-3-025-model-changes/v1","candidate_ref":None,"changes":[{
+    "change_id":"update-existing","action":"update","resource_kind":"class",
+    "item_id":None,"target_ref":ref,"fields":{"name":"Updated authorized concept"}}]}
+batches,_=compile_model_changes(request,candidate=None,ontology_by_item={"update-existing":"ontology"},resolve_binding=lambda value:worker.read_binding(scope,value))
+assert batches[0]["items"][0]["payload"]["class_iri"]==iri
+try:
+    worker.read_binding(scope,{"artifact_ref":"model-read:class-detail:another-ontology","path":"/"+iri})
+except FrameworkError as error:
+    assert error.code=="reference_scope_forbidden"
+else:
+    raise AssertionError("outside ontology scope")
+assert len(calls)==2
+print("native-read-identity-verified")
+"""
+    result = subprocess.run(
+        [bridge.command[0], "-c", program, str(binding.root)],
+        env=bridge.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "native-read-identity-verified"
+
+
 def test_model_tool_projection_keeps_mcp_calls_and_removes_unused_resource_facade(tmp_path):
     bridge = HostBridge(tmp_path)
     program = """

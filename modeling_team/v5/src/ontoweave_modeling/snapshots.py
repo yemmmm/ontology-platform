@@ -16,7 +16,7 @@ class RunSnapshots:
         self.binding, self.repository = binding, repository
         self.root = (Path(root) if root is not None else binding.root) / "snapshots"
 
-    def save(self, name, graph, bridge):
+    def save(self, name, graph, bridge, include_platform=False):
         from .work_plan import WorkPlan
 
         plan = WorkPlan(self.binding.data, self.repository)
@@ -81,6 +81,15 @@ class RunSnapshots:
             "capture_note": "Components are read observations with their own versions; "
             "this is not a cross-store transaction or a model rollback.",
         }
+        if self.binding.data.get("project_ref"):
+            from .semantic_workspace import SemanticWorkspace
+
+            project = SemanticWorkspace(self.repository, self.binding.data).project
+            snapshot["project_objects"] = [
+                row
+                for kind in ("semantic_record", "shared_memory")
+                for row in project.list_kind(kind)
+            ]
         if self.binding.data.get("work_units"):
             snapshot["workflow"]["units"] = {}
             for unit in self.binding.data["work_units"]:
@@ -92,6 +101,17 @@ class RunSnapshots:
                     "next": list(child.next),
                 }
         self.root.mkdir(mode=0o700, exist_ok=True)
+        if include_platform:
+            captured = bridge.call("capture_data", {})
+            data_path = self.root / "platform-data" / (snapshot["snapshot_id"] + ".json")
+            write_json(data_path, captured["data"])
+            data_path.chmod(0o600)
+            snapshot["platform_data"] = {
+                "path": str(data_path.relative_to(self.root)),
+                "sha256": hashlib.sha256(data_path.read_bytes()).hexdigest(),
+                "digest": captured["data"]["digest"],
+                "credential": captured["credential"],
+            }
         path = self.root / (snapshot["snapshot_id"] + ".json")
         write_json(path, snapshot)
         path.chmod(0o600)

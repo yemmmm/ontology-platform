@@ -75,3 +75,9 @@ def test_only_top_level_values_are_considered_and_identical_repetition_is_not_am
     assert decode_json_result('Done. {"references":[]}\n{"references":[]}', SCHEMA) == {
         "references": []
     }
+
+
+@pytest.mark.parametrize("message", ["{}", "Result:\n```json\n{}\n```"])
+def test_missing_required_field_feedback_names_the_field(message):
+    with pytest.raises(ResultContractError, match="references.*required property"):
+        decode_json_result(message, SCHEMA)

@@ -6,6 +6,17 @@ not filenames, paths or resource URIs; preserve their conditions, exclusions,
 semantic level and explicit unknowns. Technical contracts explain representation,
 not business truth. Do not inherit a business answer from an example.
 
+For a child work unit, `proposed` is its source-grounded business proposal for the
+parent, not an application request. Return its bounded propositions or definitions
+in candidate; changes may be null. Only the root must supply complete executable
+changes before actual application. Preserve conditions, exceptions and remaining
+scope in the child result; the parent decides how to integrate them.
+
+`get_work_tree` returns only one parent's direct children, with child_count and
+expand pointers. Use parent_id to inspect another level. A nested unit not shown
+on the root page is not evidence that it was never created. Reuse existing work
+identities; adjust or reopen a unit instead of delegating a duplicate under a new name.
+
 The baseline read tools are `read_material` and `query_semantic_context`; a configured
 production team also has the collaboration tools described below. Query actual
 models when checking an existing baseline or applied result. Follow returned

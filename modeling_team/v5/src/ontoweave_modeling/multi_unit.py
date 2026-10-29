@@ -15,7 +15,7 @@ class MultiUnitFlow:
         self.plan = WorkPlan(binding.data, repository)
         self.refresh()
 
-    def refresh(self):
+    def refresh(self, busy=None):
         self.binding = self.plan.binding(self.original)
         selected = [self.binding] + [
             self.binding.for_unit(u["unit_id"]) for u in self.binding.data["work_units"]
@@ -28,7 +28,8 @@ class MultiUnitFlow:
             flow = WorkUnitFlow(binding, self.repository, self.bridge, self.invoke_factory(binding))
             prior = self.repository.get(flow.work_id)
             unit_active = (
-                binding.data["work_unit_id"] in active
+                binding.actor in (busy or set())
+                or binding.data["work_unit_id"] in active
                 or binding.data["work_unit_id"] + ":platform" in active
             )
             state = prior["content"] if prior and unit_active else flow.initialize()
@@ -80,7 +81,7 @@ class MultiUnitFlow:
         with ThreadPoolExecutor(max_workers=self.binding.data.get("unit_concurrency", 2)) as pool:
             running, seen = {}, {}
             while True:
-                self.refresh()
+                self.refresh(busy=set(running.values()))
                 states = {
                     actor: self.repository.get(flow.work_id)["content"]
                     for actor, flow in self.flows.items()
@@ -110,8 +111,13 @@ class MultiUnitFlow:
                             *[u["unit_id"] for u in flow.binding.direct_units],
                         ]
                         answered_wait = state["status"] == "waiting_input" and incoming
+                        generations = {
+                            u["unit_id"]: u.get("generation", 0)
+                            for u in self.binding.data["work_units"]
+                        }
                         if not answered_wait and any(
                             states.get(dep, {}).get("status") != "proposal_ready"
+                            or states.get(dep, {}).get("work_generation", 0) != generations.get(dep)
                             for dep in dependencies
                         ):
                             continue

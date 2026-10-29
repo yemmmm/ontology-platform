@@ -22,6 +22,8 @@ OPERATIONS = frozenset(
         "cleanup",
         "provider",
         "budget",
+        "capture_data",
+        "fork_data",
     }
 )
 

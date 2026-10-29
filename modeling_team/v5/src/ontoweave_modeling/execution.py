@@ -121,6 +121,31 @@ class ExecutionManager:
         if result.get("status") not in {"completed", "failed", "interrupted"}:
             raise FrameworkError("native_result_not_terminal", layer="runtime/infrastructure")
         write_json(root / "result.json", result)
+        attempts_path = root / "provider-usage.jsonl"
+        attempts = (
+            (json.loads(line) for line in attempts_path.read_text().splitlines())
+            if attempts_path.exists()
+            else ()
+        )
+        limited = next((attempt for attempt in attempts if attempt.get("http_status") == 429), None)
+        if limited:
+            # This user-authorized run must stop at provider allowance exhaustion.
+            # HTTP 429 alone does not prove the provider's exact window or reset time.
+            write_json(
+                self.binding.root / "provider-limit.json",
+                {
+                    "execution_id": execution_id,
+                    "http_status": 429,
+                    "request_id": limited.get("request_id"),
+                    "window_attribution": "unknown",
+                    "action": "pause_at_natural_boundary; Host must inspect before another call",
+                },
+            )
+            self.control.enqueue(
+                "provider-limit:" + execution_id,
+                "pause",
+                metadata={"source": "provider", "code": "provider_limit"},
+            )
         active = self.control.view()["active"]
         if active.get(self.unit_id) == execution_id:
             # Consumption is confirmed separately, after the purpose-specific schema is valid.
@@ -190,6 +215,7 @@ class CodexInvocation:
     def __call__(self, root: Path, purpose: str, prompt: str, inputs: list) -> dict:
         from .codex_agent import CodexAgent
         from .memory import MEMORY_TOOLS
+        from .semantic_workspace import WORKSPACE_TOOLS
         from .team import TEAM_TOOLS
         from .work_plan import WORK_TOOLS
 
@@ -202,6 +228,7 @@ class CodexInvocation:
             or self.binding.data.get("shared_memory")
             or self.binding.data.get("work_units")
             or self.binding.data.get("work_management")
+            or self.binding.data.get("semantic_workspace")
         ):
             if (
                 self.binding.data.get("collaboration")
@@ -213,6 +240,8 @@ class CodexInvocation:
                 tools += WORK_TOOLS
             if self.binding.data.get("shared_memory"):
                 tools += MEMORY_TOOLS
+            if self.binding.data.get("semantic_workspace"):
+                tools += WORKSPACE_TOOLS
             private = json.loads((self.binding.root / "private-runtime.json").read_text())
             connection = dict(private["connection"])
             # Reuse the verified P0 workspace route: resolve before entering the namespace.
@@ -251,6 +280,8 @@ class CodexInvocation:
                     "They may delegate further. Keep unallocated scope and overall rules in your own work. "
                     "After delegation return waiting_children with null candidate/changes; "
                     "on reentry use get_work_tree and read direct child results as needed. "
+                    "get_work_tree shows only one parent's direct children; use parent_id to "
+                    "inspect another level. A unit absent from this page may exist below a child. "
                     "Only the root applies; child proposals are not final acceptance. "
                     "Use reopen_work_unit for explicit rework; ordinary notifications do not require "
                     "recreating a finished proposal."
@@ -258,7 +289,9 @@ class CodexInvocation:
             if self.binding.is_child:
                 instructions += (
                     " You own this child work unit only. Return its source-grounded proposed "
-                    "changes for the parent to integrate; the program will publish your complete "
+                    "business candidate for the parent to integrate; changes may be null because "
+                    "you do not apply. candidate may hold bounded propositions/definitions. "
+                    "The program will publish your complete "
                     "result as a versioned handoff material. Do not claim application or full-task "
                     "completion. Ask missing business input using the supplied HITL result contract."
                 )
@@ -289,47 +322,83 @@ class CodexInvocation:
                     "preserve valid prior conditions and exceptions. These are attributed "
                     "business notes, not an applied model or new human approval."
                 )
-        read_payload = {"role": role}
-        if self.model_revisions is not None:
-            read_payload["model_revisions"] = self.model_revisions
-        read_config = self.bridge.call("read_config", read_payload)["config_ref"]
-        if self.binding.data["authorization"]["mode"] == "amount":
-            (root / "budget-native-usage.jsonl").touch(exist_ok=True)
-        with self.bridge.provider(root.name, role, tools) as url:
+            if self.binding.data.get("semantic_workspace"):
+                instructions += (
+                    " Use get_modeling_context at a new context to locate persistent records. "
+                    "Use write_semantic_record for complete propositions, interpretations, identity/reuse "
+                    "decisions, definitions, coverage, open items and summaries. Keep source refs and "
+                    "exact depends_on references; keep review, cognition, expression, work and applicability "
+                    "separate. Application and independent acceptance are Host observations, not note states. "
+                    "Summaries navigate to originals; stale/needs_review content is not current confirmation. "
+                    "Project records and memory require scope=project and stay within the bound project. "
+                    "Preserve conditions, exceptions, negation, modality and unknowns, including unallocated scope. "
+                    "When the actual existing model already satisfies the source, return no_change with null "
+                    "candidate/changes and source_refs; the program still performs actual governed self-check."
+                )
+        native_requested = False
+        try:
+            read_payload = {"role": role}
+            if self.model_revisions is not None:
+                read_payload["model_revisions"] = self.model_revisions
+            read_config = self.bridge.call("read_config", read_payload)["config_ref"]
+            if self.binding.data["authorization"]["mode"] == "amount":
+                (root / "budget-native-usage.jsonl").touch(exist_ok=True)
+            with self.bridge.provider(root.name, role, tools) as url:
 
-            def observe(method, params):
-                if method == "thread/tokenUsage/updated":
-                    with (root / "usage.jsonl").open("a") as stream:
-                        stream.write(json.dumps({"method": method, "params": params}) + "\n")
-                    if self.binding.data["authorization"]["mode"] == "amount":
-                        with (root / "budget-native-usage.jsonl").open("a") as stream:
-                            stream.write(
-                                json.dumps(
-                                    {
-                                        "event": "thread_usage",
-                                        "thread_id": params["threadId"],
-                                        "runtime_session_id": params["threadId"],
-                                        "turn_id": params["turnId"],
-                                        "total": params["tokenUsage"]["total"],
-                                        "received_at": datetime.now(UTC).isoformat(),
-                                    }
+                def observe(method, params):
+                    if method == "thread/tokenUsage/updated":
+                        with (root / "usage.jsonl").open("a") as stream:
+                            stream.write(json.dumps({"method": method, "params": params}) + "\n")
+                        if self.binding.data["authorization"]["mode"] == "amount":
+                            with (root / "budget-native-usage.jsonl").open("a") as stream:
+                                stream.write(
+                                    json.dumps(
+                                        {
+                                            "event": "thread_usage",
+                                            "thread_id": params["threadId"],
+                                            "runtime_session_id": params["threadId"],
+                                            "turn_id": params["turnId"],
+                                            "total": params["tokenUsage"]["total"],
+                                            "received_at": datetime.now(UTC).isoformat(),
+                                        }
+                                    )
+                                    + "\n"
                                 )
-                                + "\n"
-                            )
 
-            agent = CodexAgent(
-                root / "agent",
-                self.binding.model(role),
-                provider_base_url=url,
-                materials=self.materials,
-                platform_config=Path(read_config),
-                team_config=team_config,
-                instructions=instructions,
-                on_event=observe,
-                allowed_tools=tools,
-            )
-            try:
-                agent.start()
-                return agent.run_turn(prompt + "\nQueued inputs: " + json.dumps(inputs))
-            finally:
-                agent.close()
+                agent = CodexAgent(
+                    root / "agent",
+                    self.binding.model(role),
+                    provider_base_url=url,
+                    materials=self.materials,
+                    platform_config=Path(read_config),
+                    team_config=team_config,
+                    instructions=instructions,
+                    on_event=observe,
+                    allowed_tools=tools,
+                )
+                try:
+                    agent.start()
+                    native_requested = True
+                    return agent.run_turn(prompt + "\nQueued inputs: " + json.dumps(inputs))
+                finally:
+                    agent.close()
+        except Exception as error:
+            if native_requested:
+                raise
+            result = {
+                "status": "failed",
+                "thread_id": None,
+                "turn_id": None,
+                "native_start_requested": False,
+                "normal_pause": False,
+                "error": {
+                    "code": "native_dispatch_failed",
+                    "layer": "runtime/infrastructure",
+                    "cause": error.as_dict()
+                    if isinstance(error, FrameworkError)
+                    else {"type": type(error).__name__},
+                },
+                "final_response": "",
+            }
+            write_json(root / "result.json", result)
+            return result

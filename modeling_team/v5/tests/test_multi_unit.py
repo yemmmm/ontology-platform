@@ -47,7 +47,7 @@ def test_original_structured_hitl_result_is_reparsed_without_repeating_native_tu
         result["final_response"] = json.dumps(value)
         return result
 
-    def old_decode(message, manifest):
+    def old_decode(message, manifest, **kwargs):
         control.enqueue("pause-for-contract-repair", "pause")
         raise FrameworkError("unresolved_reason_required")
 

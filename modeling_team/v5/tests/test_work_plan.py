@@ -6,9 +6,67 @@ from psycopg import sql
 from test_framework_flow import Actor, Platform
 
 from ontoweave_modeling.control import TaskControl
+from ontoweave_modeling.flow import WorkUnitFlow
 from ontoweave_modeling.multi_unit import MultiUnitFlow
 from ontoweave_modeling.team import TeamChannel
 from ontoweave_modeling.work_plan import WorkPlan
+
+
+def test_host_tree_cli_reads_dynamic_members_and_pages_one_level(binding, workspace, monkeypatch):
+    from ontoweave_modeling import cli
+
+    plan = WorkPlan(binding.data, workspace)
+    plan.delegate("a", "First scope")
+    plan.delegate("b", "Second scope")
+    WorkPlan(binding.data, workspace, "a").delegate("detail", "Nested scope")
+    monkeypatch.setattr(cli, "repository", lambda selected: (workspace, {}))
+    args = cli.parser().parse_args(["work-tree", "--run-dir", str(binding.root), "--limit", "1"])
+    result = cli.dispatch(args)
+    assert result["total"] == 2 and len(result["units"]) == 1 and result["next_offset"] == 1
+    assert plan.tree("a")["units"][0]["unit_id"] == "detail"
+
+
+def test_late_child_completion_does_not_leave_a_stale_parent_wait(binding, workspace, saver):
+    plan = WorkPlan(binding.data, workspace)
+    plan.delegate("ready-child", "Already completed scope")
+    selected = plan.binding(binding)
+    child = WorkUnitFlow(selected.for_unit("ready-child"), workspace, Platform(), None)
+    child._save({**child.initialize(), "status": "proposal_ready"})
+    platform = Platform()
+    actor = Actor(selected, platform)
+    calls = []
+
+    def invoke(root, purpose, prompt, inputs):
+        calls.append(purpose)
+        result = actor(root, purpose, prompt, inputs)
+        if len(calls) == 1:
+            response = json.loads(result["final_response"])
+            response.update(status="waiting_children", candidate=None, changes=None)
+            result["final_response"] = json.dumps(response)
+        return result
+
+    final = WorkUnitFlow(selected, workspace, platform, invoke).advance(saver)
+    assert final["status"] == "handoff_ready"
+    assert calls == ["modeling", "modeling", "self_check"]
+
+
+def test_reentry_requested_during_turn_preserves_candidate_but_does_not_apply_old_generation(
+    binding, workspace, saver
+):
+    plan = WorkPlan(binding.data, workspace)
+    plan.delegate("child", "Local scope")
+    selected = plan.binding(binding)
+    child = WorkUnitFlow(selected.for_unit("child"), workspace, Platform(), None)
+    child._save({**child.initialize(), "status": "proposal_ready"})
+    platform = Platform()
+    actor = Actor(
+        selected,
+        platform,
+        lambda purpose: plan.reopen("child", "New scoped input") if purpose == "modeling" else None,
+    )
+    final = WorkUnitFlow(selected, workspace, platform, actor).advance(saver)
+    assert final["status"] == "work_change_pending" and not platform.effects
+    assert final["candidate_ref"] and actor.calls == ["modeling"]
 
 
 def test_delegate_dynamic_members_and_exact_replay(binding, workspace):

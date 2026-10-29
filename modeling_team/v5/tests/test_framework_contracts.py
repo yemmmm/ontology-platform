@@ -90,6 +90,22 @@ def test_structured_human_question_already_contains_its_reason():
     assert decode_work_result(json.dumps(value), {}) == value
 
 
+def test_child_proposal_does_not_need_root_application_fields():
+    source = {"source": {"sha256": "a" * 64}}
+    value = {
+        "status": "proposed",
+        "candidate": {"propositions": ["A condition"]},
+        "changes": None,
+        "source_refs": [{"material_id": "source", "sha256": "a" * 64}],
+        "issues": [],
+        "consumed_ids": [],
+        "waiting_note": "Extra diagnostic text is retained",
+    }
+    assert decode_work_result(json.dumps(value), source, require_changes=False) == value
+    with pytest.raises(FrameworkError, match="model_changes_required"):
+        decode_work_result(json.dumps(value), source)
+
+
 def test_versioned_references_do_not_follow_current_business_revision(workspace):
     original = workspace.put_reference("candidate", "candidate", {"text": "first"}, 0)
     workspace.put_reference("candidate", "candidate", {"text": "second"}, 1)

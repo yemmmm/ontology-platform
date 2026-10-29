@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import traceback
+import uuid
 from dataclasses import fields
 from pathlib import Path
 
@@ -86,6 +87,79 @@ class PlatformWorker:
                 values[field.name] = sorted(value) if isinstance(value, set) else value
         write_json(self.root / "scope-private.json", values)
 
+    def read_binding(self, scope, reference):
+        """Resolve an exact authorized native read, never infer identity from a label or IRI."""
+        from urllib.parse import quote
+
+        parts = reference.get("artifact_ref", "").split(":", 2)
+        kinds = {
+            "class-detail": "class",
+            "property-list": "property",
+            "relation-type-list": "relation_type",
+            "entity-detail": "entity",
+        }
+        if len(parts) != 3 or parts[0] != "model-read" or parts[1] not in kinds:
+            return None
+        family, ontology_id = parts[1:]
+        if ontology_id not in (scope.ontology_ids or [scope.ontology_id]):
+            raise FrameworkError("reference_scope_forbidden")
+        iri = reference["path"].removeprefix("/")
+        envelope = scope._ok(
+            "GET",
+            "/api/semantic/ontologies/"
+            + ontology_id
+            + "/read-models/"
+            + family
+            + "?entity="
+            + quote(iri, safe="")
+            + "&field_set=detail",
+        )
+        item = next((row for row in envelope["items"] if row["iri"] == iri), None)
+        if item is None:
+            return None
+        binding = {
+            "ontology_id": ontology_id,
+            "resource_kind": kinds[family],
+            "resource_iri": item["iri"],
+            "resource_id": item.get("resource_id", item["id"]),
+            "model_revision": envelope["model_revision"],
+        }
+        write_json(
+            self.root / "verified-reads" / (digest(reference) + ".json"),
+            {"reference": reference, "binding": binding, "response": envelope},
+        )
+        return binding
+
+    def checkpoint_data(self, action, payload):
+        from modeling_team.checkpoint_data import platform_data_request
+
+        scope = self.scope()
+        key, key_id = scope.bootstrap_admin()
+        record = self.root / "checkpoint-credentials" / (uuid.uuid4().hex + ".json")
+        receipt = {"key_id": key_id, "action": action, "revoked": False}
+        write_json(record, receipt)
+        try:
+            result = platform_data_request(scope.base_url, key, action, payload)
+        finally:
+            receipt["revoked"] = scope.revoke_admin(key_id)
+            write_json(record, receipt)
+            if not receipt["revoked"]:
+                raise FrameworkError("checkpoint_credential_revocation_unconfirmed", key_id=key_id)
+        return {"data": result, "credential": receipt}
+
+    def capture_data(self, payload):
+        scope = self.scope()
+        return self.checkpoint_data(
+            "capture",
+            {
+                "project_id": scope.project_id,
+                "ontology_ids": scope.ontology_ids or [scope.ontology_id],
+            },
+        )
+
+    def fork_data(self, payload):
+        return self.checkpoint_data("fork", payload)
+
     def forwarder(self, scope):
         from modeling_team.acceptance_runtime import McpReadForwarder
 
@@ -145,7 +219,7 @@ class PlatformWorker:
             def resolve(ref):
                 if ref.get("artifact_ref") == "applied-bindings.json":
                     return bindings.get(ref.get("path", "").removeprefix("/"))
-                return None
+                return self.read_binding(scope, ref)
 
             changes = intent["changes"]
             raw_changes = changes.get("changes", []) if isinstance(changes, dict) else []
@@ -335,6 +409,7 @@ def provider(binding, payload):
         raise FrameworkError("provider_route_not_implemented")
     tools = set(payload["tools"])
     from ontoweave_modeling.memory import MEMORY_TOOLS
+    from ontoweave_modeling.semantic_workspace import WORKSPACE_TOOLS
     from ontoweave_modeling.team import TEAM_TOOLS
     from ontoweave_modeling.work_plan import WORK_TOOLS
 
@@ -351,6 +426,8 @@ def provider(binding, payload):
         allowed_tools.update(WORK_TOOLS)
     if role == "modeling" and binding.data.get("shared_memory"):
         allowed_tools.update(MEMORY_TOOLS)
+    if role == "modeling" and binding.data.get("semantic_workspace"):
+        allowed_tools.update(WORKSPACE_TOOLS)
     if not tools.issubset(allowed_tools):
         raise FrameworkError("tool_not_allowed")
     credential = preflight_glm_credential()
@@ -424,6 +501,8 @@ def main():
             "cleanup",
             "provider",
             "budget",
+            "capture_data",
+            "fork_data",
         ],
     )
     args = parser.parse_args()
@@ -459,6 +538,8 @@ def main():
                 )
             elif args.operation == "read_config":
                 result = PlatformWorker(binding).read_config(payload)
+            elif args.operation in {"capture_data", "fork_data"}:
+                result = getattr(PlatformWorker(binding), args.operation)(payload)
             else:
                 result = getattr(PlatformWorker(binding), args.operation)()
         print(json.dumps({"ok": True, "result": result}), flush=True)

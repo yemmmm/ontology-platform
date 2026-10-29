@@ -48,6 +48,7 @@ class FlowState(TypedDict, total=False):
     peer_round: int
     peer_next: str
     work_generation: int
+    candidate_basis_ref: dict
 
 
 class WorkUnitFlow:
@@ -75,7 +76,16 @@ class WorkUnitFlow:
         if prior:
             if prior["content"]["binding_ref"] != binding_ref:
                 original = self.repository.read_reference(prior["content"]["binding_ref"])
-                fixed = ("task_ref", "run_id", "models", "profile_sha256", "authorization", "scope")
+                fixed = (
+                    "task_ref",
+                    "run_id",
+                    "models",
+                    "profile_sha256",
+                    "authorization",
+                    "scope",
+                    "project_ref",
+                    "workspace_ref",
+                )
                 if any(original.get(key) != self.binding.data.get(key) for key in fixed):
                     raise FrameworkError("binding_changed_or_incompatible")
                 return self._save({**prior["content"], "binding_ref": binding_ref})
@@ -146,7 +156,11 @@ class WorkUnitFlow:
             )
             state = self._save({**state, "target_ref": target_ref, "refresh_baseline": False})
         local_execution = f"model-{state['round']:05d}"
-        if state.get("issue", {}).get("code") == "unresolved_reason_required" and state["round"]:
+        if (
+            state.get("issue", {}).get("code")
+            in {"unresolved_reason_required", "model_changes_required", "work_result_invalid"}
+            and state["round"]
+        ):
             previous = f"model-{state['round'] - 1:05d}"
             path = (
                 self.binding.root
@@ -158,14 +172,34 @@ class WorkUnitFlow:
                 original = json.loads(path.read_text())
                 try:
                     decode_work_result(
-                        original["final_response"], self.binding.data["source_manifest"]
+                        original["final_response"],
+                        self.binding.data["source_manifest"],
+                        require_changes=not self.binding.is_child,
                     )
                 except FrameworkError:
                     pass
                 else:
                     local_execution = previous
+        previous_proposal = None
+        if state.get("candidate_ref"):
+            previous = self.repository.read_reference(state["candidate_ref"])
+            if (
+                self.binding.data.get("collaboration")
+                or self.binding.data.get("work_units")
+                or self.binding.data.get("work_management")
+            ):
+                previous_proposal = {
+                    "material_ref": self.team.publish(
+                        "previous-" + digest(state["candidate_ref"])[:24],
+                        text=json.dumps(previous, ensure_ascii=False),
+                    ),
+                    "instruction": "Read this exact previous result using read_handoff_material and correct it against feedback. Preserve technical fixes already made; reassess business content against current sources and baseline.",
+                }
+            else:
+                previous_proposal = {"content": previous}
         prompt = {
             "objective": self.binding.data["objective"],
+            "previous_proposal": previous_proposal,
             "source_manifest": self.binding.data["source_manifest"],
             "actual_baseline": self.repository.read_reference(
                 state.get("target_ref", state["baseline_ref"])
@@ -196,10 +230,20 @@ class WorkUnitFlow:
                 )
             ],
             "contract": "Return the existing unified graph and explicit r4-3-025 model changes. "
+            "For every create select exactly ONE source: candidate item_id with fields=null, "
+            "OR fields with item_id=null. Never set both; do not copy candidate content into fields "
+            "while keeping its item_id. Child candidates are attributed proposals, not automatically "
+            "valid platform requests; translate their business meaning into the actual attached contract. "
+            "If candidate.business_meaning repeats semantic_definition.business_meaning, keep "
+            "the same complete string in both; these two slots merge into one output field. "
             "Return exactly one JSON object matching result_schema. Read approved sources with "
             "read_material using source_manifest keys as material_id, not filenames or source paths. "
             "actual_baseline.resource_refs contains Host-verified existing_resource_ref objects: "
             "copy their artifact_ref and path exactly when referring to an applied resource. "
+            "For an existing resource read from the governed model, you may use an existing_resource_ref "
+            "with artifact_ref='model-read:<family>:<ontology_id>' and path='/' plus its exact returned IRI. "
+            "Families are class-detail, property-list, relation-type-list or entity-detail; the Host "
+            "verifies the scoped native read and obtains its actual identity. Never derive a native ID from an IRI. "
             "receipt_item_path is provenance, not a binding-artifact path. The Host resolves these "
             "references; do not try to read artifact_ref with read_mcp_resource or read_material. "
             "Use status proposed when the complete request is ready for Host application; "
@@ -238,9 +282,11 @@ class WorkUnitFlow:
             )
         try:
             result = decode_work_result(
-                native["final_response"], self.binding.data["source_manifest"]
+                native["final_response"],
+                self.binding.data["source_manifest"],
+                require_changes=not self.binding.is_child,
             )
-            if result["status"] == "proposed":
+            if result["status"] in {"proposed", "no_change"}:
                 read_sources = {
                     (args.get("material_id"), data.get("sha256"))
                     for tool, args, data in successful_reads(
@@ -267,7 +313,8 @@ class WorkUnitFlow:
                 }
             )
         plan = self.repository.get("run:" + self.binding.data["run_id"] + ":work-plan")
-        if plan and result["status"] == "proposed":
+        pending_children = []
+        if plan:
             pending_children = [
                 unit["unit_id"]
                 for unit in plan["content"]["units"].values()
@@ -286,7 +333,7 @@ class WorkUnitFlow:
                     or work["content"]["status"] != "proposal_ready"
                 )
             ]
-            if pending_children:
+            if pending_children and result["status"] == "proposed":
                 result = {
                     **result,
                     "status": "waiting_children",
@@ -305,15 +352,20 @@ class WorkUnitFlow:
             return self._save(
                 {
                     **state,
-                    "status": "waiting_children",
+                    "status": "waiting_children" if pending_children else "ready",
                     "activity": "model",
                     "round": state["round"] + 1,
                     "execution_ref": ref,
                     "candidate_ref": candidate,
-                    "issue": {"issues": result["issues"]},
+                    "issue": {
+                        "issues": result["issues"],
+                        "instruction": "Integrate ready direct child results or delegate remaining scope; no unfinished direct children remain."
+                        if not pending_children
+                        else "Await direct child results.",
+                    },
                 }
             )
-        if self.binding.is_child and result["status"] == "proposed":
+        if self.binding.is_child and result["status"] in {"proposed", "no_change"}:
             material = self.team.publish(
                 "result-" + digest(candidate)[:24], text=json.dumps(result, ensure_ascii=False)
             )
@@ -330,6 +382,7 @@ class WorkUnitFlow:
                     "candidate_ref": candidate,
                     "execution_ref": ref,
                     "result_material_ref": material,
+                    "issue": {"issues": result["issues"]},
                 }
             )
         if result["status"] == "waiting_input":
@@ -394,8 +447,15 @@ class WorkUnitFlow:
                 **state,
                 "execution_ref": ref,
                 "candidate_ref": candidate,
-                "activity": "apply" if result["status"] == "proposed" else "model",
-                "status": "ready" if result["status"] == "proposed" else result["status"],
+                "candidate_basis_ref": state.get("target_ref", state["baseline_ref"]),
+                "activity": "apply"
+                if result["status"] == "proposed"
+                else "self_check"
+                if result["status"] == "no_change"
+                else "model",
+                "status": "ready"
+                if result["status"] in {"proposed", "no_change"}
+                else result["status"],
                 "issue": {"issues": result["issues"]},
             }
         )
@@ -495,6 +555,41 @@ class WorkUnitFlow:
             return state
         candidate = self.repository.read_reference(state["candidate_ref"])
         operation_id = f"apply-{state['round']:05d}"
+        original_operation = self.repository.get(self.binding.identity + ":" + operation_id)
+        original_intent = self.binding.root / "host" / "operations" / operation_id / "intent.json"
+        active_operation = self.control.view()["active"].get(
+            self.binding.data["work_unit_id"] + ":platform"
+        )
+        if (
+            state.get("candidate_basis_ref")
+            and not original_operation
+            and not original_intent.exists()
+            and active_operation != operation_id
+        ):
+            current = self._host("snapshot", "before-" + operation_id)
+            basis = self.repository.read_reference(state["candidate_basis_ref"])
+            if current["model_revisions"] != basis["model_revisions"]:
+                ref = self.repository.put_reference(
+                    self.binding.identity + ":drift:" + operation_id + ":" + digest(current),
+                    "model_reference",
+                    current,
+                    0,
+                )
+                return self._save(
+                    {
+                        **state,
+                        "activity": "model",
+                        "status": "ready",
+                        "round": state["round"] + 1,
+                        "target_ref": ref,
+                        "issue": {
+                            "code": "model_baseline_changed",
+                            "before": basis["model_revisions"],
+                            "after": current["model_revisions"],
+                            "instruction": "Read the changed actual model and reassess impact; do not invent its business confirmation history.",
+                        },
+                    }
+                )
         result = self._host(
             "apply",
             operation_id,
@@ -721,6 +816,16 @@ class WorkUnitFlow:
         return self._save({**state, "handoff_ref": ref, "status": "handoff_ready"})
 
     def _route(self, state):
+        plan = self.repository.get("run:" + self.binding.data["run_id"] + ":work-plan")
+        if plan:
+            generation = (
+                plan["content"]["units"].get(self.binding.actor, {}).get("generation", 0)
+                if self.binding.is_child
+                else plan["content"]["root_generation"]
+            )
+            if generation != self.binding.data.get("work_generation", 0):
+                self._save({**state, "status": "work_change_pending"})
+                return END
         pending = [
             r["content"]
             for r in self.repository.list_kind("source_change")

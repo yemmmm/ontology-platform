@@ -353,3 +353,25 @@ uv run --locked --project modeling_team/v5 python -m ontoweave_modeling input \
 可指定 `parent_id` 和分页下钻。显式重开同时使祖先重新整合，兄弟成果保留。
 
 当前真实验证及尚未证明范围见[持续开发记录](../../docs/delivery/records/2026-10-29-v5-autonomous-progression.md)。
+
+任务设置 `semantic_workspace: true` 可使用 `write_semantic_record`、`read_semantic_record`、
+`search_semantic_records`、`get_modeling_context` 保存／查找命题、解释、决定、定义、覆盖、
+未决项与摘要。依赖复制读取回执的完整 `reference`（包括 scope 和 revision）；摘要按
+这些明确依赖显示待重审，不把材料撤回判断为业务事实为假。各自的 review、cognition、
+expression、work、applicability 独立记录，应用及独立验收不由笔记赋值。
+
+Host 显式绑定 `project_ref` 后，语义记录及共享记忆工具可指定 `scope="project"`，在获准
+新任务／run 中复用同一项目的判断；默认仍为任务范围。新上下文使用 get_modeling_context
+获得有界导航，再按需读原文和完整记录，不能把摘要作为当前实际模型的证明。
+
+实际已有模型满足来源时可返回 `no_change`，不提交空写入，仍进行治理自查和独立交接。
+技术纠正会获得上版候选内容或固定版本材料引用；修原稿而非只按错误路径重建全部候选。
+原生启动前的已知失败与启动后的未知分别处理；HTTP 429 在自然边界暂停下一回合，
+仅凭 HTTP 状态不声称已确认提供商五小时窗口或重置时间。
+
+`snapshot-save --include-platform` 额外保存实际平台数据，随后可用
+`snapshot-fork --snapshot ID --new-run-dir DIR --new-run-id ID --fork-reason TEXT
+--authorization-reference REF --archive-source` 准备新项目接续。该显式操作会封存源项目。
+原任务／预算关联保持，以 workspace_ref 隔离新控制和认知记录；新 run 使用 resume 真实
+启动，重新自查和验收。普通观察快照可继续查看／比较；数据分叉需使用带平台数据的快照。
+具体取舍见[复用说明](../../docs/research/2026-10-30-v5-snapshot-fork-reuse.md)。

@@ -24,11 +24,15 @@ from .workspace import WorkspaceRepository
 def repository(binding: TaskBinding) -> tuple[WorkspaceRepository, dict]:
     config = json.loads((binding.root / "private-runtime.json").read_text())
     return WorkspaceRepository(
-        config["connection"], config["workspace_schema"], binding.data["task_ref"]
+        config["connection"],
+        config["workspace_schema"],
+        binding.data.get("workspace_ref", binding.data["task_ref"]),
     ), config
 
 
-def evaluate(binding, repo, bridge, package: Path, evaluation_id: str) -> dict:
+def evaluate(
+    binding, repo, bridge, package: Path, evaluation_id: str, required_artifacts=()
+) -> dict:
     """An independent native context with its own immutable inputs and control record."""
     safe_id(evaluation_id)
     if any(r["content"]["status"] == "queued" for r in repo.list_kind("source_change")):
@@ -38,6 +42,11 @@ def evaluate(binding, repo, bridge, package: Path, evaluation_id: str) -> dict:
         raise FrameworkError("handoff_not_ready")
     handoff = repo.read_reference(work["handoff_ref"])
     manifest = _check_sources(package)
+    if set(required_artifacts) - manifest.keys():
+        raise FrameworkError(
+            "evaluation_artifact_missing",
+            material_ids=sorted(set(required_artifacts) - manifest.keys()),
+        )
     questions = manifest.get("frozen-questions", {})
     if questions.get("sha256") != handoff["evaluation"]["sha256"]:
         raise FrameworkError("evaluation_freeze_mismatch")
@@ -132,9 +141,13 @@ def evaluate(binding, repo, bridge, package: Path, evaluation_id: str) -> dict:
             report,
             handoff,
             events,
-            required_materials={"human-inputs": manifest["human-inputs"]["sha256"]}
-            if "human-inputs" in manifest
-            else None,
+            required_materials={
+                key: manifest[key]["sha256"]
+                for key in [
+                    *(["human-inputs"] if "human-inputs" in manifest else []),
+                    *required_artifacts,
+                ]
+            },
         )
     except (ResultContractError, FrameworkError) as error:
         # Correct only report structure/reads; the independent frozen standard stays intact.
@@ -166,6 +179,7 @@ def parser() -> argparse.ArgumentParser:
         commands.append(sub.add_parser(name))
     commands[-1].add_argument("--package", type=Path, required=True)
     commands[-1].add_argument("--evaluation-id", required=True)
+    commands[-1].add_argument("--required-artifact", action="append", default=[])
     commands.append(sub.add_parser("questions", help="List durable questions and reply states"))
     commands.append(sub.add_parser("budget", help="Read and refresh the bound amount budget"))
     budget_add = sub.add_parser("budget-add", help="Apply a Host-authorized budget addition file")
@@ -177,6 +191,7 @@ def parser() -> argparse.ArgumentParser:
     commands.append(board)
     snapshot_save = sub.add_parser("snapshot-save", help="Save a named Host workflow snapshot")
     snapshot_save.add_argument("--name", required=True)
+    snapshot_save.add_argument("--include-platform", action="store_true")
     commands.append(snapshot_save)
     commands.append(sub.add_parser("snapshot-list"))
     snapshot_show = sub.add_parser("snapshot-show")
@@ -186,11 +201,26 @@ def parser() -> argparse.ArgumentParser:
     snapshot_diff.add_argument("--before", required=True)
     snapshot_diff.add_argument("--after", required=True)
     commands.append(snapshot_diff)
+    fork = sub.add_parser(
+        "snapshot-fork", help="Fork captured platform data and business context; archive source"
+    )
+    fork.add_argument("--snapshot", required=True)
+    fork.add_argument("--new-run-dir", type=Path, required=True)
+    fork.add_argument("--new-run-id", required=True)
+    fork.add_argument("--fork-reason", required=True)
+    fork.add_argument("--authorization-reference", required=True)
+    fork.add_argument("--archive-source", action="store_true")
+    commands.append(fork)
     revise = sub.add_parser(
         "source-revise", help="Queue an explicit source version and affected units"
     )
     revise.add_argument("--change-file", type=Path, required=True)
     commands.append(revise)
+    tree = sub.add_parser("work-tree", help="Read one level of the current dynamic work tree")
+    tree.add_argument("--parent-id", default="modeling")
+    tree.add_argument("--offset", type=int, default=0)
+    tree.add_argument("--limit", type=int, default=20)
+    commands.append(tree)
     for name in ("reply", "input"):
         command = sub.add_parser(name, help="Persist a human reply or unsolicited input")
         commands.append(command)
@@ -235,9 +265,36 @@ def dispatch(args) -> dict:
         )
     else:
         binding = TaskBinding.load(args.run_dir)
+    pending_path = binding.root / "fork-pending.json"
+    if (
+        args.command in {"resume", "evaluate"}
+        and pending_path.exists()
+        and json.loads(pending_path.read_text())["status"] != "ready"
+    ):
+        raise FrameworkError(
+            "fork_result_unsettled", next_action="Inspect preallocated target in fork-pending.json"
+        )
     repo, config = repository(binding)
+    from .work_plan import WorkPlan
+
+    plan = WorkPlan(binding.data, repo)
+    if repo.get(plan.identity):
+        binding = plan.binding(binding)
     control, bridge = TaskControl(repo), HostBridge(binding.root)
     human = HumanInput(binding, repo, control)
+    if args.command == "work-tree":
+        return plan.tree(args.parent_id, args.offset, args.limit)
+    if args.command == "snapshot-fork":
+        from .snapshot_fork import SnapshotFork
+
+        return SnapshotFork(binding, repo, bridge).create(
+            args.snapshot,
+            args.new_run_dir,
+            args.new_run_id,
+            args.fork_reason,
+            args.authorization_reference,
+            args.archive_source,
+        )
     if args.command == "source-revise":
         from .revisions import SourceRevisions
 
@@ -294,7 +351,7 @@ def dispatch(args) -> dict:
         snapshots = RunSnapshots(binding, repo)
         with repo.checkpointer(config["checkpoint_schema"]) as saver:
             graph = WorkUnitFlow(binding, repo, bridge, None).compile(saver)
-            return snapshots.save(args.name, graph, bridge)
+            return snapshots.save(args.name, graph, bridge, args.include_platform)
     if args.command in {"reply", "input"}:
         if getattr(args, "unit_id", None):
             human = HumanInput(binding.for_unit(args.unit_id), repo, control)
@@ -315,7 +372,14 @@ def dispatch(args) -> dict:
             raise FrameworkError("original_activity_unsettled")
         return bridge.call("cleanup")
     if args.command == "evaluate":
-        return evaluate(binding, repo, bridge, args.package.resolve(), args.evaluation_id)
+        return evaluate(
+            binding,
+            repo,
+            bridge,
+            args.package.resolve(),
+            args.evaluation_id,
+            args.required_artifact,
+        )
     repo.setup()
 
     def create_flow(selected):

@@ -28,7 +28,7 @@ def decode_json_result(message: str, schema: dict) -> dict:
     try:
         result = json.loads(message)
     except json.JSONDecodeError:
-        decoder, position, matches = json.JSONDecoder(), 0, []
+        decoder, position, matches, parsed = json.JSONDecoder(), 0, [], []
         while start := re.search(r"[\{\[]", message[position:]):
             position += start.start()
             try:
@@ -37,20 +37,26 @@ def decode_json_result(message: str, schema: dict) -> dict:
                 position += 1
                 continue
             position = end
+            parsed.append(candidate)
             try:
                 validate(instance=candidate, schema=schema)
             except ValidationError:
                 continue
             if candidate not in matches:
                 matches.append(candidate)
-        if len(matches) != 1:
+        if not matches and len(parsed) == 1:
+            result = parsed[0]
+        elif len(matches) != 1:
             raise ResultContractError("result_json_missing_or_ambiguous") from None
-        result = matches[0]
+        else:
+            result = matches[0]
     try:
         validate(instance=result, schema=schema)
     except ValidationError as exc:
         path = "/".join(str(part) for part in exc.absolute_path)
-        raise ResultContractError(f"result_schema_invalid: {path}") from None
+        raise ResultContractError(
+            f"result_schema_invalid: {path or '$'}: {exc.message[:600]}"
+        ) from None
     return result
 
 

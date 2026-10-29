@@ -1,5 +1,6 @@
 """Explicit, retained source revisions and selective work re-entry within one run."""
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -94,7 +95,8 @@ class SourceRevisions:
                 data["work_units"] = [
                     u for u in plan["content"]["units"].values() if u["status"] == "active"
                 ]
-            for version in (previous, data):
+            original = json.loads((self.binding.root / "binding.json").read_text())["binding"]
+            for version in (original, previous, data):
                 write_json(
                     self.binding.root / "binding-versions" / (digest(version) + ".json"),
                     {"digest": digest(version), "binding": version},
@@ -129,6 +131,14 @@ class SourceRevisions:
                     },
                 }
                 self.repository.put_reference(work_id, "work_unit", state, work["revision"])
+            from .semantic_workspace import SemanticWorkspace
+
+            SemanticWorkspace(self.repository, previous).invalidate_sources(
+                previous["source_manifest"],
+                change["changed_materials"],
+                change["change_id"],
+                change["affected_units"],
+            )
             self.repository.put_reference(
                 row["object_id"],
                 "source_change",
