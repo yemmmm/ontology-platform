@@ -239,6 +239,35 @@ python -m ontoweave_modeling board --run-dir /path/to/run --agent-id modeling --
 通信工具由 Agent 专属 MCP 进程执行；连接配置只挂载到受限工具环境。连接地址在 Host
 进入隔离环境前解析，沿已验证 P0 的 hostaddr 路径，避免隔离环境缺 DNS 文件导致失联。
 
+## 多工作单元子集
+
+任务可添加 `work_units` 及 `unit_concurrency`；当前支持一个父级与显式直接子级：
+
+```yaml
+unit_concurrency: 2
+work_units:
+  - unit_id: installation
+    objective: 本单元有界目标及所需人工输入
+    instructions: 可选补充说明
+  - unit_id: verification
+    objective: 可独立推进的核验范围
+```
+
+各子级使用独立工作身份、执行目录和 PostgreSQL checkpoint。子级停在 proposal_ready，
+由程序发布版本化交接材料给父级；父级按需读取原文、材料及实际人工答复后统一应用模型。
+局部 HITL 不暂停其他单元；在其他单元仍忙碌时，新答复也可恢复其目标单元。
+没有新输入时静止，resume 从原记录继续，不重放已完成候选或已确认应用。
+现有 status 返回 units；questions 显示请求单元，reply 按请求自动路由；主动补充可使用：
+
+```bash
+python -m ontoweave_modeling input --run-dir /absolute/path/run \
+  --unit-id installation --text '本单元的实际补充'
+```
+
+快照同时保留各子图 checkpoint。当前是直接子级能力，完整递归规划及大型业务收口另按
+P2 验证；[工程及真实运行记录](../../docs/delivery/records/2026-10-29-v5-multi-unit-delivery.md)
+区分已实现机制与尚待人工答复的实际父级闭环。
+
 ## 最小共享业务记忆
 
 Task 增加 `shared_memory: true` 后，生产成员可调用 `write_memory`、`read_memory`、

@@ -23,6 +23,37 @@ def test_backend_worker_reuses_mechanics_without_loading_legacy_runner(tmp_path)
         bridge.call("arbitrary_python", {"source": "print('not allowed')"})
 
 
+def test_model_tool_projection_keeps_mcp_calls_and_removes_unused_resource_facade(tmp_path):
+    bridge = HostBridge(tmp_path)
+    program = """
+from modeling_team.v5.host.worker import model_tool_projection
+tools = [
+    {"type":"namespace","name":"functions","tools":[
+        {"name":"read_mcp_resource"}, {"name":"list_mcp_resources"},
+        {"name":"mcp__workspace__read_material"}]},
+    {"name":"list_mcp_resource_templates"},
+    {"name":"mcp__workspace__read_handoff_material"},
+]
+expected = [
+    {"type":"namespace","name":"functions","tools":[
+        {"name":"mcp__workspace__read_material"}]},
+    {"name":"mcp__workspace__read_handoff_material"},
+]
+assert model_tool_projection(tools) == expected
+assert len(tools[0]["tools"]) == 3
+print("configured-tools-only")
+"""
+    process = subprocess.run(
+        [bridge.command[0], "-c", program],
+        env=bridge.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stdout.strip() == "configured-tools-only"
+
+
 def test_host_worker_compiles_once_and_preserves_frozen_plan(task_file, tmp_path):
     binding = TaskBinding.prepare(task_file, tmp_path / "run")
     bridge = HostBridge(binding.root)

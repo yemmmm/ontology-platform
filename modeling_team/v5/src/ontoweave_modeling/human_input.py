@@ -39,6 +39,8 @@ class HumanInput:
             content = row["content"]
             if content["run_id"] != self.binding.data["run_id"]:
                 continue
+            if self.binding.is_child and content["work_unit_id"] != self.unit:
+                continue
             identity = row["object_id"]
             replies = [m for m in messages if m.get("metadata", {}).get("request_id") == identity]
             resolved = self.repository.get("human-resolution:" + identity)
@@ -139,10 +141,14 @@ class HumanInput:
                     else None
                 ),
             }
-            answer = {"body": body, "metadata": metadata, "work_unit_id": self.unit}
+            answer = {
+                "body": body,
+                "metadata": metadata,
+                "work_unit_id": question["work_unit_id"] if question else self.unit,
+            }
             self.repository.put_reference(answer_id, "human_answer", answer, 0)
         queued = self.control.enqueue(
-            message_id, "input", body, self.unit, metadata=answer["metadata"]
+            message_id, "input", body, answer["work_unit_id"], metadata=answer["metadata"]
         )
         return {"message": queued, "request_id": request_id}
 
@@ -169,7 +175,16 @@ class HumanInput:
                 }
                 for m in self.control.view()["messages"]
                 if m["kind"] == "input"
-                and m["target"] in {None, self.unit}
+                and m["target"]
+                in {
+                    None,
+                    self.unit,
+                    *(
+                        u["unit_id"]
+                        for u in self.binding.data.get("work_units", [])
+                        if not self.binding.is_child
+                    ),
+                }
                 and m.get("metadata", {}).get("source") == "user"
                 and m.get("metadata", {}).get("run_id") in {None, self.binding.data["run_id"]}
             ],

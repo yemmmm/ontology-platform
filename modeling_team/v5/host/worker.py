@@ -28,6 +28,23 @@ READ_TOOLS = (
 )
 
 
+def model_tool_projection(items):
+    """Expose the configured MCP tools, without Codex's unused generic resource facade."""
+    result = []
+    for item in items:
+        if item.get("type") == "namespace":
+            nested = model_tool_projection(item["tools"])
+            if nested:
+                result.append({**item, "tools": nested})
+        elif item.get("name") not in {
+            "list_mcp_resources",
+            "list_mcp_resource_templates",
+            "read_mcp_resource",
+        }:
+            result.append(item)
+    return result
+
+
 class PlatformWorker:
     def __init__(self, binding: TaskBinding):
         self.binding = binding
@@ -304,7 +321,7 @@ def provider(binding, payload):
     from ontoweave_modeling.team import TEAM_TOOLS
 
     allowed_tools = {"read_material", "query_semantic_context"}
-    if role == "modeling" and binding.data.get("collaboration"):
+    if role == "modeling" and (binding.data.get("collaboration") or binding.data.get("work_units")):
         allowed_tools.update(TEAM_TOOLS)
     if role == "modeling" and binding.data.get("shared_memory"):
         allowed_tools.update(MEMORY_TOOLS)
@@ -329,6 +346,11 @@ def provider(binding, payload):
     )
 
     class BoundProvider(ResponsesProviderSession):
+        def forward(self, body):
+            request = json.loads(body)
+            request["tools"] = model_tool_projection(request.get("tools", []))
+            return super().forward(json.dumps(request).encode())
+
         def admit_attempt(self, receipt, *, request=None):
             allowed = {"mcp__workspace__" + tool for tool in tools} | {
                 "list_mcp_resources",

@@ -60,7 +60,7 @@ class WorkUnitFlow:
         self.control = TaskControl(repository)
         self.executions = ExecutionManager(repository, self.control, binding)
         self.human = HumanInput(binding, repository, self.control)
-        self.team = TeamChannel(binding.data, repository, self.control)
+        self.team = TeamChannel(binding.data, repository, self.control, binding.actor)
         self.work_id = binding.identity + ":work"
 
     def initialize(self) -> dict:
@@ -116,7 +116,7 @@ class WorkUnitFlow:
         state = self._fresh(state)
         if state["activity"] != "prepare":
             return state
-        baseline = self._host("prepare_scope", "prepare")
+        baseline = self._host("snapshot" if self.binding.is_child else "prepare_scope", "prepare")
         ref = self.repository.put_reference(
             self.binding.identity + ":baseline", "model_reference", baseline, 0
         )
@@ -139,6 +139,25 @@ class WorkUnitFlow:
                 0,
             )
             state = self._save({**state, "target_ref": target_ref, "refresh_baseline": False})
+        local_execution = f"model-{state['round']:05d}"
+        if state.get("issue", {}).get("code") == "unresolved_reason_required" and state["round"]:
+            previous = f"model-{state['round'] - 1:05d}"
+            path = (
+                self.binding.root
+                / "executions"
+                / self.binding.execution_id(previous)
+                / "result.json"
+            )
+            if path.exists():
+                original = json.loads(path.read_text())
+                try:
+                    decode_work_result(
+                        original["final_response"], self.binding.data["source_manifest"]
+                    )
+                except FrameworkError:
+                    pass
+                else:
+                    local_execution = previous
         prompt = {
             "objective": self.binding.data["objective"],
             "source_manifest": self.binding.data["source_manifest"],
@@ -156,6 +175,21 @@ class WorkUnitFlow:
             "result_schema": WORK_RESULT_SCHEMA,
             "human_context": self.human.context(),
             "team_members": sorted(self.team.members),
+            "child_results": [
+                {
+                    "unit_id": unit["unit_id"],
+                    "objective": unit["objective"],
+                    "material_ref": row["content"].get("result_material_ref"),
+                    "status": row["content"]["status"],
+                }
+                for unit in self.binding.data.get("work_units", [])
+                if not self.binding.is_child
+                and (
+                    row := self.repository.get(
+                        self.binding.for_unit(unit["unit_id"]).identity + ":work"
+                    )
+                )
+            ],
             "contract": "Return the existing unified graph and explicit r4-3-025 model changes. "
             "Return exactly one JSON object matching result_schema. Read approved sources with "
             "read_material using source_manifest keys as material_id, not filenames or source paths. "
@@ -181,7 +215,7 @@ class WorkUnitFlow:
             "do not repeat an unchanged pending question. Reassess old replies against the actual baseline.",
         }
         ref = self.executions.run(
-            f"model-{state['round']:05d}",
+            local_execution,
             "modeling",
             json.dumps(prompt),
             self.invoke,
@@ -207,7 +241,7 @@ class WorkUnitFlow:
                     for tool, args, data in successful_reads(
                         self.binding.root
                         / "executions"
-                        / f"model-{state['round']:05d}"
+                        / self.binding.execution_id(local_execution)
                         / "agent/events.jsonl"
                     )
                     if tool == "read_material" and "text" in data
@@ -233,6 +267,25 @@ class WorkUnitFlow:
             result,
             0,
         )
+        if self.binding.is_child and result["status"] == "proposed":
+            material = self.team.publish(
+                "result-" + digest(candidate)[:24], text=json.dumps(result, ensure_ascii=False)
+            )
+            self.team.send(
+                "modeling",
+                "Child proposal is ready for parent semantic integration.",
+                "result-" + digest(candidate)[:24],
+                material_refs=[material],
+            )
+            return self._save(
+                {
+                    **state,
+                    "status": "proposal_ready",
+                    "candidate_ref": candidate,
+                    "execution_ref": ref,
+                    "result_material_ref": material,
+                }
+            )
         if result["status"] == "waiting_input":
             waiting = self._wait_for_human(
                 {
@@ -308,7 +361,7 @@ class WorkUnitFlow:
             next_activity = state.get("peer_next", "model")
             if next_activity == "wait_input":
                 return self._save({**state, "activity": "wait_input", "status": "waiting_input"})
-            if self.team.pending("modeling") or self.human.pending(
+            if self.team.pending(self.binding.actor) or self.human.pending(
                 "self_check" if next_activity == "self_check" else "model"
             ):
                 next_activity = "self_check" if next_activity == "self_check" else "model"
@@ -332,7 +385,12 @@ class WorkUnitFlow:
             "peer_round"
         ):
             previous_id = f"peer-{actor}-{state['peer_round'] - 1:05d}"
-            previous_path = self.binding.root / "executions" / previous_id / "result.json"
+            previous_path = (
+                self.binding.root
+                / "executions"
+                / self.binding.execution_id(previous_id)
+                / "result.json"
+            )
             if previous_path.exists():
                 previous = json.loads(previous_path.read_text())
                 try:
@@ -479,7 +537,10 @@ class WorkUnitFlow:
         try:
             result = decode_json_result(native["final_response"], SELF_CHECK_SCHEMA)
             require_governed_read(
-                self.binding.root / "executions" / execution_id / "agent/events.jsonl",
+                self.binding.root
+                / "executions"
+                / self.binding.execution_id(execution_id)
+                / "agent/events.jsonl",
                 target["model_revisions"],
             )
             self._confirm_inputs(ref, result)
@@ -634,6 +695,12 @@ class WorkUnitFlow:
         state = self.initialize()
         if state["status"] == "handoff_ready":
             return state
+        if state["status"] == "proposal_ready":
+            if not self.human.pending("model"):
+                return state
+            state = self._save(
+                {**state, "status": "ready", "activity": "model", "round": state["round"] + 1}
+            )
         if self.control.synchronize()["mode"] == "stopped":
             return self._save({**state, "status": "stopped"})
         if state["status"] == "waiting_input" and state["activity"] != "wait_input":
@@ -653,7 +720,7 @@ class WorkUnitFlow:
             state = self._save({**state, "status": "waiting_input"})
         graph = self.compile(checkpointer)
         config = {
-            "configurable": {"thread_id": self.binding.data["run_id"]},
+            "configurable": {"thread_id": self.binding.thread_id},
             "recursion_limit": 100,
         }
         try:

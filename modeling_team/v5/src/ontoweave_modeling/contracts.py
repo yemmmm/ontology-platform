@@ -104,12 +104,28 @@ class TaskBinding:
             "scope",
             "evaluation",
         }
-        if not isinstance(task, dict) or set(task) - {"collaboration", "shared_memory"} != required:
+        if (
+            not isinstance(task, dict)
+            or set(task) - {"collaboration", "shared_memory", "work_units", "unit_concurrency"}
+            != required
+        ):
             raise FrameworkError("task_schema_mismatch", required=sorted(required))
         if task["schema_version"] != "ontoweave-task/v1":
             raise FrameworkError("task_schema_mismatch")
         for field in ("task_ref", "run_id", "work_unit_id"):
             safe_id(task[field])
+        units = task.get("work_units", [])
+        unit_ids = [safe_id(unit["unit_id"]) for unit in units]
+        if len(set(unit_ids)) != len(unit_ids) or set(unit_ids) & {
+            "modeling",
+            "acceptance",
+            task["work_unit_id"],
+        }:
+            raise FrameworkError("work_unit_identity_conflict")
+        if any(not unit.get("objective") for unit in units):
+            raise FrameworkError("work_unit_objective_required")
+        if type(task.get("unit_concurrency", 2)) is not int or task.get("unit_concurrency", 2) < 1:
+            raise FrameworkError("unit_concurrency_invalid")
         if "collaboration" in task:
             peers = task["collaboration"].get("peers", [])
             if not peers or len({p["agent_id"] for p in peers}) != len(peers):
@@ -201,7 +217,37 @@ class TaskBinding:
 
     @property
     def identity(self) -> str:
-        return f"run:{self.data['run_id']}"
+        identity = f"run:{self.data['run_id']}"
+        return identity + ":unit:" + self.data["_unit_id"] if self.is_child else identity
+
+    @property
+    def is_child(self) -> bool:
+        return "_unit_id" in self.data
+
+    @property
+    def actor(self) -> str:
+        return self.data.get("_unit_id", "modeling")
+
+    @property
+    def thread_id(self) -> str:
+        return self.identity if self.is_child else self.data["run_id"]
+
+    def execution_id(self, local_id: str) -> str:
+        return self.data["_unit_id"] + "--" + local_id if self.is_child else local_id
+
+    def for_unit(self, unit_id: str) -> TaskBinding:
+        unit = next(unit for unit in self.data["work_units"] if unit["unit_id"] == unit_id)
+        return TaskBinding(
+            self.root,
+            {
+                **self.data,
+                "_unit_id": unit_id,
+                "_parent_work_unit_id": self.data["work_unit_id"],
+                "work_unit_id": unit_id,
+                "objective": unit["objective"],
+                "instructions": self.data["instructions"] + "\n" + unit.get("instructions", ""),
+            },
+        )
 
 
 HUMAN_REQUESTS_SCHEMA = {
@@ -286,7 +332,7 @@ def decode_work_result(message: str, manifest: dict) -> dict:
             raise FrameworkError("model_changes_required")
         if not result["source_refs"]:
             raise FrameworkError("source_references_required")
-    elif result["status"] != "waiting_peer" and not result["issues"]:
+    elif result["status"] == "recoverable_issue" and not result["issues"]:
         raise FrameworkError("unresolved_reason_required")
     return result
 

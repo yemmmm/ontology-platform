@@ -75,6 +75,21 @@ def test_healthy_peer_wait_does_not_need_an_invented_issue():
         decode_work_result(json.dumps(value), {})
 
 
+def test_structured_human_question_already_contains_its_reason():
+    value = {
+        "status": "waiting_input",
+        "candidate": None,
+        "changes": None,
+        "source_refs": [],
+        "issues": [],
+        "consumed_ids": [],
+        "human_requests": [
+            {"question": "Which name?", "reason": "Name is unresolved", "impact": "This concept"}
+        ],
+    }
+    assert decode_work_result(json.dumps(value), {}) == value
+
+
 def test_versioned_references_do_not_follow_current_business_revision(workspace):
     original = workspace.put_reference("candidate", "candidate", {"text": "first"}, 0)
     workspace.put_reference("candidate", "candidate", {"text": "second"}, 1)

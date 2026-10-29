@@ -75,6 +75,16 @@ class RunSnapshots:
             "capture_note": "Components are read observations with their own versions; "
             "this is not a cross-store transaction or a model rollback.",
         }
+        if self.binding.data.get("work_units"):
+            snapshot["workflow"]["units"] = {}
+            for unit in self.binding.data["work_units"]:
+                selected = self.binding.for_unit(unit["unit_id"])
+                child = graph.get_state({"configurable": {"thread_id": selected.thread_id}})
+                snapshot["workflow"]["units"][unit["unit_id"]] = {
+                    "checkpoint_config": child.config,
+                    "values": child.values,
+                    "next": list(child.next),
+                }
         self.root.mkdir(mode=0o700, exist_ok=True)
         path = self.root / (snapshot["snapshot_id"] + ".json")
         write_json(path, snapshot)

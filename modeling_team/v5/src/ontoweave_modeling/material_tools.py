@@ -181,7 +181,7 @@ def material_server(
 
         scope = json.loads(team_config.read_text())
         repo = WorkspaceRepository(scope["connection"], scope["schema"], scope["task"]["task_ref"])
-        if scope["task"].get("collaboration"):
+        if scope["task"].get("collaboration") or scope["task"].get("work_units"):
             register_team_tools(
                 server, TeamChannel(scope["task"], repo, TaskControl(repo), scope["actor"], root)
             )

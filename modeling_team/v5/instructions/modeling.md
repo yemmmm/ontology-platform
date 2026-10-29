@@ -51,7 +51,9 @@ cannot repair the Host environment; retain the work and wait for technical repai
 
 When human input is required, return `waiting_input` with `human_requests`, each
 containing `question`, `reason`, and `impact`. The program persists these questions
-and enters a durable LangGraph wait after the native turn ends. Reuse unresolved
+and does not require repeating their reason in issues; issues may be empty for a
+normal clarification wait. The workflow enters a durable LangGraph wait after the
+native turn ends. Reuse unresolved
 questions from `human_context` rather than repeating them. Human answers retain
 their author, request/version and baseline; reassess their applicability against
 the current model. Consume only actual queued message IDs. Use

@@ -64,6 +64,7 @@ class ExecutionManager:
         *,
         resume_original: bool = False,
     ) -> dict:
+        execution_id = self.binding.execution_id(execution_id)
         safe_id(execution_id)
         root = self.binding.root / "executions" / execution_id
         record_id = f"{self.binding.identity}:execution:{execution_id}"
@@ -196,9 +197,11 @@ class CodexInvocation:
         team_config = None
         instructions = self.instructions
         if role == "modeling" and (
-            self.binding.data.get("collaboration") or self.binding.data.get("shared_memory")
+            self.binding.data.get("collaboration")
+            or self.binding.data.get("shared_memory")
+            or self.binding.data.get("work_units")
         ):
-            if self.binding.data.get("collaboration"):
+            if self.binding.data.get("collaboration") or self.binding.data.get("work_units"):
                 tools += TEAM_TOOLS
             if self.binding.data.get("shared_memory"):
                 tools += MEMORY_TOOLS
@@ -215,11 +218,11 @@ class CodexInvocation:
                         "schema": private["workspace_schema"],
                         "actor": purpose.removeprefix("peer:")
                         if purpose.startswith("peer:")
-                        else "modeling",
+                        else self.binding.actor,
                     }
                 )
             )
-            if self.binding.data.get("collaboration"):
+            if self.binding.data.get("collaboration") or self.binding.data.get("work_units"):
                 instructions += (
                     "\nUse team tools for signed work cards, peer messages and frozen materials. "
                     "Queued is not read. Ordinary text and material refs are separate. "
@@ -229,6 +232,13 @@ class CodexInvocation:
                     "To await a peer, return waiting_peer; never ask the human to forward peer messages."
                     " On a persistent infrastructure tool error, end this turn with recoverable_issue "
                     "and the exact blocker; repeated identical tool retries cannot repair Host infrastructure."
+                )
+            if self.binding.is_child:
+                instructions += (
+                    " You own this child work unit only. Return its source-grounded proposed "
+                    "changes for the parent to integrate; the program will publish your complete "
+                    "result as a versioned handoff material. Do not claim application or full-task "
+                    "completion. Ask missing business input using the supplied HITL result contract."
                 )
             if purpose.startswith("peer:"):
                 instructions = (

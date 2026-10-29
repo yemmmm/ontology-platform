@@ -193,6 +193,8 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--message-id", default=None)
         command.add_argument("--author", default="user")
         command.add_argument("--partial", action="store_true")
+        if name == "input":
+            command.add_argument("--unit-id")
         if name == "reply":
             command.add_argument("--request-id", required=True)
             command.add_argument("--request-revision", type=int)
@@ -246,6 +248,11 @@ def dispatch(args) -> dict:
             "work": row["content"] if row else None,
             "control": control.view(),
             "budget": budget,
+            "units": {
+                unit["unit_id"]: row["content"] if row else None
+                for unit in binding.data.get("work_units", [])
+                for row in [repo.get(binding.for_unit(unit["unit_id"]).identity + ":work")]
+            },
         }
     if args.command == "questions":
         return {"questions": human.requests()}
@@ -261,6 +268,8 @@ def dispatch(args) -> dict:
             graph = WorkUnitFlow(binding, repo, bridge, None).compile(saver)
             return snapshots.save(args.name, graph, bridge)
     if args.command in {"reply", "input"}:
+        if getattr(args, "unit_id", None):
+            human = HumanInput(binding.for_unit(args.unit_id), repo, control)
         text = args.text if args.text is not None else args.text_file.read_text()
         return human.submit(
             text,
@@ -280,7 +289,12 @@ def dispatch(args) -> dict:
     if args.command == "evaluate":
         return evaluate(binding, repo, bridge, args.package.resolve(), args.evaluation_id)
     repo.setup()
-    flow = WorkUnitFlow(binding, repo, bridge, CodexInvocation(binding, bridge))
+    if binding.data.get("work_units"):
+        from .multi_unit import MultiUnitFlow
+
+        flow = MultiUnitFlow(binding, repo, bridge, config["checkpoint_schema"])
+    else:
+        flow = WorkUnitFlow(binding, repo, bridge, CodexInvocation(binding, bridge))
     if args.command == "start" and args.prepare_only:
         return {"status": "prepared", "work": flow.initialize()}
     if args.command == "resume":
@@ -292,6 +306,8 @@ def dispatch(args) -> dict:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise FrameworkError("run_already_active") from error
+        if binding.data.get("work_units"):
+            return flow.advance()
         with repo.checkpointer(config["checkpoint_schema"]) as saver:
             return flow.advance(saver)
 
