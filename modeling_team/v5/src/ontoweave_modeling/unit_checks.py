@@ -13,6 +13,14 @@ from .team import TeamChannel
 from .work_plan import WorkPlan
 
 
+def pending_check_units(checks):
+    return [
+        check["unit_id"]
+        for check in checks
+        if check.get("status") == "work_change_pending" or check["result"]["status"] != "ready"
+    ]
+
+
 def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
     current_binding = WorkPlan(binding.data, repository).binding(binding)
     if unit_id not in {u["unit_id"] for u in current_binding.data["work_units"]}:
@@ -28,6 +36,20 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
     ):
         raise FrameworkError("unit_check_not_ready", unit_id=unit_id)
     work = row["content"]
+    proposal = repository.read_reference(work["candidate_ref"])
+    requested = proposal.get("review_units", [])
+    if set(requested) - {unit["unit_id"] for unit in selected.direct_units}:
+        raise FrameworkError("unit_check_scope_forbidden", unit_id=unit_id)
+    child_checks = [
+        check_unit(current_binding, repository, bridge, child, invoke=invoke) for child in requested
+    ]
+    if pending := pending_check_units(child_checks):
+        return {
+            "unit_id": unit_id,
+            "status": "work_change_pending",
+            "pending_units": pending,
+            "child_checks": child_checks,
+        }
     target = bridge.call("snapshot")
     basis = {
         "candidate_ref": work.get("candidate_ref"),
@@ -35,6 +57,13 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
         "work_generation": selected.data.get("work_generation", 0),
         "model_revisions": target["model_revisions"],
     }
+    if child_checks:
+        basis["child_check_refs"] = {
+            child: repository.get(current_binding.for_unit(child).identity + ":work")["content"][
+                "local_self_check_ref"
+            ]
+            for child in requested
+        }
     identity = selected.identity + ":unit-check:" + digest(basis)
     prior = repository.get(identity)
     if prior:
@@ -51,7 +80,11 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
         "objective": selected.data["objective"],
         "source_manifest": selected.data["source_manifest"],
         "assigned_material_ids": selected.data.get("assigned_material_ids", []),
-        "own_proposal": repository.read_reference(work["candidate_ref"]),
+        "own_proposal": proposal,
+        "child_self_checks": [
+            {key: check[key] for key in ("unit_id", "result", "governed_read_material_ref")}
+            for check in child_checks
+        ],
         "human_context": HumanInput(selected, repository, TaskControl(repository)).context(),
         "actual_target": {k: target[k] for k in ("project_id", "ontology_ids", "model_revisions")},
         "workspace_context": workspace_context,
@@ -165,6 +198,7 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
         metadata={
             "source": "agent",
             "author": selected.actor,
+            "phase": "self_check",
             "recipient": parent,
             "run_id": selected.data["run_id"],
             "material_refs": [material, read_ref],

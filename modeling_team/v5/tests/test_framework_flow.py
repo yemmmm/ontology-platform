@@ -514,3 +514,53 @@ def test_source_read_feedback_names_missing_material_and_can_resume(binding, wor
     final = WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)
     assert final["status"] == "handoff_ready" and len(platform.effects) == 1
     assert prompts[1]["feedback"]["material_ids"] == ["source"]
+
+
+def test_work_tree_child_wait_does_not_require_a_static_peer_roster(binding, workspace, saver):
+    binding.data["work_units"] = [{"unit_id": "local", "objective": "Delegated meaning"}]
+    platform = Platform()
+    actor = Actor(binding, platform)
+
+    def waiting(*args):
+        native = actor(*args)
+        result = json.loads(native["final_response"])
+        result.update(status="waiting_peer", changes=None, issues=["Await original child result"])
+        native["final_response"] = json.dumps(result)
+        return native
+
+    flow = WorkUnitFlow(binding, workspace, platform, waiting)
+    first = flow.advance(saver)
+    assert first["status"] == "waiting_peer"
+    assert flow.advance(saver)["status"] == "waiting_peer"
+    assert actor.calls == ["modeling"] and not platform.effects
+
+
+def test_input_arriving_during_final_check_is_delivered_before_handoff(binding, workspace, saver):
+    platform = Platform()
+    actor = Actor(binding, platform)
+    control = TaskControl(workspace)
+    model_inputs = []
+    added = False
+
+    def invoke(root, purpose, prompt, inputs):
+        nonlocal added
+        native = actor(root, purpose, prompt, inputs)
+        result = json.loads(native["final_response"])
+        result["consumed_ids"] = [item["id"] for item in inputs]
+        if purpose == "modeling":
+            model_inputs.append(result["consumed_ids"])
+            if added:
+                result.update(status="no_change", candidate=None, changes=None)
+        elif not added:
+            control.enqueue(
+                "new-child-result", "input", "New scoped result", binding.data["work_unit_id"]
+            )
+            added = True
+        native["final_response"] = json.dumps(result)
+        return native
+
+    result = WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)
+    assert result["status"] == "handoff_ready"
+    assert model_inputs == [[], ["new-child-result"]]
+    assert len(platform.effects) == 1
+    assert control.view()["messages"][0]["status"] == "consumed"

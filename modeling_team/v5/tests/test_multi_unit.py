@@ -248,3 +248,37 @@ def test_local_hitl_wait_sibling_progress_restart_and_parent_single_apply(
             connection.execute(
                 sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(namespace))
             )
+
+
+def test_scheduler_does_not_start_model_over_an_active_original_unit_check(binding, workspace):
+    from ontoweave_modeling.flow import WorkUnitFlow
+
+    binding.data["work_units"] = [{"unit_id": "local", "objective": "Original local scope"}]
+    platform = Platform()
+    original = platform.call
+    platform.call = lambda action, payload=None: (
+        {"config_ref": "read-config"} if action == "read_config" else original(action, payload)
+    )
+    parent = WorkUnitFlow(binding, workspace, platform, None)
+    parent._save(
+        {
+            **parent.initialize(),
+            "status": "waiting_input",
+            "activity": "wait_input",
+            "resume_activity": "model",
+        }
+    )
+    child = WorkUnitFlow(binding.for_unit("local"), workspace, platform, None)
+    child._save({**child.initialize(), "status": "ready"})
+    control = TaskControl(workspace)
+    control.enqueue("new-local-input", "input", "Retain until the existing turn ends", "local")
+    control.begin_activity("local", "original-check-in-progress")
+    result = MultiUnitFlow(
+        binding,
+        workspace,
+        platform,
+        "v5_check_" + workspace.schema,
+        invoke_factory=lambda selected: Actor(selected, platform),
+    ).advance()
+    assert result["units"]["local"]["status"] == "ready"
+    assert control.view()["active"] == {"local": "original-check-in-progress"}

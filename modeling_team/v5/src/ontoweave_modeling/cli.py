@@ -120,7 +120,10 @@ def evaluate(
         model_revisions=handoff["target"]["model_revisions"],
         instructions="You are an independent read-only semantic evaluator. Read the original sources, "
         "every frozen case, target and any human-inputs using read_material; query the actual "
-        "governed model. Read each source_ids entry directly in this turn even if artifacts "
+        "governed model. Explicitly read_material with material_id=frozen-questions before "
+        "interpreting case indices. Preserve each original case's numbering and scope; do not "
+        "replace workflow/evidence questions with your own model-content checklist. "
+        "Read each source_ids entry directly in this turn even if artifacts "
         "quote it; copied excerpts do not replace the original-source read. "
         "Before reporting, directly read every required_artifacts entry in this turn, including "
         "each workspace/history chunk; other artifacts quoting it do not replace that read. "
@@ -133,6 +136,16 @@ def evaluate(
         "confirmed model omissions; sources cannot fill missing model facts. "
         "For modeled relationships, verify actual endpoints resolve to the intended actual "
         "resources; correct definition text alone does not prove valid topology. "
+        "For relation-type-list exact reads use the relation IRI itself as entity, not its source "
+        "Class IRI; a zero-item response does not verify that relation or its endpoints. "
+        "For workflow claims, match the exact proof's unit, generation, model revision and native "
+        "purpose to the same incident and stage. An older ready/revise check cannot prove a later "
+        "fault was detected or rechecked. A modeling proposal is not a self_check execution. "
+        "Keep observer identity explicit: a Host-collected observation is not an original unit's "
+        "read. Attribute an Agent read only to its matching native execution and proof. "
+        "A parent's requested or promised bottom-up check does not prove an intermediate declared "
+        "or actually executed its leaf checks. Verify the precise referenced proofs and timelines; "
+        "preserve missing evidence as a gap and decide each case from its frozen criterion. "
         "Count distinct resource IRIs; several change IDs may reference the same actual resource. "
         "Keep questions, answers and private reasons private. Return exactly one valid JSON object "
         "matching result_schema, without Markdown or narration. Escape quotation marks inside strings.",
@@ -146,7 +159,10 @@ def evaluate(
             "required_artifacts": list(required_artifacts),
             "artifact_contract": "Read required artifacts as scoped targets or attributed subordinate reports. They cannot supply facts missing from the actual model. Judge overall conditions independently, not by adding subordinate PASS scores.",
             "materials": list(manifest),
-            "source_ids": list(handoff["source_revisions"]),
+            "source_ids": [
+                *handoff["source_revisions"],
+                *(["human-inputs"] if "human-inputs" in manifest else []),
+            ],
             "target": handoff["target"],
             "evaluation": handoff["evaluation"],
             "result_schema": REPORT_SCHEMA,

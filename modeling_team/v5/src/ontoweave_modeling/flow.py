@@ -25,7 +25,7 @@ from .human_input import HumanInput
 from .results import ResultContractError, decode_json_result
 from .semantic_workspace import SemanticWorkspace
 from .team import TeamChannel
-from .unit_checks import check_unit
+from .unit_checks import check_unit, pending_check_units
 from .workspace import WorkspaceRepository
 
 
@@ -280,6 +280,9 @@ class WorkUnitFlow:
             "Every source_refs entry must match a read_material read in this native turn; "
             "earlier reads or unchanged source versions do not count for that declaration. "
             "Cite only the exact materials actually read here. "
+            "When incorporating ready direct-child meanings, declare needed original-owner "
+            "actual-model checks in review_units. They run after application/no_change and "
+            "before your overall self-check; only select incorporated, ready direct children. "
             "actual_baseline.resource_refs contains Host-verified existing_resource_ref objects: "
             "copy their artifact_ref and path exactly when referring to an applied resource. "
             "For an existing resource read from the governed model, you may use an existing_resource_ref "
@@ -345,13 +348,19 @@ class WorkUnitFlow:
                     )
                     if tool == "read_material" and "text" in data
                 }
-                missing_sources = sorted({
-                    r["material_id"]
-                    for r in result["source_refs"]
-                    if (r["material_id"], r["sha256"]) not in read_sources
-                })
+                missing_sources = sorted(
+                    {
+                        r["material_id"]
+                        for r in result["source_refs"]
+                        if (r["material_id"], r["sha256"]) not in read_sources
+                    }
+                )
                 if missing_sources:
                     raise FrameworkError("source_read_missing", material_ids=missing_sources)
+            if set(result.get("review_units", [])) - {
+                unit["unit_id"] for unit in self.binding.direct_units
+            }:
+                raise FrameworkError("unit_check_scope_forbidden")
             self._confirm_inputs(ref, result)
         except FrameworkError as error:
             return self._save(
@@ -442,14 +451,6 @@ class WorkUnitFlow:
         if result["status"] == "waiting_peer" or any(
             self.team.pending(actor) for actor in self.team.peers
         ):
-            if not self.team.peers:
-                return self._save(
-                    {
-                        **state,
-                        "status": "recoverable_issue",
-                        "issue": {"code": "team_not_configured"},
-                    }
-                )
             return self._save(
                 {
                     **state,
@@ -659,10 +660,42 @@ class WorkUnitFlow:
             )
         return self._save({**state, "activity": "self_check", "operation_ref": ref})
 
+    def _review_children(self, state, units):
+        try:
+            checks = [
+                check_unit(self.binding, self.repository, self.bridge, unit) for unit in units
+            ]
+        except FrameworkError as error:
+            if error.code in {"task_not_running", "execution_not_admitted"}:
+                raise
+            correct_selection = error.code in {"unit_check_not_ready", "unit_check_scope_forbidden"}
+            return self._save(
+                {
+                    **state,
+                    "activity": "model" if correct_selection else "self_check",
+                    "status": "ready" if correct_selection else "recoverable_issue",
+                    "round": state["round"] + int(correct_selection),
+                    "issue": error.as_dict(),
+                }
+            )
+        if pending := pending_check_units(checks):
+            return self._save(
+                {
+                    **state,
+                    "activity": "model",
+                    "status": "work_change_pending",
+                    "issue": {"code": "local_self_check_rework", "units": pending},
+                }
+            )
+        return None
+
     def _self_check(self, state):
         state = self._fresh(state)
         if state["activity"] != "self_check":
             return state
+        proposal = self.repository.read_reference(state["candidate_ref"])
+        if review := self._review_children(state, proposal.get("review_units", [])):
+            return review
         target = self._host("snapshot", f"snapshot-{state['round']:05d}")
         target_ref = self.repository.put_reference(
             f"{self.binding.identity}:target:{state['round']}:{digest(target)}",
@@ -807,26 +840,12 @@ class WorkUnitFlow:
             )
         if result["status"] == "revise":
             return self._save({**update, "activity": "model", "round": state["round"] + 1})
-        checks = [
-            check_unit(self.binding, self.repository, self.bridge, unit)
-            for unit in result.get("review_units", [])
-        ]
-        if any(check["result"]["status"] != "ready" for check in checks):
-            return self._save(
-                {
-                    **update,
-                    "activity": "model",
-                    "status": "work_change_pending",
-                    "issue": {
-                        "code": "local_self_check_rework",
-                        "units": [
-                            check["unit_id"]
-                            for check in checks
-                            if check["result"]["status"] != "ready"
-                        ],
-                    },
-                }
-            )
+        if review := self._review_children({**state, **update}, result.get("review_units", [])):
+            return review
+        if result["status"] == "ready" and (
+            reentry := self._new_inputs_before_handoff({**state, **update})
+        ):
+            return reentry
         if result["status"] == "ready" and (pending := self._pending_children()):
             return self._save(
                 {
@@ -891,11 +910,36 @@ class WorkUnitFlow:
             {**state, "activity": phase, "status": "ready", "refresh_baseline": phase == "model"}
         )
 
+    def _new_inputs_before_handoff(self, state):
+        pending = self.human.pending("model")
+        if not pending:
+            return None
+        return self._save(
+            {
+                **state,
+                "activity": "model",
+                "status": "ready",
+                "round": state["round"] + 1,
+                "refresh_baseline": True,
+                "issue": {
+                    "code": "new_inputs_before_handoff",
+                    "input_ids": [item["id"] for item in pending],
+                    "instruction": "New scoped inputs remain to be assessed before handoff. "
+                    "Read them in the next model turn; reuse valid applied work and do not "
+                    "equate a safe partial-group check with whole-objective completion.",
+                },
+            }
+        )
+
     def _handoff(self, state):
         state = self._fresh(state)
         if state["activity"] != "handoff":
             return state
+        if reentry := self._new_inputs_before_handoff(state):
+            return reentry
         target = self._host("finalize", "finalize")
+        if reentry := self._new_inputs_before_handoff(state):
+            return reentry
         if (
             target["model_revisions"]
             != self.repository.read_reference(state["target_ref"])["model_revisions"]

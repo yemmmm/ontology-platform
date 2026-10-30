@@ -96,6 +96,8 @@ class MultiUnitFlow:
                         marker = (flow.binding.data.get("work_generation", 0), frozenset(incoming))
                         if (
                             actor in busy
+                            or flow.binding.data["work_unit_id"] in control["active"]
+                            or flow.binding.data["work_unit_id"] + ":platform" in control["active"]
                             or seen.get(actor) == marker
                             or state["status"] == "handoff_ready"
                         ):

@@ -171,10 +171,11 @@ def test_parent_requests_original_child_read_back_before_handoff(
 
     def parent(*args):
         native = parent_actor(*args)
+        result = json.loads(native["final_response"])
+        result["consumed_ids"] = [item["id"] for item in args[3]]
         if args[1] == "self_check":
-            result = json.loads(native["final_response"])
             result["review_units"] = ["local"]
-            native["final_response"] = json.dumps(result)
+        native["final_response"] = json.dumps(result)
         return native
 
     monkeypatch.setattr(
@@ -234,3 +235,150 @@ def test_child_prompt_keeps_proposal_and_actual_check_roles_separate(
     CodexInvocation(selected, Bridge())(root, purpose, "Only this phase", [])
     assert ("changes may be null because" in observed[0]) == (purpose == "modeling")
     assert ("not proposing" in observed[0]) == (purpose == "self_check")
+
+
+def test_declared_local_checks_run_before_parent_semantic_check(
+    binding, workspace, saver, monkeypatch
+):
+    import ontoweave_modeling.flow as flow_module
+
+    selected, platform = proposed_child(binding, workspace, saver)
+    parent_actor, child_actor = Actor(binding, platform), Actor(selected, platform)
+    order = []
+
+    def child(*args):
+        order.append("local-check")
+        return child_actor(*args)
+
+    def parent(*args):
+        native = parent_actor(*args)
+        result = json.loads(native["final_response"])
+        result["consumed_ids"] = [item["id"] for item in args[3]]
+        if args[1] == "modeling":
+            result["review_units"] = ["local"]
+        else:
+            order.append("parent-check")
+            assert workspace.get(selected.identity + ":work")["content"].get("local_self_check_ref")
+        native["final_response"] = json.dumps(result)
+        return native
+
+    monkeypatch.setattr(
+        flow_module, "check_unit", lambda b, r, p, unit: check_unit(b, r, p, unit, invoke=child)
+    )
+    result = WorkUnitFlow(binding, workspace, platform, parent).advance(saver)
+    assert result["status"] == "handoff_ready"
+    assert order == ["local-check", "parent-check"]
+
+
+def test_declared_local_rework_precedes_parent_check_without_touching_sibling(
+    binding, workspace, saver, monkeypatch
+):
+    import ontoweave_modeling.flow as flow_module
+
+    selected, platform = proposed_child(binding, workspace, saver)
+    plan = WorkPlan(binding.data, workspace)
+    plan.delegate("unaffected", "Unchanged independent scope")
+    parent_actor, child_actor = Actor(binding, platform), Actor(selected, platform)
+
+    def child(*args):
+        native = child_actor(*args)
+        result = json.loads(native["final_response"])
+        result.update(status="revise", issues=["Original local condition is missing."])
+        native["final_response"] = json.dumps(result)
+        return native
+
+    def parent(*args):
+        assert args[1] == "modeling", "Do not redo the local failure in a parent self-check"
+        native = parent_actor(*args)
+        result = json.loads(native["final_response"])
+        result["review_units"] = ["local"]
+        native["final_response"] = json.dumps(result)
+        return native
+
+    monkeypatch.setattr(
+        flow_module, "check_unit", lambda b, r, p, unit: check_unit(b, r, p, unit, invoke=child)
+    )
+    result = WorkUnitFlow(binding, workspace, platform, parent).advance(saver)
+    assert result["status"] == "work_change_pending"
+    current = plan.row()["content"]
+    assert current["units"]["local"]["generation"] == current["root_generation"] == 1
+    assert current["units"]["unaffected"]["generation"] == 0
+    assert parent_actor.calls == ["modeling"]
+
+
+@pytest.mark.parametrize("leaf_revise", [False, True])
+def test_nested_declared_checks_are_bottom_up_and_bind_child_proofs(
+    binding, workspace, saver, leaf_revise
+):
+    binding.data["work_units"] = [
+        {"unit_id": "group", "objective": "Own the combined meaning."},
+        {"unit_id": "leaf", "parent_id": "group", "objective": "Own the local meaning."},
+        {"unit_id": "unaffected", "objective": "Unchanged other scope."},
+    ]
+    plan = WorkPlan(binding.data, workspace)
+    plan.row()
+    platform = Platform()
+    original = platform.call
+    platform.call = lambda action, payload=None: original(action, payload)
+    for unit in ["leaf", "group"]:
+        selected = binding.for_unit(unit)
+        actor = Actor(selected, platform)
+
+        def propose(*args, actor=actor, unit=unit):
+            native = actor(*args)
+            result = json.loads(native["final_response"])
+            result["review_units"] = ["leaf"] if unit == "group" else []
+            native["final_response"] = json.dumps(result)
+            return native
+
+        assert (
+            WorkUnitFlow(selected, workspace, platform, propose).advance(saver)["status"]
+            == "proposal_ready"
+        )
+    platform.call("apply", {"operation_id": "actual-root-write"})
+    order = []
+    actor = Actor(binding, platform)
+
+    def inspect(*args):
+        prompt = json.loads(args[2])
+        leaf = prompt["objective"] == "Own the local meaning."
+        order.append("leaf" if leaf else "group")
+        assert bool(prompt["child_self_checks"]) == (not leaf)
+        native = actor(*args)
+        result = json.loads(native["final_response"])
+        result["consumed_ids"] = [item["id"] for item in args[3]]
+        if leaf and leaf_revise:
+            result.update(status="revise", issues=["An approved local condition is missing."])
+        native["final_response"] = json.dumps(result)
+        return native
+
+    proof = check_unit(binding, workspace, platform, "group", invoke=inspect)
+    if leaf_revise:
+        assert proof["status"] == "work_change_pending" and order == ["leaf"]
+        assert not workspace.get(binding.for_unit("group").identity + ":work")["content"].get(
+            "local_self_check_ref"
+        )
+        current = plan.row()["content"]
+        assert (
+            current["root_generation"]
+            == current["units"]["group"]["generation"]
+            == current["units"]["leaf"]["generation"]
+            == 1
+        )
+        assert current["units"]["unaffected"]["generation"] == 0
+    else:
+        assert order == ["leaf", "group"]
+        assert proof["basis"]["child_check_refs"]["leaf"]
+        assert check_unit(binding, workspace, platform, "group", invoke=inspect) == proof
+        assert order == ["leaf", "group"]
+    assert len(platform.effects) == 1
+
+
+def test_check_proof_routes_to_self_check_without_model_wakeup(binding, workspace, saver):
+    from ontoweave_modeling.human_input import HumanInput
+
+    selected, platform = proposed_child(binding, workspace, saver)
+    check_unit(binding, workspace, platform, "local", invoke=Actor(selected, platform))
+    human = HumanInput(binding, workspace, TaskControl(workspace))
+    assert not any(":host-check-" in row["id"] for row in human.pending("model"))
+    assert any(":host-check-" in row["id"] for row in human.pending("self_check"))

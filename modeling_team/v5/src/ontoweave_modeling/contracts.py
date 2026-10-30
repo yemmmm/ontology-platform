@@ -378,6 +378,13 @@ WORK_RESULT_SCHEMA = {
         "consumed_ids": {"type": "array", "uniqueItems": True, "items": {"type": "string"}},
         "human_requests": HUMAN_REQUESTS_SCHEMA,
         "resolved_request_ids": RESOLVED_REQUESTS_SCHEMA,
+        "review_units": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": True,
+            "description": "Optional ready direct children whose integrated expressions need "
+            "actual-model checks after application, before this unit's overall self-check.",
+        },
     },
     "required": ["status", "candidate", "changes", "source_refs", "issues", "consumed_ids"],
 }
@@ -410,7 +417,12 @@ def decode_work_result(message: str, manifest: dict, *, require_changes: bool = 
     for ref in result["source_refs"]:
         entry = manifest.get(ref["material_id"])
         if entry is None or entry["sha256"] != ref["sha256"]:
-            raise FrameworkError("source_reference_mismatch", material_id=ref["material_id"])
+            raise FrameworkError(
+                "source_reference_mismatch",
+                material_id=ref["material_id"],
+                expected_sha256=entry["sha256"] if entry else None,
+                actual_sha256=ref["sha256"],
+            )
     if result["status"] in {"proposed", "no_change"}:
         if (
             result["status"] == "proposed"

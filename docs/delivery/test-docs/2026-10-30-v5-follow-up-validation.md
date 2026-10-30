@@ -278,3 +278,89 @@
 - 最终完整快照 `composite-final-v2-accepted`：snapshot_id=`1ca7fce909fc49f79748ff9ab7f4ce5b`，包含工作流、项目记录及真实 platform-data，捕获管理员密钥已撤销，model_read_error=null。原部分答复快照和全部坏端点／失败／被拒报告保持。
 - 两个自有运行均 stop／cleanup：原生产 `composite-contracts-20261030-start1` 与隔离遗漏 `...-parent-omission`。回执均 **aggregate_keys_non_active=true、no_in_flight_attempts=true、written-retained**；临时平台凭据撤销，非空工程模型与证据保留。无后续后台建模／监控安排。回执见 `followup-20261030-inputs/cleanup-composite-contracts-20261030-start1.json` 及对应 omission 文件。
 - **收口范围**：本公开参考任务的组合、父级条件、限定共同澄清、金额／年度边界、显式额度变化与当前总览消费已有上述独立结论。完整 v5 仍 PARTIAL：L2 相同标准重复、来源撤回、旧总览失效／权限与生成中变化、跨 run 项目记忆、自主完整影响发现及同条件净降耗尚未因此完成。R2 的实际漏查与理由精度问题仍跟踪，不用当前总分删除旧失败。
+
+## 推进轮次 D7：原单元局部闭环与三层责任
+
+- 用户继续授权补齐方法差距；本轮首个目标为 R5.0-003／004、T03 的原责任读回和局部纠正，设计／影响边界见[局部闭环接线](../../research/2026-10-30-v5-local-closure-ownership.md)。不新增多写者或平台业务裁判。
+- 可选 review_units 从模型提案传递：应用／no_change 后，先由原单元读回，再做父级整体自查；嵌套声明复用同一 helper，自下而上检查。非 ready 重开原单元与祖先，未变兄弟复用；没有声明仍走既有路径，不把角色数量／所有子级检查变硬门。
+- Task `v5-local-owner-closure-20261030`，run `local-owner-closure-20261030-start1`，稳定账本 `local-owner-closure-20261030-inputs/budget`，3 CNY，全部托管角色 GLM Flash／low。复用组合场景并在起点提供已署名年度补充，避免重复已验访谈；这是公开 Host 参考资料，非客户确认。新六项标准在初次生产前冻结，见[参考范围](../../evaluation-scenarios/v5-local-owner-closure/README.md)。
+- 约 07:54 UTC 已实际启动原生 parts／repair，距本轮授权约十分钟；当前树是根级整体／parent-scope、expenses 组合中间层及其三类叶子，contract-year 是根级另一个子单元。工作责任层不成为业务类或 Ontology 数量要求。
+- 四项机制用例与原检查相关范围 14 passed；证明阶段路由与活动单元调度修改后两模块 20 passed；来源 SHA 反馈两用例先失败，相关 29 passed；旧固定 peer 名单拒绝反例先失败，flow＋team 33 passed。初版 206 项全回归不覆盖后继接线差异，最终回归另记，不拿旧结果作新代码 PASS。
+- 真实早期保留 repair 来源摘要误抄与 expenses 的 team_not_configured：前者补可定位期望／收到值，后者按 T0 删除不必要的静态 roster 拒绝。两次自然暂停只为加载窄修复，原生结果、候选、账本与原目标保留。没有 unknown 模型写入，也没有 Host 单独 check-unit／重开指定叶子；真实自动闭环和独立结果尚待取证。
+
+### D7 三层真实运行暴露的交接时序
+
+- 根级先安全应用年度和父级命题四类，声明 contract-year 检查，程序已自动由原年度单元实际读回。expenses 在根级该次自查期间恢复并交来三类金额／共享额度提案；原自查 ready 只覆盖安全部分且 issues 明示费用未表达，但原调度在子级均 proposal_ready 后误交接。
+- 未发布该 handoff 为完整语义 PASS。保存 `premature-handoff-evidence.json` 的原 work、自查引用和未处理新消息；新输入反例先失败，修后模型回合实际收到消息、no_change 路径未重复 apply。修复在自查结束和 finalize 前后投递新到 model 输入，不按数量或正文程序判语义完成。
+- Host 为已经误交接的历史状态仅做一次根级技术重入，未选择叶子、未改单元状态或语义内容；此为开发期加载修复的明确干预，不称冷启动全自主成功。随后原根级消费 expenses 并应用，已自动进入安装／返修等原叶子检查，中间／根级整体结论仍待取证。
+- 首次后继完整回归 210 passed／2 failed；两条检查测试的 fake parent 没确认已投递的旧子结果，在新消息处理条件下持续回流。测试模拟改为仅确认其实际 Queued IDs，保留所有真实检查／顺序断言，不删除业务或流程验证。最终回归与真实证据另记，不用前一结果称 PASS。
+
+
+### D7 自然局部纠错与最终开发回归
+
+- 根级实际模型 revision 2 后，原 repair 读回自行发现参与共享额度关系尚未表达，返回 revise；WorkPlan 自动重开 repair 和 expenses／根级，parts／installation／contract-year 代次仍 0。原 repair 通过真实回执引用补提关系，Host 未选叶子、未代写语义。
+- revision 3 三关系已应用，expenses 自查发现共享额度还留着“关系待补全”旧未知；自动仅重开 expenses 及根级。费用单元提供原 Class fields-only 修订，原资源和真实未知保留。原错 JSON／技术反馈与全部局部结果保持，不以新成功覆盖。
+- 当前代码完整 v5 回归 **214 passed、1 条既有第三方 warning、172.84 秒**，`regression-with-nested-overview-final.log`；相较此前 212，新增两参数分层总览用例。Ruff／diff 检查通过。没有修改 backend／frontend，不触发服务重启；真实整体／受控反例和独立语义评价尚待完成。
+- 分层导航补齐范围见[研究说明](../../research/2026-10-30-v5-hierarchical-navigation.md)：sections 支持可选多层 children，共享 IRI 可多专题引用，叶子同样核对真实读取；原扁平输出兼容。附加导航三题已在生成前冻结，与主六题分开；仍用 D7 同一 3 CNY，不新建账本重置成本。候选／工作／允许验收结论的多截止点用户投影未因此实现。
+
+
+### D7 受控反例与真实交接差距
+
+- 初始 settled 模型 revision 4，八类／三关系，`initial-stage.json`；Host 控制只改返修 business_meaning 为错误独立额度，实际 revision 5，`fault-stage.json`。只有一次整体根级重查，无 Host 指定叶子。root model-00004 自行发现，再由 Agent reopen repair；repair model-00005 实读后确认矛盾并提原资源修订。检测首先来自根级，不称叶子 unit-check 在故障版本先返回 revise。
+- 中间 expenses 重入 no_change 未转交 repair 的新修订／精确引用且未重新声明叶子检查；root model-00006 遇 handoff_material_forbidden 后从原 owner work issues、原文和实际模型重建意图。原根级“bottom-up through expenses→repair”声明不代表检查真正执行；以实际证明为准。权威提示已持久修正有界转交和检查选择，旧冻结运行不冒充修后提示已验证。详细原件见[局部闭环说明](../../research/2026-10-30-v5-local-closure-ownership.md)。
+- expenses 实际检查期间上游回执迟到触发 metering_error；自然停稳后原生累计记录已覆盖该 source 的十个 completed attempts，所有 current_issues 为空。沿既有 tick／continue_authorized 的恢复校验，只清 recovered metering_error，原 3 CNY、已有 0.22660 暂估及原始回执不改。`metering-reconciled-evidence.json`／`budget-after-metering-recovery.json`；没有追加金额、把未知记零或放宽守卫。
+
+
+### D7 原始六题报告的证据错配与导航结果
+
+- `original-owner-six-check` 在 revision 6 原生返回 6/6 PASS，且格式／必需工件读取守卫通过；但第 4 项称“故障后 repair unit check drove revise”，第 5 项称“最终 repair／expenses／root 检查相容”，实际 repair 单独检查证明只有 revision 2／3，外部故障在 5，修后在 6。原故障是 root model-00004 先发现、repair model-00005 实读提修订，不等于 fault revision 5 的 self_check 返回 revise。故**该总分不作为完整流程 PASS 采信**；原 private-report／public-feedback 不改写。
+- 第 6 项还披露用 category Class IRI 作为 relation-type-list.entity，返回 0，却未沿已知 relation IRI 查实际端点。Host 原治理原件在 relation IRI 下确有 source／target。这属于取证／解释精度问题，不能以“存在关系”代替拓扑已验。
+- 独立提示持久补同 incident 的 unit／generation／revision／native purpose／确切证明与时间线核对，以及 relation-type-list 使用 relation IRI。四参数合同用例先失败；修后 acceptance 模块 **17 passed**。没有新增平台语义裁判或自动改分，原六题和 package 不改，使用全新只读评价 ID `original-owner-six-evidence-recheck` 复核，仍扣原账本。
+- `local-owner-hierarchy` 从实际 revision 6 生成 current 导航，13 个主题条目、sections 最大嵌套 2 层（另有整体 summary），8 个 IRI 跨主题重复引用。`hierarchical-overview-three-check` 在生成前冻结的附加三题上独立 **3/3 PASS**，目标仍 revision 6；只读原生输入／工具原件和实际模型，主六题分母不变。旧摘要失效与后继模型版本另验，不把当前三题推广为完整 C2。
+- 最终生产提示新增精确交接规则后的相关合同／通信／总览 **30 passed**；前一完整开发回归 214 项仍覆盖全部运行逻辑，后续只调独立提示的 acceptance 17 项另验。当前未改后端／前端，无服务重启。
+
+
+- `original-owner-six-evidence-recheck` 首个新上下文又自报 PASS，但未读 frozen-questions，将原流程六题换成其自定的六项模型内容检查；现有守卫以 evaluation_frozen_source_not_read 拒绝，未发布为有效评价。补权威提示明确直接读取 frozen-questions、原编号／范围不可替换；保留该 `...-000` 原结果，沿同一评价 ID 的新只读 `...-001` 继续，原冻结和预算不变。这再次说明独立角色标签／格式守卫不能代替实际取证质量。
+
+
+- 同一复核 ID 的 `...-001` 已读冻结题后仍返回 6/6，但把 Host 留存的 fault-retained-read 归为 original-owner read，并称存在 repair revision 6 check；原件只有 revision 2／3，该解释不成立，**不采信为完整闭环 PASS**。取证包压缩时省略了该历史读取的 Host 观察者标签，是本次包装的明确缺陷；原始 stage 的 Host-collected 标记仍保留。后继包将明示 observer／native execution，并单列实际当前 proof 的 basis／generation；不改原坏报告、不再以相同不明确包无差别重试。验收提示补 Host 观察与原 Agent 读取不可混同，R2 仍保留。
+
+
+### D7 同预算第二阶段：修后交接采用
+
+- 不重建任务、不追加金额：stage2 仍为 `v5-local-owner-closure-20261030-start1`／原 3 CNY；原六题 SHA256 不变，首轮误判及坏流程证据保留。当前 baseline 是 revision 6，第二次仅将同一自有返修定义改为同样外部矛盾，revision 7；原生生产不知道隐藏题或旧私有评价理由。
+- 只向根级发一个整体检查请求，附通用、已持久落盘的方法合同澄清，未指定叶子或提供业务修订；本有界实验明确先用 no_change＋当前中间声明安排原责任检查，再由真实失败触发原身份修订。这是实验选择，不是所有建模的新增强制阶段。
+- Host 第一次投递被 human_input_task_closed 拒绝，无输入／模型写入；随后经既有 WorkPlan root reopen 一次并 initialize，再接受同一稳定 ID 的整体技术输入。原拒绝保留，没有手工改单元或清空 active。
+- 真实 revision 7 下 `overview-show` 已将 revision 6 导航返回 **needs_review**，保留原 body／model_basis，没有冒称当前；`method-repair-stage2/old-overview-after-external-change.json`。这是本模型变化的实际版本失效证据，不替代来源撤回／权限漂移验证。
+- 第二阶段验收包明示 Host 历史观察并非原 Agent 读取，保留原生目的／执行引用，并列原工作代次与实际检查 basis；只导出原字段，不新增语义评分器或自动判题。最终结果待实际运行，不先计 PASS。
+
+
+- 第二阶段已实际发生原故障版本检查：root model-00007 返回 no_change／review_units=[expenses]，expenses model-00007 返回相关提案／review_units=[repair]；程序在未修图的 revision **7** 调起 repair `unit-check-57c407...`。原生 purpose=self_check、actual basis=7、result=**revise**，明确定位错误独立额度；WorkPlan 自动将 repair 2→3、expenses 3→4、根级重入，parts／installation／contract-year 仍 0。`method-repair-stage2/fault-original-unit-check.json` 同时保留原程序证明、原执行意图、原生实际治理读取及当时工作树；Host 仅导出原件，不代判业务语义。后续原修订与最终读回仍在进行。
+
+
+- 原 repair model-00006 和 expenses model-00008 沿原身份提／转交局部更新，根级将修订应用到 revision **8**；随后 model-00009 实读确认该更新已有效，改回 no_change，不重复提交同一成功变更。原 repair 已在 revision 8 完成新的实际检查，费用中间层按声明继续本层核对；整体最终判断和独立六题仍待完成。
+
+
+- 最新完整代码回归 **214 passed、1 条既有第三方 warning、168.05 秒**，`regression-final-with-evidence-provenance.log`。其后仅补独立提示 source_ids 的自动 human-inputs 项：四参数用例先失败，acceptance **17 passed**。没有更改冻结源版本／题集或新增判分规则。
+- 修后主评价 `original-owner-method-repaired-six-check` 首原生回合已能对应 revision 7 的 57c407 self_check／revise 与 revision 8 的 ec62／34dcebbe 证明，但漏读新 human-inputs 被既有守卫拒绝。原因是自动增加的来源受校验却没有列入提示 source_ids；现显式列入，按同评价 ID 的新只读 `...-001` 重试，仍计原账本。当前分母六题不变，不发布被拒的自报 PASS。
+- revision 8 的导航已沿同一 ID 刷新为 current；旧 revision 6 的 needs_review 记录及历史三题 PASS 保持，后继当前导航三题按原附加冻结另验，不混成新的总分或业务盲测。
+
+
+### D7 修后六题有效结论
+
+- `original-owner-method-repaired-six-check` 的 `...-001` 实际直接读 frozen-questions、五原始材料、human-inputs 与 16 份必需工件，并查询实际 revision **8**，有效 **6/6 PASS**；freeze_id=`v5-original-owner-closure-six-public-20261030`。第 4 项明确区分原 repair `57c407...` 的 native self_check／revise（basis 7）与 Host 留存观察，第 5 项对应原 repair `ec62...` ready、expenses `34dcebbe...` 引用该 child proof 及根级实际目标 8，原错误／拒绝／两个故障版本保持。
+- 修后实际采用：有界初始声明＋故障时 no_change 检查路径，在原单元实际读回发现错误，再沿原身份／祖先重入；父级只负责中间结果、共享规则和未分配条件，统一 Host 应用维持。根级曾采用中间层已携带的有效原修订，后继中间层再确认原意向，root model-00009 实读并 no_change，未重复成功应用；不虚称所有执行字段都来自一个新叶子提案或显式转发了所有孙级私有材料。
+- 实际资源仍 **11** 个不同 IRI（八类、三关系），native ID／IRI 集合保持；第二阶段只改变返修语义定义，三个无关兄弟代次仍 0。独立报告确认同合同／年度共享合计、包含边界、甲乙年度、父级正式／临时模态和真实未知；这是公开有界 L1，非客户盲测、任意递归／规模或冷启动 L2。
+- 本轮采用了署名通用方法合同补充、初始根级技术重入及一次计量恢复；权威提示已持久修复，但不能据同 run 的修后采用宣布无临时补充冷启动通过。R2 的历史误归属／虚构版本证明风险仍保留，不以新总分撤销已确认失败。
+
+
+### D7 当前导航、成本、时间及收尾
+
+- `hierarchical-overview-current-three-check` 在同一追加冻结三题上，实际 **revision 8 独立 3/3 PASS**；scope_id=`local-owner-hierarchical-overview-current-after-repair`，freeze_id=`v5-local-owner-hierarchical-overview-three-public-20261030`。原 revision 6 的 3/3、模型变成 7 时旧导航 needs_review、修后 8 的 current 与本次新评价分别保留，不合并分母。
+- 最终估算 **2.97079536 CNY / 3 CNY**：已计价 **2.36304736**、缺测暂估 **0.607748**，余额 **0.02920464**；59 个计量单元含 5 项既有自动 native transport deficit 暂估，inflight=0，覆盖 **PARTIAL**。没有追加、清账或将未知置零；不为耗尽剩余约三分钱再调用。外部 Host／未接线辅助按约定 unknown／不扣金额，不是提供商最终账单。
+- **已知原生 Token**：建模侧（含格式纠正、协作、原单元／根级自查及两次导航）输入 **6,198,217**，输出 **138,025**；独立侧（含误判、被拒及重试、两个版本导航评价）输入 **1,265,411**，输出 **22,522**。合计输入 **7,463,628**、输出 **160,547**、输入加输出 **7,624,175**；缓存输入 **5,859,968** 已包含于输入，不再相加。54 个统计段均有 fresh-zero baseline，按段取累计末值；五项金额暂估没有精确 Token，Host 用量不在此数内。
+- **执行耗时**：首原生 **07:54:40 UTC**，最后原生 **09:32:03 UTC**，窗口 **97 分 23 秒**；到清理后 **09:36:53 UTC** 观测为 **102 分 14 秒**。授权后约十分钟进入首真实 start，准备另列；Host 准备／修复／测试／文档有效时间未单独计时，不能把进程存活当语义工时。可观察原生区间：生产建模 union **23 分 27 秒**、生产自查 **22 分 34 秒**、独立评价 **8 分 57 秒**、导航 **2 分 22 秒**；分类可重叠，全部 native union **54 分 12 秒**，包括供应商等待／工具。
+- 生产建模＋自查 union **43 分 43 秒／97 分 23 秒（约 44.9%）**，连这一含等待的上界也不足一半。实际已发生来源／格式纠正、根级重复唤醒、中间层漏转修复和多次评价返工；不能以低单价或缓存掩盖累计上下文。按 AGENTS 的既定门，**停止继续扩展平台／harness，下一步先用持久修后提示与有界精确原件走更短的真实验证**。无临时补充冷启动、完整多视图、来源撤回、跨 run 接续和同条件净降耗仍未关闭；不再前置新控制机制。余额不足有意义的同任务复跑，不能靠改名新建同任务账本清零。
+- 完整快照 `local-owner-method-final-v8`，snapshot_id=`f9cc9ff3175a4ecfbcc901a521ba3fed`，202 个对象，并有项目记录／真实 platform-data；model_read_error=null，捕获管理员密钥 revoked=true。
+- 原生产 run 已 stop／cleanup：**aggregate_keys_non_active=true、no_in_flight_attempts=true、written-retained**，读取、协议和组织管理员临时密钥撤销；非空工程模型与全部原件保留。兼容清理字段 legacy_scope_disposition=failed-written-retained 来自旧 Runner 终态推断，v5 质量／任务结论独立记录（现有 worker 注释已明确），不据它推导语义失败。原件 `snapshot-final-receipt.json`／`cleanup-final.json`／`budget-final.json`／`observed-usage-summary.json` 均在同一 inputs 目录。
+- **收口边界**：局部责任接线、修后原身份闭环及多层实际模型导航在本公开参考范围有上述工程／实际采用／独立结果。完整 v5 仍 **PARTIAL**；历史 R2 误归属／虚构检查及漏读始终保留，未证明任意验收均可靠。方法功能、真实采用、L1、L2 与净降耗分别报告。

@@ -272,14 +272,17 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
             assert "definition text" in kwargs["instructions"]
             assert "every required_artifacts entry" in kwargs["instructions"]
             assert "distinct resource IRIs" in kwargs["instructions"]
+            assert "same incident" in kwargs["instructions"]
+            assert "relation IRI" in kwargs["instructions"]
             self.materials = kwargs["materials"]
 
         def __call__(self, root, purpose, prompt, inputs):
             calls.append(root.name)
             assert purpose == "acceptance" and not inputs
+            assert json.loads(prompt)["source_ids"] == ["source", "human-inputs"]
             if first_failure == "source_read" and len(calls) == 2:
                 parsed = json.loads(prompt)
-                assert parsed["source_ids"] == ["source"]
+                assert parsed["source_ids"] == ["source", "human-inputs"]
                 assert parsed["contract_feedback"]["material_id"] == "source"
             folder = root / "agent"
             folder.mkdir()

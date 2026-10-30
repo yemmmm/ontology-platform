@@ -148,3 +148,39 @@ def test_versioned_references_do_not_follow_current_business_revision(workspace)
     wrong = {**original, "digest": "0" * 64}
     with pytest.raises(FrameworkError, match="record_digest_mismatch"):
         workspace.read_reference(wrong)
+
+
+@pytest.mark.parametrize("target", ["work", "record"])
+def test_source_digest_feedback_allows_exact_correction(binding, workspace, target):
+    from ontoweave_modeling.semantic_workspace import SemanticWorkspace
+
+    expected = binding.data["source_manifest"]["source"]["sha256"]
+    reference = {"material_id": "source", "sha256": "0" * 64}
+    space = SemanticWorkspace(workspace, binding.data)
+
+    def submit(ref):
+        if target == "record":
+            return space.write(
+                "source-review", "material_review", "Review", "Source read", source_refs=[ref]
+            )
+        return decode_work_result(
+            json.dumps(
+                {
+                    "status": "no_change",
+                    "candidate": None,
+                    "changes": None,
+                    "source_refs": [ref],
+                    "issues": [],
+                    "consumed_ids": [],
+                }
+            ),
+            binding.data["source_manifest"],
+        )
+
+    with pytest.raises(FrameworkError) as caught:
+        submit(reference)
+    assert caught.value.code == "source_reference_mismatch"
+    assert caught.value.detail["expected_sha256"] == expected
+    assert caught.value.detail["actual_sha256"] == "0" * 64
+    assert reference["sha256"] == "0" * 64
+    assert submit({"material_id": "source", "sha256": expected})

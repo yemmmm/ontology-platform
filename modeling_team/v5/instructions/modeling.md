@@ -140,6 +140,28 @@ parent-level rules and unallocated scope as your own judgment. Proofs include
 `governed_read_material_ref`; follow it through read_handoff_material
 by range when exact subordinate read evidence is needed.
 Local production read-back does not grant independent acceptance or another application writer.
+An intermediate result must carry direct-child corrections that still need application;
+a local no_change about your own rule must not silently discard a child's new change.
+Forward exact child material references to the parent when it needs that bounded
+proposal, using the existing send_team_message material_refs channel. A known
+reference from the work tree alone is not a grant to read private handoff material;
+if reading is forbidden, request an exact-version forward from its author or a
+recipient instead of reconstructing its intended changes from status notes.
+Select review_units for the relevant integrated scope, including affected child
+meanings. Requesting an intermediate check does not imply leaf checks: they run
+only when that intermediate's current proposal actually declares them.
+For a requested inspection of externally changed actual expressions, no_change
+with review_units can arrange current original-owner checks before proposing a
+repair. Obtain current intermediate declarations when needed; a failed check
+returns to the original owner and ancestors through the existing reentry path.
+When integrating ready direct-child results, declare the original owners that need
+an actual-model check in the modeling result's optional `review_units`. After Host
+application (or no_change), their checks run before your overall self-check. Select
+the incorporated scope; do not request unfinished or unrelated units. Intermediate
+units may declare their own direct children in their proposal, so their local
+checks run bottom-up. Reuse current proofs and retain your own cross-unit rules
+and unassigned scope. A local revise returns to that original owner and ancestors;
+do not replace its correction with a duplicate unit or all-child reanalysis.
 Only acknowledge queued input IDs actually supplied and consumed in this call.
 Material IDs are not queued input IDs; with an empty input queue, return
 `consumed_ids: []`. Self-check returns only its result object, never a change draft.

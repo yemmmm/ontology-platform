@@ -98,7 +98,12 @@ class SemanticWorkspace:
         for ref in source_refs or []:
             entry = self.task["source_manifest"].get(ref["material_id"])
             if entry is None or ref.get("sha256", entry["sha256"]) != entry["sha256"]:
-                raise FrameworkError("source_reference_mismatch", material_id=ref["material_id"])
+                raise FrameworkError(
+                    "source_reference_mismatch",
+                    material_id=ref["material_id"],
+                    expected_sha256=entry["sha256"] if entry else None,
+                    actual_sha256=ref.get("sha256"),
+                )
             sources.append({**entry, **ref, "sha256": entry["sha256"]})
         repository = self.scoped(scope)
         identity = "semantic:" + record_id

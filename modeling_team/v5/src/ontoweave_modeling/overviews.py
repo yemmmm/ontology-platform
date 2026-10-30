@@ -15,22 +15,23 @@ OVERVIEW_SCHEMA = {
     "additionalProperties": False,
     "properties": {
         "summary": {"type": "string"},
-        "sections": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "title": {"type": "string"},
-                    "body": {"type": "string"},
-                    "evidence_iris": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["title", "body", "evidence_iris"],
-            },
-        },
+        "sections": {"type": "array", "items": {"$ref": "#/$defs/section"}},
         "open_items": {"type": "array", "items": {"type": "string"}},
         "limitations": {"type": "string"},
         "model_revisions": {"type": "object", "additionalProperties": {"type": "integer"}},
+    },
+    "$defs": {
+        "section": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "title": {"type": "string"},
+                "body": {"type": "string"},
+                "evidence_iris": {"type": "array", "items": {"type": "string"}},
+                "children": {"type": "array", "items": {"$ref": "#/$defs/section"}},
+            },
+            "required": ["title", "body", "evidence_iris"],
+        }
     },
     "required": ["summary", "sections", "open_items", "limitations", "model_revisions"],
 }
@@ -45,6 +46,12 @@ def _strings(value):
     elif isinstance(value, list):
         for child in value:
             yield from _strings(child)
+
+
+def _sections(sections):
+    for section in sections:
+        yield section
+        yield from _sections(section.get("children", []))
 
 
 def refresh_overview(binding, repository, bridge, overview_id, topic, view="consumer", invoke=None):
@@ -78,7 +85,12 @@ def refresh_overview(binding, repository, bridge, overview_id, topic, view="cons
         instructions="Generate business navigation only from the authorized actual model. Read target "
         "and query the governed model; follow relevant paging and preserve conditions, exceptions, "
         "negation, modality, shared definitions and unknowns. Organize an overall summary and bounded "
-        "topic sections with exact resource IRIs for deeper reading. Disclose unqueried/incomplete "
+        "topic sections with optional nested children, from overall business scope to specific definitions. "
+        "Choose depth from the business content; shared definitions may be referenced under multiple "
+        "topics using the same exact resource IRIs. Preserve important unknowns and cross-topic "
+        "conditions in the relevant ancestors rather than burying them only in a leaf. Each section "
+        "must distinguish its bounded scope and provide actual-definition references for deeper reading. "
+        "Disclose unqueried/incomplete "
         "scope. Do not invent a missing fact, use production work, or write/repair the model. "
         "The overview is navigation; precise decisions must return to actual definitions.",
     )
@@ -110,7 +122,9 @@ def refresh_overview(binding, repository, bridge, overview_id, topic, view="cons
             for value in _strings(data)
         }
         if any(
-            iri not in actual for section in report["sections"] for iri in section["evidence_iris"]
+            iri not in actual
+            for section in _sections(report["sections"])
+            for iri in section["evidence_iris"]
         ):
             raise FrameworkError("overview_reference_not_read")
     except (ResultContractError, FrameworkError) as error:

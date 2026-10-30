@@ -117,3 +117,60 @@ def test_unread_reference_gets_recoverable_feedback_not_a_valid_summary(binding,
             binding, workspace, model, "wrong", "Topic", invoke=reader(model, unknown_iri=True)
         )
     assert read_overview(binding, workspace, model, "wrong")["state"] == "not_found"
+
+
+@pytest.mark.parametrize("unknown_leaf", [False, True])
+def test_nested_topics_keep_shared_references_and_validate_leaf_reads(
+    binding, workspace, unknown_leaf
+):
+    model = Model()
+    base = reader(model)
+
+    def invoke(*args):
+        result = base(*args)
+        report = json.loads(result["final_response"])
+        shared = "urn:actual:condition"
+        report["sections"] = [
+            {
+                "title": "Operations",
+                "body": "Approval conditions",
+                "evidence_iris": [shared],
+                "children": [
+                    {
+                        "title": "Repair",
+                        "body": "Only after approval",
+                        "evidence_iris": [shared],
+                        "children": [
+                            {
+                                "title": "Boundary",
+                                "body": "Precise condition",
+                                "evidence_iris": ["urn:invented" if unknown_leaf else shared],
+                            }
+                        ],
+                    },
+                    {
+                        "title": "Installation",
+                        "body": "Same shared approval definition",
+                        "evidence_iris": [shared],
+                    },
+                ],
+            }
+        ]
+        result["final_response"] = json.dumps(report)
+        return result
+
+    if unknown_leaf:
+        with pytest.raises(FrameworkError, match="overview_needs_correction") as error:
+            refresh_overview(binding, workspace, model, "nested", "Operations", invoke=invoke)
+        assert error.value.detail["detail"] == "overview_reference_not_read"
+        assert read_overview(binding, workspace, model, "nested")["state"] == "not_found"
+    else:
+        result = refresh_overview(binding, workspace, model, "nested", "Operations", invoke=invoke)
+        report = json.loads(result["record"]["body"])
+        children = report["sections"][0]["children"]
+        assert children[0]["children"][0]["evidence_iris"] == children[1]["evidence_iris"]
+        model.revision += 1
+        assert (
+            read_overview(binding, workspace, model, "nested")["freshness"]["state"]
+            == "needs_review"
+        )
