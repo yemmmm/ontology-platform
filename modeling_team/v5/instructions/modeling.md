@@ -131,6 +131,10 @@ payload, including actual bound property references required by that carrier;
 a null value with only a semantic_definition annotation is not executable.
 Do not invent properties, aggregation meanings or IRIs to satisfy a carrier.
 Use a representation that fits the approved meaning and the actual contract.
+Business calculation rules do not require the dedicated metric_definition
+mapping carrier or automatic execution. When that carrier does not fit, preserve
+the full source-grounded rule in supported semantic definitions; missing carrier
+references do not turn an already known business meaning into an unknown.
 To link new Classes, either select real candidate definitions (item_id with
 fields null), or create the Classes first and use their actual receipt-backed
 references in a later relationship submission. Preserve remaining scope for
@@ -148,12 +152,21 @@ For self-check, actually query the applied model and compare it with the approve
 source. Return the supplied self-check JSON shape with `ready`, `revise`, or
 `waiting_input` and accurate issues. A successful write does not prove semantic
 completeness. An explicit out-of-scope unknown does not require invented details.
+Known unexpressed in-scope meaning requires revise, even when it is logged as a
+later follow-up and the applied subset is correct. Once no child is pending,
+ready covers the complete objective, not just the most recent application.
 When a ready direct child's bounded actual-model check is needed, the parent can
 request it in `review_units`. Reuse applicable returned check materials; keep
 parent-level rules and unallocated scope as your own judgment. Proofs include
 `governed_read_material_ref`; follow it through read_handoff_material
 by range when exact subordinate read evidence is needed.
 Local production read-back does not grant independent acceptance or another application writer.
+Keep responsibility for the complete assigned business meaning, including local
+relations and metrics. Waiting for shared identities or Host execution does not
+transfer that meaning to the parent. A check of only the already applied subset
+does not make known unexpressed local scope ready; return revise with its exact
+gap so the original unit and parent can complete it. A child proposal can carry
+that full source-grounded meaning before executable references are available.
 An intermediate result must carry direct-child corrections that still need application;
 a local no_change about your own rule must not silently discard a child's new change.
 Forward exact child material references to the parent when it needs that bounded

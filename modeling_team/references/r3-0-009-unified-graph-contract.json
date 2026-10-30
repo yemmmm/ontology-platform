@@ -110,7 +110,7 @@
     ],
     "value_rules": {
       "entity": "create_entity semantic fields; label required, no fabricated Class. Class references use definition_ref or authorized existing_resource_ref. properties uses [{property_ref,value}] with unique property refs. Preserve optional semantic_definition/action_definition/parameter_definition.",
-      "property": "name required; explicit predicate_kind=fact|relation. fact requires datatype. datatype and object_class_id are mutually exclusive. Only semantic_definition annotation is supported.",
+      "property": "name required; use the literal JSON key predicate_kind with value fact or relation, never explicit_predicate_kind. fact requires datatype. datatype and object_class_id are mutually exclusive. Only semantic_definition annotation is supported.",
       "relation": "value={predicate: definition_ref or existing_resource_ref}; relation_endpoints={from_item_id,to_item_id}. Preserve explicit direction. No silent relation annotation loss: express additional local conditions with ordinary nodes as appropriate.",
       "table_mapping/join_mapping/enum_meaning/metric_definition": "Use existing current batch create business fields, without technical resource identity. Resolve references only in declared reference slots. Do not introduce SQL/DSN/source_id/run_id import variants."
     }

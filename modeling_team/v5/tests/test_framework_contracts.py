@@ -91,6 +91,8 @@ def test_new_binding_includes_executable_fields_only_request_grammar(task_file, 
     assert request["schema_version"] == "r4-3-025-model-changes/v1"
     assert request["changes"][0]["fields"]["name"]
     assert contract["relation_request_example"]["changes"][0]["fields"]["source_class_id"]
+    assert "owl:NamedIndividual" in contract["semantic_level"]
+    assert "Class/relation_type" in contract["semantic_level"]
 
 
 def test_new_binding_includes_neutral_candidate_shape_without_legacy_workflow(task_file, tmp_path):

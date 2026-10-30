@@ -97,6 +97,7 @@ def modeling_instructions(task_instructions):
             },
             "request_example": direct["fields_only_example"]["request"],
             "relation_request_example": direct["fields_only_example"]["relation_request_template"],
+            "semantic_level": direct["semantic_level"],
             "metric_definition_payload": {
                 **metric,
                 "fields": {

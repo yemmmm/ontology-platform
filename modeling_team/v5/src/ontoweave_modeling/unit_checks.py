@@ -86,13 +86,24 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
             for check in child_checks
         ],
         "human_context": HumanInput(selected, repository, TaskControl(repository)).context(),
-        "actual_target": {k: target[k] for k in ("project_id", "ontology_ids", "model_revisions")},
+        "actual_target": {
+            **{k: target[k] for k in ("project_id", "ontology_ids", "model_revisions")},
+            "resource_bindings": target.get("resource_bindings", {}),
+        },
         "workspace_context": workspace_context,
         "instruction": "Production self-check for your bounded unit, not independent acceptance. "
         "Read the original sources and actual governed model, expand exact resources as needed. "
+        "actual_target.resource_bindings provides actual applied resource locators for exact "
+        "read_model_resource calls when recall is incomplete or degraded. These locators "
+        "are navigation, not proof of business meaning; still read the actual resource. "
         "Check your proposed meaning, expressions, conditions and unknowns. Do not apply changes "
         "or assess unrelated child details. Return ready, revise or waiting_input with precise "
         "issues; a candidate is not actual model evidence. This return is not whole-task PASS. "
+        "Judge the complete source-grounded meaning, not whether parent integration preserved "
+        "your candidate's shape or created one resource per proposition. Supported semantic "
+        "definitions may carry a calculation rule without a dedicated metric mapping resource. "
+        "Still verify actual relationships and resource semantic level; an individual does not "
+        "replace a general concept when the source supplies no instances. "
         "consumed_ids contains only this turn's Queued inputs[].id; return [] for an empty "
         "queue. Historical answers and own_proposal.consumed_ids are retained evidence, not "
         "inputs delivered again in this turn. "

@@ -57,6 +57,40 @@ def test_original_unit_check_receives_existing_workspace_navigation(binding, wor
     assert space.read("old-local-coverage")["states"]["expression"] == "partial"
 
 
+def test_original_unit_check_receives_actual_resource_locators(binding, workspace, saver):
+    selected, platform = proposed_child(binding, workspace, saver)
+    original_call = platform.call
+    locators = {
+        "applied-local-relation": {
+            "ontology_id": "ontology",
+            "resource_kind": "relation_type",
+            "resource_iri": "https://example.test/actual/relation",
+            "existing_resource_ref": {"artifact_ref": "applied-bindings.json", "path": "/relation"},
+        }
+    }
+
+    def snapshot_with_locators(action, payload=None):
+        result = original_call(action, payload)
+        if action == "snapshot":
+            result["resource_refs"] = {
+                key: value["existing_resource_ref"] for key, value in locators.items()
+            }
+            result["resource_bindings"] = locators
+        return result
+
+    platform.call = snapshot_with_locators
+    actor = Actor(selected, platform)
+
+    def inspect(*args):
+        prompt = json.loads(args[2])
+        assert prompt["actual_target"]["resource_bindings"] == locators
+        return actor(*args)
+
+    proof = check_unit(binding, workspace, platform, "local", invoke=inspect)
+    assert proof["result"]["status"] == "ready"
+    assert len(platform.effects) == 1
+
+
 @pytest.mark.parametrize("parent_closed", [False, True])
 def test_local_actual_read_back_reuses_proof_until_model_changes(
     binding, workspace, saver, parent_closed
