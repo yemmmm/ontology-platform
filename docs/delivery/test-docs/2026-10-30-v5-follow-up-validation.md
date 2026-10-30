@@ -11,9 +11,9 @@
 
 | 任务 | 关联风险 | 验证／定位 | 实施修复 | 真实采用／接续 | 独立语义 | 成本结论 |
 | --- | --- | --- | --- | --- | --- | --- |
-| T01 状态、覆盖和去向 | R1、R3 | 缺状态／坏依赖／跨 scope 旧覆盖已复现 | 提示、合同和可恢复反馈已修 | 实际采用；有 Host 指导闭合 | 模型 6/6；工作空间先 REVISE 2/3 | 净收益未验证 |
+| T01 状态、覆盖和去向 | R1、R3 | 缺状态／坏依赖／跨 scope 旧覆盖已复现 | 提示、合同和可恢复反馈已修 | 实际采用；有 Host 指导闭合 | 模型 6/6；工作空间 REVISE 后 3/3 | 净收益未验证 |
 | T02 按依赖分阶段应用 | R4 | 安全部分整层等待已复现 | 最小调度修正已验证 | A 先应用、B 后接续，身份保留 | 公开工程 4/4 PASS | 同条件降耗未验证 |
-| T03 子单元闭环 | R4 | 子提案／自查提示冲突及回执歧义已复现 | 有界自查、证明复用及父级接线 | 两个原单元真实治理自查 ready | 不等于独立验收；多层修模待做 | 未验证 |
+| T03 子单元闭环 | R4 | 格式、回执及父级材料交接均有复现 | 有界读回／重开、证明及精确读取交接 | 原 B 实质修模、A 复用，原身份保留 | 工程修模 4/4；多层／自主采用待验 | 净收益未验证 |
 | T03.1 未知执行恢复 | R5 | 按实际窄窗口开展 | 待定位后决定 | 待验证 | 按影响范围判断 | 未验证 |
 | T04.1 验收取证正反例 | R2 | 合格、规则遗漏及方向错误已验证 | 已补精确读取及证据识别 | 原生独立上下文实际读取 | 公开有界正反例正确区分 | 未验证 |
 | T04.2 代表性完整语义 | R1、R4 | 待开始 | 按失败层决定 | 待验证 | 待验证 | 未验证 |
@@ -117,7 +117,7 @@
 
 ### T03 当前实现和真实采用
 
-- 新增 `check-unit` 和父级 self-check 的可选 `review_units`：沿原子单元、原候选、来源 digest、work generation 和实际模型版本启动有界生产读回；只读 RDF，工作空间可维护。Host 保持唯一模型执行方。
+- 新增 `check-unit` 和父级 self-check 的可选 `review_units`：沿原工作单元、原候选、来源 digest、work generation 和实际模型版本启动有界生产读回；只读 RDF，工作空间可维护。Host 保持唯一模型执行方。
 - 生产检查结果保存精确版本证明和可供父级读取的材料；同一基线复用证明，不额外唤醒；非 ready 重开原单元和祖先，下一建模回合能读取 previous_local_check。父级仍负责跨单元规则和未分配范围。
 - 两个原单元真实治理读回都 **ready**。A 一次完成；B 首次受“子级永远返回提案”旧提示干扰，返回 proposed；分离 modeling／self_check 目的后，下一次又将历史答复 ID 错报为本轮 consumed。守卫未放宽，补历史输入区别及结构化 allowed_ids／unexpected_ids 反馈，原单元第三次自查返回 ready。原始两次失败均保留；模型 revision 始终为 2。
 - 随后对 B 再调用复用同一 execution_ref，未产生新原生回合。`check-pending-record-retry2.log`、`check-pending-record-cached.log` 可直接对照；A 见 `check-ready-object.log`。
@@ -131,3 +131,47 @@
 - 净降耗保持 **未验证**。本轮确实减少了已证实的格式歧义，但 baseline 与 improved 包含不同纠正、暂停和 Host 介入，不能拿 round 13 对 round 6 宣称同条件节省；失败、生产自查、独立评价与维护全部保留在账本内。
 - 时间口径：本轮首个真实 semantic start 约 03:07 UTC，后续持续穿插生产建模、独立语义评价与窄修复。精确有效人工技术／文档时间未单独计时，不能补造比例；原生 duration 可累计但并发重叠不能当墙钟或全语义时间。若下一阶段语义有效时间不足一半，按 AGENTS 暂停扩展平台／harness，走更短通路。
 - 当前仍待 T03.1 的真正未知执行对账、T04.2 的 A19—A22／重复性、T05.2 的变化后消费及 T06 同条件成本，T08／T09 仍为后续专项。本批不宣称完整 v5 方法／完整业务盲测／净降耗验收 PASS。
+
+## D2 追加：同标准复验与取证反馈修复
+
+- GLM 沿原 workspace-closure 身份修订遗漏的 task coverage，明确标为已取代并登记当前保留记录的精确依赖；RDF 始终 revision 2。原工作空间审计的完整产物副本保留在原评价目录。
+- 第一次后继评价因没有直接 read_material 读取一份原始资料，被原守卫拒绝为 `evaluation_original_source_not_read`。产物里的摘录不替代直接原始来源读取，也未将该原生报告中的自报 PASS 发布为有效结论。
+- 实际定位为 prompt-contract 及反馈信息丢失：评价 prompt 原只列混合 materials，没有单列必读 source_ids；已有 FrameworkError.material_id 被 `str(error)` 丢掉。补 source_ids、明确逐项读原始材料，并将结构化错误原样保留到下次 contract_feedback；读取守卫与独立隔离未放宽。
+- 两项新增原始来源反馈用例先失败，另两项格式重试仍通过；修复后取证与 CLI **28 passed**。再次沿同一评价 ID、同一三题 freeze、同一实际模型及修订后 workspace 产物，独立新原生上下文得到 **3/3 PASS**，`followup-20261030-improved-isolated/evaluations/workspace-audit-recheck/`。此前所有失败回合与原 REVISE 报告保留。
+- 最新完整 v5 回归：**193 passed、1 条既有第三方 warning、135.32 秒**，`followup-20261030-inputs/final-regression-after-evaluator-feedback.log`。此前 191 对应提交 `d7340da`；后继 CLI 修复及新增用例由 193 覆盖。
+- 首项稳定账本最终估算 **2.81229776 CNY**，剩余 **0.18770224**；其中已计价 **1.28235976**、四项暂估 **1.529938**，44 个计量单元，inflight=0，覆盖状态仍 PARTIAL，不能写为提供商最终账单。明细 `followup-20261030-inputs/budget-final.json`。所有失败、修正、自查和评价均在同一账本，没有追加或重置额度。
+- T02 账本估算 **0.27195420 CNY**，13 个已知单元、无暂估，计量覆盖 complete；提供商最终账单未另行获取。外部 Host 与未接线辅助成本保留 out_of_scope/unknown，不扣任务金额，不补零。T03 实质局部修模是后续独立目标，另绑定 3 元，不沿用已清理 T02 run。
+- 已停稳及 cleanup 的八个自有运行：baseline、误共域 improved、improved-isolated、target-a／b／c、memory-impact、partial-application。各回执均 `aggregate_keys_non_active=true`、`no_in_flight_attempts=true`；非空模型与证据保留，误启动且未写入的空项目删除。回执见 `cleanup-followup-20261030-baseline.json`、`cleanup-followup-20261030-improved-isolated.json` 和各 host/cleanup.json。此结论尚不覆盖仍在进行的 local-rework 任务。
+
+## 推进轮次 D4：T03 原单元实质修模与父级材料交接
+
+### 身份、来源和冻结
+
+- 独立工程目标 `v5-local-rework-20261030`，run `local-rework-20261030-start1`，稳定账本 `local-rework-20261030-inputs/budget`，3 元。复用两 Class 场景结构，但本轮名称已知，目标是局部实际错误的发现与修订，不是给 T01 或 T02 账本清零。材料明确声明后续 Host 可能注入已知 B 故障，该操作不是新业务真相。
+- 全部原生角色仍为 GLM Flash／low。生产前冻结四题 `v5-local-rework-public-20261030`，阶段产物在独立评价前固定；无客户盲测或用户真实业务确认。
+
+### 已实际完成的局部循环
+
+1. 两个原单元 `equipment`／`verification-record` 提案，父级首次应用并自查，实际模型 revision 1，两个 Class。期间根级误将 child 的业务提案形状当作 unified graph，`kind=class` 被编译拒绝，均为 not_written。GLM 最终自行纠正为 fields-only、candidate=null；补权威方法说明，子级提案不能直接复制为可执行图，不增平台业务裁判。
+2. Host 只在自有工程模型上用明确 operation `host-inject-known-b-negation-defect` 改 B 的 business_meaning 为相反断言，revision 1→2；A 保留。原 intent、实际回执和快照保存于 `phase-before-local-check.json` 与 `fault-application-receipt.json`。
+3. 原 B 实际治理读取后返回 **revise**：准确指出“记录存在即表示核验通过”违反原文否定，并与其 not_applicable 矛盾；其他字段无需改。程序重开原 B 与祖先为 generation 1，A 保持 generation 0，未额外写 RDF；`reentry-proof.json`。
+4. 同一 run、同一预算 resume。B 原单元的下一 prompt 确实带 previous_local_check，并给出局部修订；根级只更新原 B，revision 2→3。A 定义逐字段未变，A／B 实际身份都保留，仍只有两个不同资源 IRI，没有重建同名 Class。
+5. 根级整体 self-check ready；Host 显式安排 B 原单元修后实际读回为 **ready**。该次不是父级 LLM 自动请求：本轮尚未证明默认自主选择 review_units 或任意多层递归。父级字段选择／整体整合与 Host 确定性执行分别保留。
+6. 新独立只读 GLM 读取原文、实际 revision 3、冻结四题及 local-history 阶段产物（含原始治理读取），**4/4 PASS**，`local-rework-20261030-start1/evaluations/local-rework-check/`。原故障、原 revise、自查及应用均保留。
+
+### collaboration/routing：检查材料发布后父级不可读
+
+- 随后用真实父级工具身份检查，发现 `check_material_ref` 已生成，但原 helper 没有向父级交接，`TeamChannel.read` 正确拒绝 `handoff_material_forbidden`。这不是模型质量失败，不能因为局部检查 ready 就忽略父级无法取证。
+- 两项新增用例在正常／已 handoff 父级下均先失败。最小修复沿既有材料与 TaskControl 通道：Host 将检查结果及原始治理读取冻结为精确版本材料，并向原直接父级登记带材料引用的结果消息；消息登记不绕过原调度、控制和预算；已 handoff 的父级未因此新开 LLM 回合。通用 Agent 的 closed-task 发送规则和材料读取权限均未放宽。
+- `governed_read_material_ref` 供父级按范围读取原始响应，不把长上下文塞进证明正文。缓存复用不重复发送；新版本另留证明。相关 **42 passed**，包含父级实际读取与无重复消息检查。
+- 新代码下 A 原单元实际检查 ready，生成两份可读材料；对旧代码已经完成的 B，只补一次明确 Host 技术转交和原始读取材料，不改旧证明／旧事件，也没有再次让 GLM 修模型。
+- 通过与 read_handoff_material 相同的父级 `TeamChannel.read` 实际读回 A／B 的证明及 query_semantic_context、read_model_resource 原始响应，均绑定 revision 3；回执 `parent-proof-read-receipt.json`、修前 `parent-check-read-before.log`、修后 `parent-proof-read-after.log`。这是 Host 以父级身份执行的确定性权限／可读性核对，不宣称另有父级 LLM 消费回合或新独立语义报告。
+- 先前四题独立评价覆盖实际模型和局部修订轨迹；这次后继交接修复另由失败复现、相关回归及真实工具读取证明，没有拿旧 4/4 覆盖新增运行代码。
+
+### 本批最终结论和保留风险
+
+- 最终完整 v5 回归 **194 passed、1 条既有第三方 warning、159.05 秒**，`local-rework-20261030-inputs/final-regression.log`；覆盖后继 CLI 反馈、原单元自查和材料交接代码。Ruff、diff、文档链接检查覆盖最终差异。
+- 第三项账本最终估算 **0.29092860 CNY**，14 个已知计量单元，无暂估、inflight=0，计量覆盖 complete，剩余 **2.70907140**。三项任务均未耗尽或追加预算；外部 Host／未接线辅助调用仍单列 unknown，不以零费用冒充完整成本或最终账单。
+- 第三项已 stop／cleanup，九个本批自有运行均停稳，临时凭据撤销；非空模型与失败证据保留。第三项回执 `followup-20261030-inputs/cleanup-local-rework-20261030-start1.json` 同样确认 aggregate_keys_non_active 和 no_in_flight_attempts。
+- **T01 默认采用仍为 PARTIAL**：新任务导出发现 B 修后记录 body 已说明完整正确、无需变化，states 却 expression=partial；旧“present_but_wrong／needs_expression”记录未明确历史化，父级 coverage 仍引用旧模型 revision，freshness=needs_review。实际模型 4/4 不等于工作空间准确闭合。证据 `local-rework-20261030-inputs/workspace-final-summary.log` 及 `followup-20261030-inputs/local-rework-20261030-start1-records.json`。没有再次由 Host 逐条闭合后把它称为默认成功，也没有增加平台语义完成硬门。
+- 下一步优先验证让 Agent 在自查时准确定位已有记录、沿稳定 ID 刷新当前状态及实际依据的最短方法路径；然后继续 T04.2 的跨单元合计／范围受限共同澄清／边界和 T05.2 变化后消费。T03 的任意多层递归、父级自主消费方式、复杂组合及净成本继续保留未验证；完整 v5 方法一致性仍 PARTIAL。

@@ -186,12 +186,14 @@ def test_tool_completion_is_not_successful_governed_or_source_read(frozen_report
 
 
 @pytest.mark.parametrize("bounded_scope", [False, True])
+@pytest.mark.parametrize("first_failure", ["format", "source_read"])
 def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_production(
     task_file,
     tmp_path,
     workspace,
     monkeypatch,
     bounded_scope,
+    first_failure,
 ):
     from ontoweave_modeling import cli
     from ontoweave_modeling.contracts import TaskBinding, write_json
@@ -271,6 +273,10 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
         def __call__(self, root, purpose, prompt, inputs):
             calls.append(root.name)
             assert purpose == "acceptance" and not inputs
+            if first_failure == "source_read" and len(calls) == 2:
+                parsed = json.loads(prompt)
+                assert parsed["source_ids"] == ["source"]
+                assert parsed["contract_feedback"]["material_id"] == "source"
             folder = root / "agent"
             folder.mkdir()
             events = []
@@ -285,6 +291,8 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
                 ("frozen-questions", question_sha),
                 ("human-inputs", human_sha),
             ]:
+                if first_failure == "source_read" and len(calls) == 1 and material_id == "source":
+                    continue
                 events.append(
                     {
                         "method": "item/completed",
@@ -339,7 +347,9 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
             }
             return {
                 "status": "completed",
-                "final_response": "bad JSON" if len(calls) == 1 else json.dumps(report),
+                "final_response": "bad JSON"
+                if len(calls) == 1 and first_failure == "format"
+                else json.dumps(report),
             }
 
     class Platform:

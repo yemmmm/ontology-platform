@@ -2,7 +2,7 @@
 
 import json
 
-from .acceptance import require_governed_read
+from .acceptance import require_governed_read, successful_reads
 from .contracts import SELF_CHECK_SCHEMA, FrameworkError, digest, write_json
 from .control import TaskControl
 from .execution import CodexInvocation, ExecutionManager
@@ -95,11 +95,26 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
             },
         )
         raise FrameworkError("unit_check_needs_correction", detail=str(error)) from error
-    proof = {"unit_id": unit_id, "basis": basis, "result": result, "execution_ref": ref}
+    channel = TeamChannel(selected.data, repository, TaskControl(repository), selected.actor)
+    reads = [
+        {"tool": tool, "arguments": arguments, "data": data}
+        for tool, arguments, data in successful_reads(events)
+        if tool in {"query_semantic_context", "read_model_resource"}
+    ]
+    read_ref = channel.publish(
+        "check-reads-" + digest(basis)[:24], text=json.dumps(reads, ensure_ascii=False)
+    )
+    proof = {
+        "unit_id": unit_id,
+        "basis": basis,
+        "result": result,
+        "execution_ref": ref,
+        "governed_read_material_ref": read_ref,
+    }
     proof_ref = repository.put_reference(identity, "unit_self_check", proof, 0)
-    material = TeamChannel(
-        selected.data, repository, TaskControl(repository), selected.actor
-    ).publish("check-" + digest(basis)[:24], text=json.dumps(proof, ensure_ascii=False))
+    material = channel.publish(
+        "check-" + digest(basis)[:24], text=json.dumps(proof, ensure_ascii=False)
+    )
     current = repository.get(work_id)
     repository.put_reference(
         work_id,
@@ -115,4 +130,21 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
         WorkPlan(binding.data, repository).reopen(
             unit_id, "Local actual-model self-check: " + "; ".join(result["issues"])
         )
+    # Host-produced evidence can be delivered after handoff, without starting another turn.
+    # Keep the ordinary Agent send/closed-task guard and material read permissions unchanged.
+    parent = selected.data.get("_parent_actor", "modeling")
+    channel.control.enqueue(
+        channel.prefix + selected.actor + ":host-check-" + digest(basis)[:24],
+        "input",
+        "Bounded production self-check result; exact governed reads are available by range. "
+        "This is not independent acceptance.",
+        channel.unit(parent),
+        metadata={
+            "source": "agent",
+            "author": selected.actor,
+            "recipient": parent,
+            "run_id": selected.data["run_id"],
+            "material_refs": [material, read_ref],
+        },
+    )
     return proof

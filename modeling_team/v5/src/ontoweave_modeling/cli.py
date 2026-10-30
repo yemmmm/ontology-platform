@@ -120,7 +120,9 @@ def evaluate(
         model_revisions=handoff["target"]["model_revisions"],
         instructions="You are an independent read-only semantic evaluator. Read the original sources, "
         "every frozen case, target and any human-inputs using read_material; query the actual "
-        "governed model. Attributed human replies are additional approved sources; preserve "
+        "governed model. Read each source_ids entry directly in this turn even if artifacts "
+        "quote it; copied excerpts do not replace the original-source read. "
+        "Attributed human replies are additional approved sources; preserve "
         "their partial status and scope rather than assuming every question was resolved. "
         "Never create, continue, repair or modify production work. A candidate or production "
         "self-check is not model evidence. When recall leaves a known resource unverified, use "
@@ -139,6 +141,7 @@ def evaluate(
             "required_artifacts": list(required_artifacts),
             "artifact_contract": "Read required artifacts as scoped targets or attributed subordinate reports. They cannot supply facts missing from the actual model. Judge overall conditions independently, not by adding subordinate PASS scores.",
             "materials": list(manifest),
+            "source_ids": list(handoff["source_revisions"]),
             "target": handoff["target"],
             "evaluation": handoff["evaluation"],
             "result_schema": REPORT_SCHEMA,
@@ -178,7 +181,11 @@ def evaluate(
         # Correct only report structure/reads; the independent frozen standard stays intact.
         write_json(
             attempt_path,
-            {"index": attempt["index"] + 1, "error": str(error), "previous_execution_ref": ref},
+            {
+                "index": attempt["index"] + 1,
+                "error": error.as_dict() if isinstance(error, FrameworkError) else str(error),
+                "previous_execution_ref": ref,
+            },
         )
         raise FrameworkError("evaluation_report_needs_correction", detail=str(error)) from error
     if bridge.call("snapshot")["model_revisions"] != handoff["target"]["model_revisions"]:

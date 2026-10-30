@@ -61,6 +61,8 @@ required-artifact 的记忆／摘要为待验对象，不能补成模型本身�
 父级需要原单元核对实际表达时，可在自查结果使用 review_units 请求已就绪的直接子级。
 Host 可用 check-unit --unit-id 显式安排有界生产自查；依据原候选／来源、代次及实际模型
 版本复用或更新证明，不新开应用写入方。非 ready 结果重开原单元及祖先，沿原预算修订。
+检查证明的 governed_read_material_ref 指向原始治理读取材料，随结果一同交给父级；
+父级需要核对时通过 read_handoff_material 分段读取，保留其确切模型版本。
 这仍是生产闭环，后续 evaluate 的上下文、冻结与只读隔离要求保持。
 
 验收结束后保存必要快照及用量，stop 并 cleanup；实际写入的工程模型默认保留，临时

@@ -5,8 +5,10 @@ import pytest
 from test_framework_flow import Actor, Platform
 
 from ontoweave_modeling.contracts import FrameworkError
+from ontoweave_modeling.control import TaskControl
 from ontoweave_modeling.execution import CodexInvocation
 from ontoweave_modeling.flow import WorkUnitFlow
+from ontoweave_modeling.team import TeamChannel
 from ontoweave_modeling.unit_checks import check_unit
 from ontoweave_modeling.work_plan import WorkPlan
 
@@ -27,13 +29,27 @@ def proposed_child(binding, workspace, saver):
     return selected, platform
 
 
-def test_local_actual_read_back_reuses_proof_until_model_changes(binding, workspace, saver):
+@pytest.mark.parametrize("parent_closed", [False, True])
+def test_local_actual_read_back_reuses_proof_until_model_changes(
+    binding, workspace, saver, parent_closed
+):
     selected, platform = proposed_child(binding, workspace, saver)
+    if parent_closed:
+        workspace.put_reference(
+            binding.identity + ":work", "work_unit", {"status": "handoff_ready"}, 0
+        )
     actor = Actor(selected, platform)
     original = check_unit(binding, workspace, platform, "local", invoke=actor)
     assert original["result"]["status"] == "ready"
     assert original["basis"]["model_revisions"] == {"ontology": 1}
+    parent = TeamChannel(binding.data, workspace, TaskControl(workspace))
+    check_ref = workspace.get(selected.identity + ":work")["content"]["check_material_ref"]
+    assert json.loads(parent.read(check_ref)["text"])["basis"] == original["basis"]
+    reads = json.loads(parent.read(original["governed_read_material_ref"])["text"])
+    assert reads[0]["data"]["scope"]["ontologies"][0]["model_revision"] == 1
+    message_count = len(parent.messages())
     assert check_unit(binding, workspace, platform, "local", invoke=actor) == original
+    assert len(parent.messages()) == message_count
     assert actor.calls == ["self_check"]
     assert workspace.get(selected.identity + ":work")["content"]["status"] == "proposal_ready"
     platform.call("apply", {"operation_id": "second-root-write"})

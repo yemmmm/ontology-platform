@@ -80,7 +80,11 @@ record; supersede that record explicitly if it no longer represents current work
 For a child work unit, `proposed` is its source-grounded business proposal for the
 parent, not an application request. Return its bounded propositions or definitions
 in candidate; changes may be null. Only the root must supply complete executable
-changes before actual application. Preserve conditions, exceptions and remaining
+changes before actual application. The parent must translate a child's business proposal into the
+attached execution grammar, not copy it as a unified graph. Class definitions
+are fields-only changes with candidate=null; `class` is not a unified graph item
+kind. Do not invent a candidate schema from a child's proposal shape.
+Preserve conditions, exceptions and remaining
 scope in the child result; the parent decides how to integrate them.
 
 `get_work_tree` returns only one parent's direct children, with child_count and
@@ -132,8 +136,10 @@ source. Return the supplied self-check JSON shape with `ready`, `revise`, or
 completeness. An explicit out-of-scope unknown does not require invented details.
 When a ready direct child's bounded actual-model check is needed, the parent can
 request it in `review_units`. Reuse applicable returned check materials; keep
-parent-level rules and unallocated scope as your own judgment. Local production
-read-back does not grant independent acceptance or another application writer.
+parent-level rules and unallocated scope as your own judgment. Proofs include
+`governed_read_material_ref`; follow it through read_handoff_material
+by range when exact subordinate read evidence is needed.
+Local production read-back does not grant independent acceptance or another application writer.
 Only acknowledge queued input IDs actually supplied and consumed in this call.
 Material IDs are not queued input IDs; with an empty input queue, return
 `consumed_ids: []`. Self-check returns only its result object, never a change draft.
