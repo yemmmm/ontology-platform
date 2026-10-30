@@ -444,3 +444,54 @@ def test_checkpoint_namespace_rejection_precedes_any_write(tmp_path, capsys):
         == "checkpoint_namespace_must_be_separate"
     )
     assert not root.exists()
+
+
+@pytest.mark.parametrize("with_receipt", [False, True])
+def test_governed_iri_is_not_used_as_native_relation_endpoint(task_file, tmp_path, with_receipt):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    bridge = HostBridge(binding.root)
+    program = r'''
+import json, sys
+from pathlib import Path
+from types import SimpleNamespace
+from ontoweave_modeling.contracts import TaskBinding, write_json
+from modeling_team.v5.host.worker import PlatformWorker
+from modeling_team.direct_modeling import compile_model_changes, ModelChangeCompilationError
+worker = PlatformWorker(TaskBinding.load(Path(sys.argv[1])))
+with_receipt = sys.argv[2] == "True"
+iri = "https://example.test/semantic/class/meaning"
+native_id = "11111111-1111-4111-8111-111111111111"
+# This is the real semantic-read-v2 shape: id is the RDF IRI, not a native ID.
+scope = SimpleNamespace(ontology_ids=["ontology"], ontology_id="ontology",
+    _ok=lambda *args: {"model_revision":3,"items":[{"id":iri,"iri":iri}]})
+if with_receipt:
+    write_json(worker.root / "applied-bindings.json", {"existing": {
+        "ontology_id":"ontology", "resource_kind":"class", "resource_iri":iri,
+        "resource_id":native_id}})
+ref = {"artifact_ref":"model-read:class-detail:ontology", "path":"/"+iri}
+actual = worker.read_binding(scope, ref)
+assert actual["resource_iri"] == iri
+assert actual["resource_id"] == (native_id if with_receipt else None), actual
+request = {"schema_version":"r4-3-025-model-changes/v1", "candidate_ref":None, "changes":[{
+    "change_id":"relation", "action":"create", "resource_kind":"relation_type",
+    "item_id":None, "target_ref":None, "fields":{"name":"Related",
+        "source_class_id":{"existing_resource_ref":ref},
+        "target_class_id":{"existing_resource_ref":ref}}}]}
+try:
+    batches,_ = compile_model_changes(request,candidate=None,
+        ontology_by_item={"relation":"ontology"},resolve_binding=lambda _:actual)
+except ModelChangeCompilationError as error:
+    assert not with_receipt
+    assert "binding_identity_missing" in str(error.errors), error.errors
+else:
+    assert with_receipt
+    payload = batches[0]["items"][0]["payload"]
+    assert payload["source_class_id"] == payload["target_class_id"] == native_id, payload
+print("governed-reference-native-identity-checked")
+'''
+    result = subprocess.run(
+        [bridge.command[0], "-c", program, str(binding.root), str(with_receipt)],
+        env=bridge.env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "governed-reference-native-identity-checked"

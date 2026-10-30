@@ -277,6 +277,9 @@ class WorkUnitFlow:
             "the same complete string in both; these two slots merge into one output field. "
             "Return exactly one JSON object matching result_schema. Read approved sources with "
             "read_material using source_manifest keys as material_id, not filenames or source paths. "
+            "Every source_refs entry must match a read_material read in this native turn; "
+            "earlier reads or unchanged source versions do not count for that declaration. "
+            "Cite only the exact materials actually read here. "
             "actual_baseline.resource_refs contains Host-verified existing_resource_ref objects: "
             "copy their artifact_ref and path exactly when referring to an applied resource. "
             "For an existing resource read from the governed model, you may use an existing_resource_ref "
@@ -342,11 +345,13 @@ class WorkUnitFlow:
                     )
                     if tool == "read_material" and "text" in data
                 }
-                if any(
-                    (r["material_id"], r["sha256"]) not in read_sources
+                missing_sources = sorted({
+                    r["material_id"]
                     for r in result["source_refs"]
-                ):
-                    raise FrameworkError("source_read_missing")
+                    if (r["material_id"], r["sha256"]) not in read_sources
+                })
+                if missing_sources:
+                    raise FrameworkError("source_read_missing", material_ids=missing_sources)
             self._confirm_inputs(ref, result)
         except FrameworkError as error:
             return self._save(

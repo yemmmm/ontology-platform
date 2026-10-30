@@ -488,3 +488,29 @@ def test_stop_is_not_reset_by_resume_and_phantom_consumption_keeps_active(worksp
     control.finish_turn("unit", "exec")
     control.enqueue("resume", "resume")
     assert control.synchronize()["mode"] == "stopped"
+
+
+def test_source_read_feedback_names_missing_material_and_can_resume(binding, workspace, saver):
+    platform = Platform()
+    actor = Actor(binding, platform)
+    control = TaskControl(workspace)
+    prompts = []
+
+    def invoke(root, purpose, prompt, inputs):
+        result = actor(root, purpose, prompt, inputs)
+        if purpose == "modeling":
+            prompts.append(json.loads(prompt))
+            if len(prompts) == 1:
+                (root / "agent/events.jsonl").write_text("")
+                control.enqueue("pause-after-unread-source", "pause")
+        return result
+
+    state = WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)
+    assert state["status"] == "paused" and not platform.effects
+    assert state["issue"]["code"] == "source_read_missing"
+    assert state["issue"]["material_ids"] == ["source"]
+    assert "this native turn" in prompts[0]["contract"]
+    control.enqueue("resume-source-correction", "resume")
+    final = WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)
+    assert final["status"] == "handoff_ready" and len(platform.effects) == 1
+    assert prompts[1]["feedback"]["material_ids"] == ["source"]

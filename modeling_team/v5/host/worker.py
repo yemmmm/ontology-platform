@@ -117,11 +117,30 @@ class PlatformWorker:
         item = next((row for row in envelope["items"] if row["iri"] == iri), None)
         if item is None:
             return None
+        resource_id = item.get("resource_id")
+        if not resource_id and item.get("id") != iri:
+            resource_id = item.get("id")
+        if not resource_id:
+            # semantic-read-v2 uses the RDF IRI as id. Only a retained native
+            # receipt can fill the execution ID; never encode that IRI as an ID.
+            receipts = self.root / "applied-bindings.json"
+            applied = json.loads(receipts.read_text()) if receipts.exists() else {}
+            resource_id = next(
+                (
+                    row["resource_id"]
+                    for row in applied.values()
+                    if row.get("ontology_id") == ontology_id
+                    and row.get("resource_kind") == kinds[family]
+                    and row.get("resource_iri") == iri
+                    and row.get("resource_id")
+                ),
+                None,
+            )
         binding = {
             "ontology_id": ontology_id,
             "resource_kind": kinds[family],
             "resource_iri": item["iri"],
-            "resource_id": item.get("resource_id", item["id"]),
+            "resource_id": resource_id,
             "model_revision": envelope["model_revision"],
         }
         write_json(

@@ -268,6 +268,10 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
         def __init__(self, binding, bridge, **kwargs):
             assert kwargs["materials"] != binding.root / "materials"
             assert kwargs["model_revisions"] == {"ontology": 3}
+            assert "endpoints" in kwargs["instructions"]
+            assert "definition text" in kwargs["instructions"]
+            assert "every required_artifacts entry" in kwargs["instructions"]
+            assert "distinct resource IRIs" in kwargs["instructions"]
             self.materials = kwargs["materials"]
 
         def __call__(self, root, purpose, prompt, inputs):

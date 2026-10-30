@@ -122,6 +122,8 @@ def evaluate(
         "every frozen case, target and any human-inputs using read_material; query the actual "
         "governed model. Read each source_ids entry directly in this turn even if artifacts "
         "quote it; copied excerpts do not replace the original-source read. "
+        "Before reporting, directly read every required_artifacts entry in this turn, including "
+        "each workspace/history chunk; other artifacts quoting it do not replace that read. "
         "Attributed human replies are additional approved sources; preserve "
         "their partial status and scope rather than assuming every question was resolved. "
         "Never create, continue, repair or modify production work. A candidate or production "
@@ -129,6 +131,9 @@ def evaluate(
         "read_model_resource with its actual ontology_id/IRI and class-detail, property-list, "
         "relation-type-list or entity-detail family. Preserve retrieval gaps separately from "
         "confirmed model omissions; sources cannot fill missing model facts. "
+        "For modeled relationships, verify actual endpoints resolve to the intended actual "
+        "resources; correct definition text alone does not prove valid topology. "
+        "Count distinct resource IRIs; several change IDs may reference the same actual resource. "
         "Keep questions, answers and private reasons private. Return exactly one valid JSON object "
         "matching result_schema, without Markdown or narration. Escape quotation marks inside strings.",
     )
