@@ -18,7 +18,7 @@
 | T04.1 验收取证正反例 | R2 | 合格、规则遗漏及方向错误已验证 | 已补精确读取及证据识别 | 原生独立上下文实际读取 | 公开有界正反例正确区分 | 未验证 |
 | T04.2 代表性完整语义 | R1、R2、R4 | D6 组合／父级／限定澄清与端点缺陷 | 身份适配及来源反馈已修，202 passed | 实际 revision 5；六端点对账一致 | 初始九题有漏查；负对照拒绝正确；最终十二题见 D6 | 净收益未验证 |
 | T05.1 共享变化影响集 | R3 | 共享解释及遗漏依赖已有对照 | 已补方法指导 | 新上下文修订／重审已发生 | 公开工程范围 3/3 PASS | 未验证 |
-| T05.2 消费、总览与接续 | R3 | D6 显式共享上限变化及旧引用 | 原单元／根级局部修订 | 原身份、新上下文、历史保留 | 变化后模型 12/12、当前总览 3/3；撤回／旧摘要失效等待验 | 净收益未验证 |
+| T05.2 消费、总览与接续 | R3 | D6 共享上限变化；D8 fork 身份交接 | 原单元修订及显式原生 ID 交接 | D8 新 fork 复用原类增量写入、进程接续 | 变化后模型 12/12、总览 3/3；D8 五题 5/5；撤回／未知恢复待验 | 净收益未验证 |
 | T06 全任务降耗 | R4 | 已保留来源重复声明、格式纠正及根级往返 | 已修声明提示／精确缺项反馈 | D6 后继根级无同类缺项重试 | 同条件质量待证明 | 净收益未验证 |
 | T07 状态与文档 | 各项 | 本轮已登记计划和风险 | 后续随项同步 | 不适用 | 不代表语义通过 | 不适用 |
 | T08 记忆专项 | 按实际缺口 | 待开始 | 研究后决定 | 待验证 | 待验证 | 未验证 |
@@ -364,3 +364,19 @@
 - 完整快照 `local-owner-method-final-v8`，snapshot_id=`f9cc9ff3175a4ecfbcc901a521ba3fed`，202 个对象，并有项目记录／真实 platform-data；model_read_error=null，捕获管理员密钥 revoked=true。
 - 原生产 run 已 stop／cleanup：**aggregate_keys_non_active=true、no_in_flight_attempts=true、written-retained**，读取、协议和组织管理员临时密钥撤销；非空工程模型与全部原件保留。兼容清理字段 legacy_scope_disposition=failed-written-retained 来自旧 Runner 终态推断，v5 质量／任务结论独立记录（现有 worker 注释已明确），不据它推导语义失败。原件 `snapshot-final-receipt.json`／`cleanup-final.json`／`budget-final.json`／`observed-usage-summary.json` 均在同一 inputs 目录。
 - **收口边界**：局部责任接线、修后原身份闭环及多层实际模型导航在本公开参考范围有上述工程／实际采用／独立结果。完整 v5 仍 **PARTIAL**；历史 R2 误归属／虚构检查及漏读始终保留，未证明任意验收均可靠。方法功能、真实采用、L1、L2 与净降耗分别报告。
+
+
+## 推进轮次 D8：fork 原生身份交接及实际续建
+
+归属 T05.2、R5.0-001 F10／004／007，起点 `5d798e2`。用户同意继续后，将独立目标 `v5-fork-continuation-20261030` 绑定新的稳定 3 CNY 账本 `workspaces/v5-runs/fork-continuation-20261030-inputs/budget`；源建立、fork、显式 v2 来源修订和独立评价同账本，未重置或追加。旧任务账本没有混用。全部原生角色 GLM Flash／low；工程 fixture 与五题在首次生产前冻结，不是客户盲测。
+
+- **复现／修复**：真实源治理读取的 id=IRI、空本地 bindings 的只读编译探针返回 `binding_identity_missing`，没有执行一次失败的真实 fork 或修改该模型。开发红测后，Host 从保存图的显式 ID／唯一类型交接 bindings，并按实际 fork 回执映射目标本体；native ID／IRI 本身保留。ID 不从 IRI 后缀提取；OWL.ObjectProperty 的 relation_type／对象值 property 由已有原生命名空间区分。copied pending 保存身份原件，可在复制完成、本地初始化中断后恢复文件而不重做平台复制；不新增后端 API 或恢复框架。
+- **实际运行**：源 `fork-continuation-20261030-source` 初建两个 Class、revision 1，快照 `b85a805235e94b6987a4fcb0cac1d7d0`。目标 `fork-continuation-20261030-target` 为新项目／本体和新原生上下文；显式 v2 材料要求在原设备定义整合编号含义、新增记录→设备关系。GLM 复用两个原类，唯一 `apply-00000`（Batch `f212457d-ef49-4154-9996-036758539b3d`、Attempt `840788ea-4b8d-4c55-bc75-9689472bf031`），目标 1→2，原类身份与关系端点对账正确。
+- **实际接续**：候选原生终态后自然暂停在 apply 前，新 CLI 进程从原候选应用、自查 ready。完成 handoff 后另用新进程 resume，原候选／检查结果摘要、唯一操作及模型 revision 2 不变。源再次 capture 为 archived／revision 1、图 10 triples 同构不变。此为已知终态后的接续，不外推缺少 result／turn-completed 或 COMMIT 回应未知的恢复。
+- **独立五题**：新只读原生上下文 `evaluations/fork-continuation-five/` 直接读取原材料、原冻结五题及实际 revision 2，并展开关系端点，**5/5 PASS**。Host 导出、自查原生实际读取与独立读取分别署名。报告题 4 的 “at handoff” 概述不精确：其 owner_pid 差异对应 apply 前接续，handoff 后 resume 有另一组原件；不以这句话扩大窗口结论。完整原报告保留。
+- **开发检查**：完整 v5 **216 passed、1 条既有 Pydantic warning、189.78 秒**；最终定向 **18 passed**，额外覆盖完整回归收集之后新增的 copied 中断参数分支。Ruff check／format check、diff 和相关链接检查通过。未修改 backend／frontend，不重启应用。GitNexus 对 v5 目标未命中，沿明确调用点、差异、测试及真实平台补证，不声称图谱完整影响覆盖。
+- **收尾**：目标最终快照 `06c3d80bfb6a4881b568748297c7161e`；目标 stop／cleanup 确认全部 keys 非活动、无在途 Attempt，保留模型。源原封存回执仍在，3 次源、1 次目标 capture／fork 临时凭据全部 revoked=true。多余重复 source cleanup 返回 `admin key unavailable`，尚未发送撤销请求，没有覆盖原回执；记录为已封存源重复清理的幂等反馈缺口，没有将报错掩盖成成功，也不为此扩建恢复机制。
+- **金额与 token**：**0.16588240 / 3 CNY**，余额 **2.83411760**，5 个已知单元、无暂估、无在途，覆盖 complete；非最终提供商账单。建模含自查输入 290,015／输出 7,564／缓存输入 217,920，独立验收输入 306,833／输出 2,373／缓存输入 262,400；合计 606,785 输入＋输出 token，缓存已经包含在输入。外部 Host 单列 unknown、不扣预算。
+- **时间／下一步**：生产原生区间 242.54 秒、独立 122.26 秒，首末原生窗口 796.57 秒；含提供商／工具等待，不等于纯语义有效时间，Host 修复／测试／文档有效劳动未独立计时。生产占窗口约 30.4%，加验收约 45.8%；按 AGENTS 停止进一步平台／harness 扩展。先用持久提示和更紧凑、观察者明确的原件验证默认冷启动／取证正反例，净降耗保持未验证。
+
+完整来源、决策、资源身份、费用与未覆盖范围见[交付调研](../../research/2026-10-30-v5-fork-native-binding-delivery.md)。代码／新 fork 有界续建已交付；已 ready 历史 fork 回填、任意外部 RDF 写入身份、原生未知终态恢复、来源撤回、客户盲测、L2 及全方法一致性仍未关闭。

@@ -450,7 +450,7 @@ def test_checkpoint_namespace_rejection_precedes_any_write(tmp_path, capsys):
 def test_governed_iri_is_not_used_as_native_relation_endpoint(task_file, tmp_path, with_receipt):
     binding = TaskBinding.prepare(task_file, tmp_path / "run")
     bridge = HostBridge(binding.root)
-    program = r'''
+    program = r"""
 import json, sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -488,10 +488,67 @@ else:
     payload = batches[0]["items"][0]["payload"]
     assert payload["source_class_id"] == payload["target_class_id"] == native_id, payload
 print("governed-reference-native-identity-checked")
-'''
+"""
     result = subprocess.run(
         [bridge.command[0], "-c", program, str(binding.root), str(with_receipt)],
-        env=bridge.env, capture_output=True, text=True, check=False,
+        env=bridge.env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "governed-reference-native-identity-checked"
+
+
+def test_fork_bindings_use_explicit_captured_native_ids_not_iri_suffix(task_file, tmp_path):
+    binding = TaskBinding.prepare(task_file, tmp_path / "source")
+    bridge = HostBridge(binding.root)
+    program = r'''
+from pathlib import Path
+from types import SimpleNamespace
+import sys
+from app.core.config import Settings
+from app.services.semantic_export import namespace_from_settings
+from ontoweave_modeling.contracts import TaskBinding
+from modeling_team.v5.host.worker import PlatformWorker
+worker=PlatformWorker(TaskBinding.load(Path(sys.argv[1])))
+ns=namespace_from_settings(Settings())
+iri=str(ns.resource("class","misleading-suffix"))
+relation_iri=str(ns.resource("relation-type","relation-native-ID"))
+object_property_iri=str(ns.resource("property","object-native-ID"))
+# Native ID is a statement in the actual captured graph, different from the IRI suffix.
+turtle=f"""
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix v: <{ns.vocab}> .
+<{iri}> a owl:Class ; v:id "actual-native-ID" .
+<urn:property> a owl:DatatypeProperty ; v:id "property-native-ID" .
+<{relation_iri}> a owl:ObjectProperty ; v:id "relation-native-ID" .
+<{object_property_iri}> a owl:ObjectProperty ; v:id "object-native-ID" .
+<urn:entity> a owl:NamedIndividual ; v:id "entity-native-ID" .
+<urn:no-id> a owl:Class .
+<urn:ambiguous> a owl:Class ; v:id "one", "two" .
+"""
+snapshot={"schema_version":"r4-0-026-platform-data/v3","digest":"captured-digest","project_id":"old-project","ontology_ids":["old-ontology"],"tables":{"ontologies":[{"id":"old-ontology","model_graph_iri":"urn:source-graph"}]},"graphs":{"urn:source-graph":turtle}}
+worker.checkpoint_data=lambda action,payload:{"data":{"project_id":"new-project","ontology_ids":["new-ontology"],"identity_mapping":{"old-ontology":"new-ontology"}},"credential":{"revoked":True}}
+result=worker.fork_data({"snapshot":snapshot,"target_project_id":"new-project"})
+bindings=result["resource_bindings"]
+by_iri={row["resource_iri"]:row for row in bindings.values()}
+assert set(by_iri)=={iri,"urn:property",relation_iri,object_property_iri,"urn:entity"},by_iri
+assert by_iri[iri]["resource_id"]=="actual-native-ID"
+assert by_iri[iri]["resource_kind"]=="class"
+assert by_iri["urn:property"]["resource_kind"]=="property"
+assert by_iri[relation_iri]["resource_kind"]=="relation_type"
+assert by_iri[object_property_iri]["resource_kind"]=="property"
+assert by_iri["urn:entity"]["resource_kind"]=="entity"
+assert all(row["ontology_id"]=="new-ontology" and row["binding_source"]=="captured-fork-data" for row in bindings.values())
+print("captured-native-bindings-verified")
+'''
+    result = subprocess.run(
+        [bridge.command[0], "-c", program, str(binding.root)],
+        env=bridge.env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "captured-native-bindings-verified"

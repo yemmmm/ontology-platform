@@ -184,9 +184,17 @@ class SnapshotFork:
                     write_json(pending_path, pending)
                     raise
                 pending.update(
-                    status="copied", result=result["data"], fork_credential=result["credential"]
+                    status="copied",
+                    result=result["data"],
+                    fork_credential=result["credential"],
+                    resource_bindings=result.get("resource_bindings", {}),
                 )
                 write_json(pending_path, pending)
+            # These are captured native identities, not applications made by
+            # this new run. Keep their provenance and use the existing resolver.
+            write_json(
+                destination / "host/applied-bindings.json", pending.get("resource_bindings", {})
+            )
             target = WorkspaceRepository(
                 config["connection"], config["workspace_schema"], new.data["workspace_ref"]
             )

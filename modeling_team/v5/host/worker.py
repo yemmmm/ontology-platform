@@ -121,8 +121,8 @@ class PlatformWorker:
         if not resource_id and item.get("id") != iri:
             resource_id = item.get("id")
         if not resource_id:
-            # semantic-read-v2 uses the RDF IRI as id. Only a retained native
-            # receipt can fill the execution ID; never encode that IRI as an ID.
+            # semantic-read-v2 uses the RDF IRI as id. Use retained application
+            # or captured-fork identities; never encode that IRI as a native ID.
             receipts = self.root / "applied-bindings.json"
             applied = json.loads(receipts.read_text()) if receipts.exists() else {}
             resource_id = next(
@@ -177,7 +177,64 @@ class PlatformWorker:
         )
 
     def fork_data(self, payload):
-        return self.checkpoint_data("fork", payload)
+        from app.core.config import Settings
+        from app.services.semantic_export import namespace_from_settings
+        from rdflib import Graph, Literal
+        from rdflib.namespace import OWL, RDF, RDFS
+
+        # Read explicit IDs from the captured model before making a copy. The
+        # platform fork preserves these RDF statements, while remapping owners.
+        snapshot = payload["snapshot"]
+        ns = namespace_from_settings(Settings())
+        resources = []
+        for ontology in snapshot["tables"]["ontologies"]:
+            graph = Graph().parse(
+                data=snapshot["graphs"][ontology["model_graph_iri"]], format="turtle"
+            )
+            for subject in set(graph.subjects(ns.vocab.id, None)):
+                ids = list(graph.objects(subject, ns.vocab.id))
+                if len(ids) != 1 or not isinstance(ids[0], Literal) or not str(ids[0]):
+                    continue
+                native_id = str(ids[0])
+                types = set(graph.objects(subject, RDF.type))
+                kinds = set()
+                if types & {OWL.Class, RDFS.Class}:
+                    kinds.add("class")
+                if OWL.DatatypeProperty in types:
+                    kinds.add("property")
+                if OWL.NamedIndividual in types:
+                    kinds.add("entity")
+                if OWL.ObjectProperty in types:
+                    # Both object-valued properties and relation types use OWL
+                    # ObjectProperty. Classify their native namespace using the
+                    # explicit ID, never recover an ID from the IRI suffix.
+                    for native_kind, kind in (
+                        ("property", "property"),
+                        ("relation-type", "relation_type"),
+                    ):
+                        if subject == ns.resource(native_kind, native_id):
+                            kinds.add(kind)
+                if len(kinds) == 1:
+                    resources.append(
+                        {
+                            "ontology_id": ontology["id"],
+                            "resource_kind": kinds.pop(),
+                            "resource_id": native_id,
+                            "resource_iri": str(subject),
+                        }
+                    )
+        result = self.checkpoint_data("fork", payload)
+        mapping = result["data"]["identity_mapping"]
+        result["resource_bindings"] = {
+            "fork-" + digest(resource)[:24]: {
+                **resource,
+                "ontology_id": mapping[resource["ontology_id"]],
+                "binding_source": "captured-fork-data",
+                "source_snapshot_digest": snapshot["digest"],
+            }
+            for resource in resources
+        }
+        return result
 
     def forwarder(self, scope):
         from modeling_team.acceptance_runtime import McpReadForwarder
