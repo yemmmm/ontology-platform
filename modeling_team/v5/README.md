@@ -20,6 +20,10 @@
 
 新 Task 冻结的方法合同包含完整 Class／relation_type 请求示例。格式反馈沿原目标可修正，
 工作空间用现有 states 和精确 depends_on 维护业务状态及依赖，不新增语义必填硬门。
+工作空间导航显示已有 states／model_basis；根级与原单元自查附上本单元的 task／project
+记录导航。它包含分配给本单元及本单元署名的记录；分页使用相同 scope、unit_id、
+`include_authored=true` 和 next_offset。普通按单元搜索默认仍只匹配 unit_id。
+这些信息不自动完成记录；Agent 须根据实际读回更新原记录或明确取代旧记录。
 后续任务、验收正反例、原始失败和未验证范围见
 [统一计划](../../docs/delivery/implementation-plans/2026-10-30-v5-next-tasks.md)及
 [逐轮记录](../../docs/delivery/test-docs/2026-10-30-v5-follow-up-validation.md)。

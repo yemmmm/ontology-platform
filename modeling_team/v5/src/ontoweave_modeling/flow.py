@@ -23,6 +23,7 @@ from .control import TaskControl
 from .execution import ExecutionManager
 from .human_input import HumanInput
 from .results import ResultContractError, decode_json_result
+from .semantic_workspace import SemanticWorkspace
 from .team import TeamChannel
 from .unit_checks import check_unit
 from .workspace import WorkspaceRepository
@@ -670,6 +671,11 @@ class WorkUnitFlow:
                 "actual_target": target,
                 "source_manifest": self.binding.data["source_manifest"],
                 "pending_child_units": self._pending_children(),
+                "workspace_context": SemanticWorkspace(
+                    self.repository, self.binding.data, self.binding.actor
+                ).context()
+                if self.binding.data.get("semantic_workspace")
+                else None,
                 "child_self_checks": [
                     {
                         "unit_id": unit["unit_id"],

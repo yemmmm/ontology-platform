@@ -8,6 +8,7 @@ from ontoweave_modeling.contracts import FrameworkError
 from ontoweave_modeling.control import TaskControl
 from ontoweave_modeling.execution import CodexInvocation, ExecutionManager
 from ontoweave_modeling.flow import WorkUnitFlow
+from ontoweave_modeling.semantic_workspace import SemanticWorkspace
 
 
 def tool_event(tool, data, arguments=None):
@@ -105,6 +106,37 @@ class Actor:
             "status": "completed",
             "final_response": final,
         }
+
+
+def test_root_self_check_locates_old_coverage_without_program_semantic_completion(
+    binding, workspace, saver
+):
+    binding.data["semantic_workspace"] = True
+    space = SemanticWorkspace(workspace, binding.data)
+    space.observe_models({"ontology": 0})
+    space.write(
+        "existing-root-coverage",
+        "coverage",
+        "Root coverage",
+        "Unfinished expression",
+        states={"expression": "partial"},
+    )
+    platform = Platform()
+    actor = Actor(binding, platform)
+
+    def inspect(*args):
+        if args[1] == "self_check":
+            row = json.loads(args[2])["workspace_context"]["local"]["records"][0]
+            assert row["record_id"] == "existing-root-coverage"
+            assert row["states"]["expression"] == "partial"
+            assert row["freshness"]["state"] == "needs_review"
+        return actor(*args)
+
+    assert (
+        WorkUnitFlow(binding, workspace, platform, inspect).advance(saver)["status"]
+        == "handoff_ready"
+    )
+    assert space.read("existing-root-coverage")["states"]["expression"] == "partial"
 
 
 def test_actual_provider_429_pauses_before_next_turn_and_preserves_terminal_receipt(

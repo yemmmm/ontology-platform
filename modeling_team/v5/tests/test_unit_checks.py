@@ -8,6 +8,7 @@ from ontoweave_modeling.contracts import FrameworkError
 from ontoweave_modeling.control import TaskControl
 from ontoweave_modeling.execution import CodexInvocation
 from ontoweave_modeling.flow import WorkUnitFlow
+from ontoweave_modeling.semantic_workspace import SemanticWorkspace
 from ontoweave_modeling.team import TeamChannel
 from ontoweave_modeling.unit_checks import check_unit
 from ontoweave_modeling.work_plan import WorkPlan
@@ -27,6 +28,33 @@ def proposed_child(binding, workspace, saver):
     )
     platform.call("apply", {"operation_id": "actual-root-write"})
     return selected, platform
+
+
+def test_original_unit_check_receives_existing_workspace_navigation(binding, workspace, saver):
+    binding.data["semantic_workspace"] = True
+    selected, platform = proposed_child(binding, workspace, saver)
+    space = SemanticWorkspace(workspace, selected.data, selected.actor)
+    space.observe_models({"ontology": 0})
+    space.write(
+        "old-local-coverage",
+        "coverage",
+        "Old coverage",
+        "Known missing expression",
+        states={"expression": "partial"},
+        unit_id="root",
+    )
+    actor = Actor(selected, platform)
+
+    def inspect(*args):
+        context = json.loads(args[2])["workspace_context"]
+        row = context["local"]["records"][0]
+        assert row["record_id"] == "old-local-coverage"
+        assert row["states"]["expression"] == "partial"
+        assert row["freshness"]["state"] == "needs_review"
+        return actor(*args)
+
+    check_unit(binding, workspace, platform, "local", invoke=inspect)
+    assert space.read("old-local-coverage")["states"]["expression"] == "partial"
 
 
 @pytest.mark.parametrize("parent_closed", [False, True])
@@ -82,6 +110,27 @@ def test_local_revision_reopens_original_unit_and_parent_without_writes(binding,
 def test_unknown_unit_is_not_dispatched(binding, workspace):
     with pytest.raises(FrameworkError, match="work_unit_not_found"):
         check_unit(binding, workspace, Platform(), "unknown")
+
+
+def test_native_failure_keeps_the_runtime_layer_and_original_cause(binding, workspace, saver):
+    selected, platform = proposed_child(binding, workspace, saver)
+    actor = Actor(selected, platform)
+    native_error = {"message": "stream disconnected before completion"}
+
+    def failed(*args):
+        native = actor(*args)
+        return {**native, "status": "failed", "error": native_error}
+
+    with pytest.raises(FrameworkError) as caught:
+        check_unit(binding, workspace, platform, "local", invoke=failed)
+    assert caught.value.layer == "runtime/infrastructure"
+    assert caught.value.detail["cause"]["native_error"] == native_error
+    assert workspace.get(selected.identity + ":work")["content"]["status"] == "proposal_ready"
+    assert (
+        check_unit(binding, workspace, platform, "local", invoke=actor)["result"]["status"]
+        == "ready"
+    )
+    assert len(platform.effects) == 1
 
 
 def test_local_check_feedback_preserves_allowed_input_ids_for_same_unit_retry(

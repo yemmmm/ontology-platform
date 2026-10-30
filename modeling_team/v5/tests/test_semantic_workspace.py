@@ -12,6 +12,97 @@ from ontoweave_modeling.semantic_workspace import SemanticWorkspace
 from ontoweave_modeling.workspace import WorkspaceRepository
 
 
+def test_navigation_exposes_existing_states_and_both_owned_scopes_without_completing_them(
+    workspace, binding
+):
+    task = {**binding.data, "project_ref": "navigation-project"}
+    space = SemanticWorkspace(workspace, task, "local")
+    space.observe_models({"ontology": 1})
+    for scope in ("task", "project"):
+        space.write(
+            "existing-coverage",
+            "coverage",
+            "Own existing coverage",
+            "Original unresolved expression, not silently complete.",
+            states={"expression": "partial", "work": "needs_expression"},
+            scope=scope,
+        )
+        space.write(
+            "own-other-label",
+            "coverage",
+            "Own note with another unit label",
+            "Retained fault",
+            scope=scope,
+            unit_id="root",
+        )
+        SemanticWorkspace(workspace, task, "other").write(
+            "provided-for-local",
+            "decision",
+            "Assigned to local",
+            "Shared judgment",
+            scope=scope,
+            unit_id="local",
+        )
+    SemanticWorkspace(workspace, task, "other").write(
+        "unrelated", "coverage", "Other unit", "Do not load all peer records", scope="project"
+    )
+    space.observe_models({"ontology": 2})
+    context = space.context()
+    for key in ("local", "project_local"):
+        rows = context[key]["records"]
+        row = next(row for row in rows if row["record_id"] == "existing-coverage")
+        assert {row["record_id"] for row in rows} == {
+            "existing-coverage",
+            "own-other-label",
+            "provided-for-local",
+        }
+        assert context[key]["total"] == 3
+        assert row["record_id"] == "existing-coverage"
+        assert row["states"]["expression"] == "partial"
+        assert row["model_basis"] == {"ontology": 1}
+        assert row["freshness"]["state"] == "needs_review"
+    assert space.read("existing-coverage")["revision"] == 1
+    assert space.search(unit_id="local")["total"] == 2
+
+
+def test_owned_navigation_can_page_through_the_public_tool(workspace, binding):
+    import asyncio
+
+    from mcp.server.fastmcp import FastMCP
+
+    from ontoweave_modeling.semantic_workspace import register_workspace_tools
+
+    space = SemanticWorkspace(workspace, binding.data, "local")
+    for index in range(11):
+        space.write(
+            f"record-{index:02d}",
+            "proposition",
+            "Own note",
+            "Original meaning",
+            unit_id="other-scope-label",
+        )
+    first = space.context()["local"]
+    assert first["next_offset"] == 10
+    server = FastMCP("workspace-navigation")
+    register_workspace_tools(server, space)
+    response = asyncio.run(
+        server.call_tool(
+            "search_semantic_records",
+            {
+                "unit_id": "local",
+                "include_authored": True,
+                "offset": first["next_offset"],
+                "limit": 10,
+            },
+        )
+    )
+    second = json.loads(response[0].text)
+    assert second["total"] == 11 and second["next_offset"] is None
+    assert len(first["records"] + second["records"]) == 11
+    assert len({row["record_id"] for row in first["records"] + second["records"]}) == 11
+    assert space.search(unit_id="local")["records"] == []
+
+
 @pytest.mark.parametrize(
     "reference",
     [

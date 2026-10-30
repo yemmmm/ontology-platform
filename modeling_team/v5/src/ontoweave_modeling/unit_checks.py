@@ -8,6 +8,7 @@ from .control import TaskControl
 from .execution import CodexInvocation, ExecutionManager
 from .human_input import HumanInput
 from .results import ResultContractError, decode_json_result
+from .semantic_workspace import SemanticWorkspace
 from .team import TeamChannel
 from .work_plan import WorkPlan
 
@@ -41,6 +42,11 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
     directory = binding.root / "unit-checks" / unit_id / digest(basis)
     attempt_path = directory / "attempt.json"
     attempt = json.loads(attempt_path.read_text()) if attempt_path.exists() else {"index": 0}
+    workspace_context = None
+    if selected.data.get("semantic_workspace"):
+        workspace = SemanticWorkspace(repository, selected.data, selected.actor)
+        workspace.observe_models(target["model_revisions"])
+        workspace_context = workspace.context()
     prompt = {
         "objective": selected.data["objective"],
         "source_manifest": selected.data["source_manifest"],
@@ -48,6 +54,7 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
         "own_proposal": repository.read_reference(work["candidate_ref"]),
         "human_context": HumanInput(selected, repository, TaskControl(repository)).context(),
         "actual_target": {k: target[k] for k in ("project_id", "ontology_ids", "model_revisions")},
+        "workspace_context": workspace_context,
         "instruction": "Production self-check for your bounded unit, not independent acceptance. "
         "Read the original sources and actual governed model, expand exact resources as needed. "
         "Check your proposed meaning, expressions, conditions and unknowns. Do not apply changes "
@@ -55,7 +62,13 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
         "issues; a candidate is not actual model evidence. This return is not whole-task PASS. "
         "consumed_ids contains only this turn's Queued inputs[].id; return [] for an empty "
         "queue. Historical answers and own_proposal.consumed_ids are retained evidence, not "
-        "inputs delivered again in this turn.",
+        "inputs delivered again in this turn. "
+        "When workspace_context is supplied, inspect your existing relevant records first. "
+        "After the governed read, refresh those same coverage/definition/open records and states "
+        "from the actual expressions; do not add a parallel completion note and leave old fault "
+        "or pending records current. Supersede genuinely obsolete records explicitly. "
+        "Keep real unknowns or missing expressions accurate; do not mark all records complete "
+        "merely because the model check is ready. Recheck final dependency freshness.",
         "result_schema": {
             **SELF_CHECK_SCHEMA,
             "properties": {
@@ -76,7 +89,12 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
     native = repository.read_reference(ref)["result"]
     try:
         if native["status"] != "completed":
-            raise FrameworkError("unit_check_turn_failed", layer="runtime/infrastructure")
+            raise FrameworkError(
+                "unit_check_turn_failed",
+                layer="runtime/infrastructure",
+                native_error=native.get("error"),
+                execution_ref=ref,
+            )
         result = decode_json_result(native["final_response"], SELF_CHECK_SCHEMA)
         events = (
             binding.root / "executions" / selected.execution_id(execution_id) / "agent/events.jsonl"
@@ -94,7 +112,12 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
                 "execution_ref": ref,
             },
         )
-        raise FrameworkError("unit_check_needs_correction", detail=str(error)) from error
+        raise FrameworkError(
+            "unit_check_needs_correction",
+            layer=error.layer if isinstance(error, FrameworkError) else "platform-contract",
+            detail=str(error),
+            cause=error.as_dict() if isinstance(error, FrameworkError) else str(error),
+        ) from error
     channel = TeamChannel(selected.data, repository, TaskControl(repository), selected.actor)
     reads = [
         {"tool": tool, "arguments": arguments, "data": data}

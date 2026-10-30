@@ -215,13 +215,26 @@ class SemanticWorkspace:
             "freshness": freshness,
         }
 
-    def search(self, query="", kind=None, unit_id=None, scope="task", limit=20, offset=0):
+    def search(
+        self,
+        query="",
+        kind=None,
+        unit_id=None,
+        scope="task",
+        limit=20,
+        offset=0,
+        include_authored=False,
+    ):
         rows = [
             r
             for r in self.scoped(scope).list_kind("semantic_record")
             if r["content"].get("view") == self.view
             and (kind is None or r["content"]["kind"] == kind)
-            and (unit_id is None or r["content"]["unit_id"] == unit_id)
+            and (
+                unit_id is None
+                or r["content"]["unit_id"] == unit_id
+                or (include_authored and r["content"].get("author") == unit_id)
+            )
             and query.casefold() in (r["content"]["title"] + " " + r["content"]["body"]).casefold()
         ]
         return {
@@ -232,6 +245,8 @@ class SemanticWorkspace:
                     "kind": r["content"]["kind"],
                     "title": r["content"]["title"],
                     "preview": r["content"]["body"][:400],
+                    "states": r["content"].get("states", {}),
+                    "model_basis": r["content"].get("model_basis", {}),
                     "freshness": self.freshness(r, scope=scope),
                 }
                 for r in rows[offset : offset + limit]
@@ -239,6 +254,8 @@ class SemanticWorkspace:
             "total": len(rows),
             "next_offset": offset + limit if offset + limit < len(rows) else None,
             "scope": scope,
+            "unit_id": unit_id,
+            "include_authored": include_authored,
             "authority": "candidate_workspace",
         }
 
@@ -249,12 +266,23 @@ class SemanticWorkspace:
             "source_manifest": self.task["source_manifest"],
             "assigned_material_ids": self.task.get("assigned_material_ids", []),
             "project_ref": self.project_ref,
-            "local": self.search(unit_id=self.actor, limit=10),
+            "local": self.search(unit_id=self.actor, limit=10, include_authored=True),
+            "project_local": self.search(
+                unit_id=self.actor, scope="project", limit=10, include_authored=True
+            )
+            if self.project
+            else None,
             "open_items": self.search(kind="open_item", limit=10),
             "project_navigation": self.search(kind="summary", scope="project", limit=10)
             if self.project
             else None,
-            "instruction": "Search and read exact records as needed. Navigate to approved originals and actual models; notes and summaries are not application or acceptance proof. Page open_items to inspect remaining scope.",
+            "instruction": "Read relevant existing records in both scopes before creating new notes. "
+            "Local pages include notes assigned to or authored by this unit; continue them with "
+            "search_semantic_records using unit_id, include_authored=true, scope and next_offset. "
+            "Use stable IDs and exact revisions to refresh coverage after actual reads, or explicitly "
+            "supersede obsolete records. States, body and model basis must describe the same scope; "
+            "a current model does not close old workspace gaps. Follow next_offset where needed. "
+            "Navigate to approved originals and actual models; notes are not application or acceptance proof.",
         }
 
     def invalidate_sources(
@@ -369,9 +397,11 @@ def register_workspace_tools(server, workspace):
         scope: str = "task",
         limit: int = 20,
         offset: int = 0,
+        include_authored: bool = False,
     ) -> dict:
-        """Locate records by text, kind and unit. Preview is navigation; page and read complete records."""
-        return call(workspace.search, query, kind, unit_id, scope, limit, offset)
+        """Locate records by text, kind and unit. include_authored also matches that unit's author
+        field, for paging local context. Preserve returned filters and read complete records."""
+        return call(workspace.search, query, kind, unit_id, scope, limit, offset, include_authored)
 
     @server.tool()
     def get_modeling_context() -> dict:

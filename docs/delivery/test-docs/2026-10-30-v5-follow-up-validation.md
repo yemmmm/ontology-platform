@@ -11,7 +11,7 @@
 
 | 任务 | 关联风险 | 验证／定位 | 实施修复 | 真实采用／接续 | 独立语义 | 成本结论 |
 | --- | --- | --- | --- | --- | --- | --- |
-| T01 状态、覆盖和去向 | R1、R3 | 缺状态／坏依赖／跨 scope 旧覆盖已复现 | 提示、合同和可恢复反馈已修 | 实际采用；有 Host 指导闭合 | 模型 6/6；工作空间 REVISE 后 3/3 | 净收益未验证 |
+| T01 状态、覆盖和去向 | R1、R3 | 缺状态、旧覆盖、导航／作者遗漏已复现 | 导航及自查上下文已修 | 新任务默认自查沿原记录闭合 | D5 有界六项 6/6；完整场景待联验 | 净收益未验证 |
 | T02 按依赖分阶段应用 | R4 | 安全部分整层等待已复现 | 最小调度修正已验证 | A 先应用、B 后接续，身份保留 | 公开工程 4/4 PASS | 同条件降耗未验证 |
 | T03 子单元闭环 | R4 | 格式、回执及父级材料交接均有复现 | 有界读回／重开、证明及精确读取交接 | 原 B 实质修模、A 复用，原身份保留 | 工程修模 4/4；多层／自主采用待验 | 净收益未验证 |
 | T03.1 未知执行恢复 | R5 | 按实际窄窗口开展 | 待定位后决定 | 待验证 | 按影响范围判断 | 未验证 |
@@ -175,3 +175,39 @@
 - 第三项已 stop／cleanup，九个本批自有运行均停稳，临时凭据撤销；非空模型与失败证据保留。第三项回执 `followup-20261030-inputs/cleanup-local-rework-20261030-start1.json` 同样确认 aggregate_keys_non_active 和 no_in_flight_attempts。
 - **T01 默认采用仍为 PARTIAL**：新任务导出发现 B 修后记录 body 已说明完整正确、无需变化，states 却 expression=partial；旧“present_but_wrong／needs_expression”记录未明确历史化，父级 coverage 仍引用旧模型 revision，freshness=needs_review。实际模型 4/4 不等于工作空间准确闭合。证据 `local-rework-20261030-inputs/workspace-final-summary.log` 及 `followup-20261030-inputs/local-rework-20261030-start1-records.json`。没有再次由 Host 逐条闭合后把它称为默认成功，也没有增加平台语义完成硬门。
 - 下一步优先验证让 Agent 在自查时准确定位已有记录、沿稳定 ID 刷新当前状态及实际依据的最短方法路径；然后继续 T04.2 的跨单元合计／范围受限共同澄清／边界和 T05.2 变化后消费。T03 的任意多层递归、父级自主消费方式、复杂组合及净成本继续保留未验证；完整 v5 方法一致性仍 PARTIAL。
+
+## 推进轮次 D5：让默认自查定位并维护已有记录
+
+- 本轮用户继续授权，沿每项任务 3 元，不追加旧账本或重用旧 PASS。代码起点 `572bd7b`，调查见[默认闭合缺口](../../research/2026-10-30-v5-workspace-closure-investigation.md)。
+- 定位：导航不显示 states／model_basis，缺本单元 project 记录；自查提示不直接提供已有记录导航。补充这些已存事实和有界导航，GLM 保留状态判断权；程序没有自动完成、语义硬门或新检索服务。
+- 两项缺失导航测试先失败，相关三模块 **43 passed**；完整回归与真实采用继续运行。新增用例同时核对程序不会因提供导航而把 partial 改为 complete。
+- 新 task_ref `v5-workspace-closure-20261030`，run `workspace-closure-20261030-start1`，账本 `workspaces/v5-runs/workspace-closure-20261030-inputs/budget`，金额 3 CNY；沿 GLM Flash／low 和两个独立 Class 的公开工程原始材料。生产前冻结六题 `v5-default-workspace-closure-public-20261030`。
+- 首次真实 semantic start 约 04:27 UTC，在本轮授权后约五分钟内；未前置完整回归或全面审计。生产不接收具体待改记录 ID，不由 Host 修改 states 或正文。后继受控故障只改自有工程模型，原文不变，仍由原 GLM 单元判断与修订。
+- 本轮尚未有独立闭合结论，不能把 43 项开发检查或导航增加当作状态维护语义 PASS。后续结果在本节追加。
+
+- 进一步从旧原件定位作者／单元标签不一致：B 的旧故障记录 unit_id=root，A 的旧自查记录 unit_id=概念 ID。导航现在包含本单元署名记录及分配记录；普通按 unit_id 查找语义不变。两项归属用例先失败后通过。
+- 补公开搜索的 include_authored 可选参数，确保本单元有界导航的 next_offset 可用同一条件续页；十一条署名记录的真实 MCP 分页用例先失败后通过。相关范围 **25 passed**，保留普通精确过滤断言。早先 197 项完整回归不覆盖之后的分页差异，最终完整回归另留日志。
+
+### D5 真实结果、故障接续与最终证据
+
+- 初建首次根级提案即完成应用（round 0、实际 revision 1），没有重现上轮把 Class 业务提案当 unified graph 的格式问题。根级沿 `v5-closure-two-classes-coverage` 原 ID 从 revision 1 更新为 2，补实际表达及已审阅／表达状态；`workspace-initial.json` 保存故障前原件。这是当前场景的实际采用，不用不同条件的 round 数宣称净降耗。
+- 约定的 Host 受控故障只把 B 的否定改成相反断言，模型 revision 1→2。原 B 实际读取后 revise，原 B／根级 generation 1、A 保持 generation 0；同一 run 修订原 B 到模型 revision 3，A 定义逐字段不变、实际仍只有两个资源 IRI。Host 没有提供待改语义记录 ID 或修改状态。
+- 两个原单元修后自查均 ready。A 沿 `equipment-a-scope-propositions` 更新到 revision 2；B 沿 `vr-b-class-meaning` 更新到 revision 3；根级覆盖为 revision 3。三份当前记录均 expressed/current，根级 model_basis 为实际 revision 3。旧 `verification-record-negation-fix` 从 revision 1 更新到 2 并明确 superseded，不再作当前未解决项；历史版本保留。详见 `workspace-final.json`、冻结 `independent-materials/local-history.json`。
+- 独立只读 GLM 在生产前冻结的原六题上 **6/6 PASS**，`workspace-closure-20261030-start1/evaluations/default-workspace-closure-check/`，freeze_id=`v5-default-workspace-closure-public-20261030`，实际本体 `4f93b7cb-5750-41d9-9fa6-6669cd877329`、revision 3。独立侧实际读原始材料、阶段原件／历史记录和治理模型，没有修生产或改保留证据。
+- 该 run 的业务记录均选择 task 范围；project 范围没有相关记录，不强制复制一套。project_local 的作者／分配归属、精确过滤及隔离由开发用例验证；不能将本次 6/6 外推成真实共享项目记录、跨 run 或所有业务范围均已稳定闭合。Host 仍显式安排原单元检查，未宣称父级全自主选择与调度已经验收。
+
+### runtime/infrastructure：流断开及计量暂停
+
+- B 修后首次检查原生终态 failed，消息为 stream disconnected／上游“网络错误”，错误身份保留在原 result.json；不是模型质量失败、不是五小时额度 429，也没有未知 RDF 写入。失败目录 `verification-record--unit-check-77191c94c0098e335dab-000` 保留。
+- 发现 `unit_check_needs_correction` 外层丢失内部 runtime/infrastructure 层。新增失败用例先失败，窄修为保留原 layer、native_error 和 execution_ref；相关 **10 passed**，原候选可重试而不重写模型。
+- 随后的原身份重试被账本正确拦下：不是 3 元耗尽，而是 HTTP 200 的错误响应没有用量，触发 metering_error。T0 复核：计量保护真实额度边界，缺用量不能当零；不删除或放宽这个保护。已有 Host `record_attempt_estimate`／`continue_authorized` 已覆盖有证据的暂估和恢复，无需修改预算框架。
+- 依据本任务两份完整同类自查的原生回执，对失败的**单次请求**采用“完整同类回合最大输入／输出的 2 倍、输入均按未缓存”的显式暂估，**不是实际用量或数学上界**；`metering-estimate-evidence.json` 保留原请求、两份原回执 SHA256、数值和依据。原始错误响应／空用量未改，后续真实用量若到达仍由既有账本优先处理。
+- 通过现有接口登记 **0.182942 CNY** 暂估后，只在计量恢复条件满足时清除 metering_error；3 元授权不变，没有追加、补零或换 run／账本。最终在同一候选、模型 revision、原单元的 `...-001` 回合完成 ready。保留原失败、被拒的重试及恢复回执；不据此宣布“无终态未知原生执行”的 T03.1 已通过。
+
+### D5 开发、费用与收尾
+
+- 最终完整 v5 回归 **199 passed、1 条既有第三方 warning、178.10 秒**，`workspace-closure-20261030-inputs/regression-final-with-failure-layer.log`。此前 197／198 对应阶段差异，原日志保留；最终代码由 199 覆盖。Ruff／diff／链接检查按最终差异执行；不改 backend／frontend／共享依赖，不需要应用服务重启。
+- 当前任务最终估算 **0.51603408 CNY**，其中已计价 **0.33309208**、失败请求暂估 **0.182942**；剩余 **2.48396592**，12 个账本单元、1 项暂估、inflight=0。覆盖为 PARTIAL，不能写成最终账单或完整净成本。外部 Host／未接线辅助调用仍单列 unknown、不扣任务金额。`budget-final.json`、全部失败及恢复事件保留。
+- 本轮最初真实 start 约 04:27 UTC，首次交付约 04:31，局部修模约 04:33—04:36，断流后的计量定位／恢复约 04:37—04:41，后继自查约 04:41—04:42，独立评价约 04:42—04:46。区间含并发／等待，不相加冒充精确有效时间；未单独计时的 Host 有效工时不补造百分比。技术故障后沿既有暂估恢复接口走短路径，没有扩建 harness。净降耗仍缺同条件对照。
+- 运行已停稳并清理临时凭据，保留非空工程模型和全部证据。清理回执 `followup-20261030-inputs/cleanup-workspace-closure-20261030-start1.json`，已确认 aggregate_keys_non_active=true、no_in_flight_attempts=true。
+- **范围结论**：T01 的本轮默认自查复现问题已在有界新任务中自行闭合，未经过 Host 逐条修记录。T01 完整低频例外／父级未分配范围／未审阅情境仍待 T04.2 联验；T03 自主递归、T05.2 消费、T06 同条件降耗等不因此关闭，完整 v5 方法仍 PARTIAL。下一步按原计划进入 T04.2／T05.2 的真实组合、遗漏与范围变化验证。

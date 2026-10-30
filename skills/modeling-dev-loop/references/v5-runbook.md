@@ -47,6 +47,9 @@ affected_records；旧材料、成果和验收保留。变化在自然边界激�
 生产用 get_modeling_context、精确记录和材料引用续接；消费者／用户总览由
 overview-refresh 的独立只读上下文从实际模型生成。overview-show 重新核对当前范围及
 模型版本；needs_review 仍能导航到原依据，但不得视为当前确认。精确问题回读实际定义。
+根级／局部自查提供已有 workspace_context 导航；local／project_local 同时覆盖分配给本单元
+及本单元署名的记录。后续页保持 scope、unit_id、include_authored=true 和 next_offset，
+不要把有界首页当作全量。状态和正文仍由 Agent 据原文及实际模型更新，不自动置为完成。
 
 snapshot-save 的默认观察模式可在 busy 时保存；include-platform 另存真实平台数据。
 snapshot-fork 复用平台分叉，会归档源项目全部本体，必须显式 archive-source，并先让
