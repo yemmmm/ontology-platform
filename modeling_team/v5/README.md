@@ -10,6 +10,27 @@
 [持续推进记录](../../docs/delivery/records/2026-10-29-v5-autonomous-progression.md)，
 公开工程用例不代表完整业务盲测或净降耗证明。
 
+### 精确模型读取与当前后续验证
+
+生产、自查和独立评价在 `read_material`／`query_semantic_context` 外，可使用只读工具
+`read_model_resource(ontology_id, resource_iri, family)`。`family` 为 `class-detail`、
+`property-list`、`relation-type-list` 或 `entity-detail`；它沿既有受治理 read-model
+接口展开真实 IRI，保留 Host 绑定的本体范围、只读凭据和冻结 revision 检查。
+先召回定位、再按需精确展开；召回无命中不证明模型不存在相应事实。
+
+新 Task 冻结的方法合同包含完整 Class／relation_type 请求示例。格式反馈沿原目标可修正，
+工作空间用现有 states 和精确 depends_on 维护业务状态及依赖，不新增语义必填硬门。
+后续任务、验收正反例、原始失败和未验证范围见
+[统一计划](../../docs/delivery/implementation-plans/2026-10-30-v5-next-tasks.md)及
+[逐轮记录](../../docs/delivery/test-docs/2026-10-30-v5-follow-up-validation.md)。
+
+父级可在自查结果的 `review_units` 中请求已就绪直接子级进行有界实际模型读回。
+程序沿原工作单元、候选／来源／代次和模型版本绑定独立的生产上下文；子级负责自己的
+语义检查，Host 仍统一执行模型应用。相同基线的已完成检查复用原证明，模型变化后重新检查。
+局部需要修订时重开原单元及祖先，原失败保留；父级仍负责整体规则，不以子级通过数量代替。
+Host 也可显式调用 `scripts/modeling check-unit --run-dir ... --unit-id ...`；该操作只做
+生产读回并登记结果／必要重开，不直接修改 RDF，也不是独立验收。
+
 独立包 `ontoweave_modeling` 不导入旧
 `modeling_team`／Runner，独立依赖环境不修改后端或旧任务入口。
 Host-only 探针暂时复用旧工具模块，不代表 P1 生产依赖切分已经完成。

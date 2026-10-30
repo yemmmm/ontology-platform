@@ -54,6 +54,17 @@ class SemanticWorkspace:
             return self.project
         raise FrameworkError("workspace_scope_unavailable", scope=scope)
 
+    @staticmethod
+    def _valid_dependency(ref):
+        return (
+            isinstance(ref, dict)
+            and isinstance(ref.get("record_id"), str)
+            and bool(ref["record_id"])
+            and type(ref.get("revision")) is int
+            and ref["revision"] > 0
+            and ref.get("scope", "task") in {"task", "project"}
+        )
+
     def write(
         self,
         record_id,
@@ -68,6 +79,16 @@ class SemanticWorkspace:
         unit_id=None,
     ):
         states = states or {}
+        for index, ref in enumerate(depends_on or []):
+            if not self._valid_dependency(ref):
+                raise FrameworkError(
+                    "invalid_dependency_reference",
+                    path=f"/depends_on/{index}",
+                    instruction="Use the exact returned semantic record reference with record_id, "
+                    "revision and scope directly; do not wrap it in reference. "
+                    "Material IDs/SHA256 belong in source_refs, not depends_on. "
+                    "Read the semantic record first to obtain its actual revision.",
+                )
         if {"application", "acceptance"} & states.keys():
             raise FrameworkError(
                 "host_observation_required",
@@ -129,7 +150,7 @@ class SemanticWorkspace:
         identity = (scope, row["object_id"])
         if identity in seen:
             return {"state": "needs_review", "reason": "dependency_cycle"}
-        changed = []
+        changed, invalid = [], []
         model_basis = content.get("model_basis", {})
         observed = self.observed_models() if model_basis else {}
         changed_models = {
@@ -138,6 +159,9 @@ class SemanticWorkspace:
             if observed.get(key) != revision
         }
         for ref in content.get("depends_on", []):
+            if not self._valid_dependency(ref):
+                invalid.append(ref)
+                continue
             dependency = self.scoped(ref.get("scope", "task")).get("semantic:" + ref["record_id"])
             if (
                 not dependency
@@ -148,8 +172,9 @@ class SemanticWorkspace:
             ):
                 changed.append(ref)
         return {
-            "state": "needs_review" if changed or changed_models else "current",
+            "state": "needs_review" if changed or changed_models or invalid else "current",
             "changed_dependencies": changed,
+            "invalid_dependencies": invalid,
             "changed_models": changed_models,
             "model_state": "changed"
             if changed_models

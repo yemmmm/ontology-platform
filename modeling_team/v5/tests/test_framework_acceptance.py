@@ -87,6 +87,37 @@ def test_actual_rest_governed_response_needs_no_synthetic_ok_field(frozen_report
     assert validate_report(report, handoff, path)["verdict"] == "PASS"
 
 
+@pytest.mark.parametrize("read_all", [False, True])
+def test_exact_governed_reads_cover_each_frozen_ontology(frozen_report, read_all):
+    report, handoff, path, events = frozen_report
+    handoff["target"]["model_revisions"]["other"] = 7
+    report["model_revisions"] = dict(handoff["target"]["model_revisions"])
+    events.pop()
+    for ontology, revision in [("ontology", 3), *([("other", 7)] if read_all else [])]:
+        events.append(
+            {
+                "method": "item/completed",
+                "params": {
+                    "item": {
+                        "tool": "read_model_resource",
+                        "status": "completed",
+                        "arguments": {
+                            "ontology_id": ontology,
+                            "resource_iri": "urn:actual:resource",
+                        },
+                        "result": {"structuredContent": {"model_revision": revision, "items": []}},
+                    }
+                },
+            }
+        )
+    path.write_text("\n".join(map(json.dumps, events)))
+    if read_all:
+        assert validate_report(report, handoff, path)["verdict"] == "PASS"
+    else:
+        with pytest.raises(FrameworkError, match="actual_governed_read_missing"):
+            validate_report(report, handoff, path)
+
+
 def test_required_human_dialogue_must_be_actually_read(frozen_report):
     report, handoff, path, events = frozen_report
     with pytest.raises(FrameworkError, match="evaluation_human_source_not_read"):

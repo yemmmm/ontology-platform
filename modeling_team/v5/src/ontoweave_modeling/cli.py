@@ -123,7 +123,12 @@ def evaluate(
         "governed model. Attributed human replies are additional approved sources; preserve "
         "their partial status and scope rather than assuming every question was resolved. "
         "Never create, continue, repair or modify production work. A candidate or production "
-        "self-check is not model evidence. Keep questions, answers and private reasons private.",
+        "self-check is not model evidence. When recall leaves a known resource unverified, use "
+        "read_model_resource with its actual ontology_id/IRI and class-detail, property-list, "
+        "relation-type-list or entity-detail family. Preserve retrieval gaps separately from "
+        "confirmed model omissions; sources cannot fill missing model facts. "
+        "Keep questions, answers and private reasons private. Return exactly one valid JSON object "
+        "matching result_schema, without Markdown or narration. Escape quotation marks inside strings.",
     )
     prompt = json.dumps(
         {
@@ -258,6 +263,11 @@ def parser() -> argparse.ArgumentParser:
     commands.append(revise)
     tree = sub.add_parser("work-tree", help="Read one level of the current dynamic work tree")
     tree.add_argument("--parent-id", default="modeling")
+    unit_check = sub.add_parser(
+        "check-unit", help="Run an original unit's bounded production read-back"
+    )
+    unit_check.add_argument("--unit-id", required=True)
+    commands.append(unit_check)
     tree.add_argument("--offset", type=int, default=0)
     tree.add_argument("--limit", type=int, default=20)
     commands.append(tree)
@@ -330,6 +340,10 @@ def dispatch(args) -> dict:
         return refresh_overview(binding, repo, bridge, args.overview_id, args.topic, args.view)
     if args.command == "work-tree":
         return plan.tree(args.parent_id, args.offset, args.limit)
+    if args.command == "check-unit":
+        from .unit_checks import check_unit
+
+        return check_unit(binding, repo, bridge, args.unit_id)
     if args.command == "snapshot-fork":
         from .snapshot_fork import SnapshotFork
 

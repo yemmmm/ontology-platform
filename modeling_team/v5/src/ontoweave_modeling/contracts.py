@@ -86,6 +86,8 @@ def modeling_instructions(task_instructions):
         contract = {
             "change": direct["change"],
             "candidate": direct["candidate"],
+            "request_example": direct["fields_only_example"]["request"],
+            "relation_request_example": direct["fields_only_example"]["relation_request_template"],
             "semantic_definition": semantics["multiview_semantic_definition"],
         }
         instructions += (
@@ -387,6 +389,12 @@ SELF_CHECK_SCHEMA = {
         "status": {"enum": ["ready", "revise", "waiting_input"]},
         "issues": {"type": "array", "items": {"type": "string"}},
         "consumed_ids": WORK_RESULT_SCHEMA["properties"]["consumed_ids"],
+        "review_units": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": True,
+            "description": "Optional ready direct child IDs whose bounded actual-model self-check is needed.",
+        },
         "human_requests": HUMAN_REQUESTS_SCHEMA,
         "resolved_request_ids": RESOLVED_REQUESTS_SCHEMA,
     },
@@ -412,7 +420,15 @@ def decode_work_result(message: str, manifest: dict, *, require_changes: bool = 
                 or result["changes"].get("schema_version") != "r4-3-025-model-changes/v1"
             )
         ):
-            raise FrameworkError("model_changes_required")
+            raise FrameworkError(
+                "model_changes_required",
+                path="/changes/schema_version",
+                expected="r4-3-025-model-changes/v1",
+                instruction="Return changes as the complete object with exactly schema_version, "
+                "candidate_ref and changes; use schema_version, not request_id. "
+                "For fields-only changes, candidate and candidate_ref may be null. "
+                "Class fields use name, not label. Preserve the original business meaning.",
+            )
         if not result["source_refs"]:
             raise FrameworkError("source_references_required")
     elif result["status"] == "recoverable_issue" and not result["issues"]:

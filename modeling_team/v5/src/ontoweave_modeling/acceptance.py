@@ -60,15 +60,21 @@ def successful_reads(events_path: Path) -> list[tuple[str, dict, dict]]:
 
 
 def require_governed_read(events_path: Path, model_revisions: dict) -> None:
-    for tool, _, data in successful_reads(events_path):
+    observed = {}
+    for tool, arguments, data in successful_reads(events_path):
         # The scoped MCP adapter returns the successful REST body without an `ok` envelope.
-        if tool != "query_semantic_context" or data.get("ok") is False:
+        if data.get("ok") is False:
             continue
-        actual = {
-            row["ontology_id"]: row["model_revision"]
-            for row in data.get("scope", {}).get("ontologies", [])
-        }
-        if actual == model_revisions:
+        if tool == "query_semantic_context":
+            observed.update(
+                {
+                    row["ontology_id"]: row["model_revision"]
+                    for row in data.get("scope", {}).get("ontologies", [])
+                }
+            )
+        elif tool == "read_model_resource" and "model_revision" in data:
+            observed[arguments["ontology_id"]] = data["model_revision"]
+        if observed == model_revisions:
             return
     raise FrameworkError("actual_governed_read_missing")
 

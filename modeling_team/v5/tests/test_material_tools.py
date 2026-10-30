@@ -120,3 +120,65 @@ def test_governed_read_preserves_authorized_scope_and_frozen_revision(tmp_path, 
         endpoint.shutdown()
         endpoint.server_close()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize("actual_revision", [2, 3])
+def test_exact_resource_read_uses_scoped_key_and_checks_revision(tmp_path, actual_revision):
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            received.append((self.path, self.headers.get("Authorization")))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(
+                json.dumps(
+                    {"model_revision": actual_revision, "items": [{"iri": "urn:test"}]}
+                ).encode()
+            )
+
+        def log_message(self, *_):
+            pass
+
+    endpoint = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=endpoint.serve_forever, daemon=True)
+    thread.start()
+    try:
+        (tmp_path / "manifest.json").write_text("{}")
+        config = tmp_path / "platform.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "base_url": f"http://127.0.0.1:{endpoint.server_port}",
+                    "read_key": "scoped-read-key",
+                    "project_id": "project",
+                    "ontology_ids": ["ontology"],
+                    "model_revisions": {"ontology": 2},
+                }
+            )
+        )
+        server = material_server(tmp_path, platform_config=config)
+        arguments = {
+            "ontology_id": "ontology",
+            "resource_iri": "urn:test",
+            "family": "relation-type-list",
+        }
+        if actual_revision == 2:
+            response = asyncio.run(server.call_tool("read_model_resource", arguments))
+            assert json.loads(response[0].text)["items"][0]["iri"] == "urn:test"
+        else:
+            with pytest.raises(ToolError, match="frozen_target_changed"):
+                asyncio.run(server.call_tool("read_model_resource", arguments))
+        with pytest.raises(ToolError, match="resource_scope_forbidden"):
+            asyncio.run(
+                server.call_tool("read_model_resource", {**arguments, "ontology_id": "other"})
+            )
+        assert len(received) == 1
+        assert received[0] == (
+            "/api/semantic/ontologies/ontology/read-models/relation-type-list?entity=urn%3Atest&field_set=detail",
+            "Bearer scoped-read-key",
+        )
+    finally:
+        endpoint.shutdown()
+        endpoint.server_close()
+        thread.join(timeout=5)

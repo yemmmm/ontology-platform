@@ -24,6 +24,7 @@ from .execution import ExecutionManager
 from .human_input import HumanInput
 from .results import ResultContractError, decode_json_result
 from .team import TeamChannel
+from .unit_checks import check_unit
 from .workspace import WorkspaceRepository
 
 
@@ -151,6 +152,25 @@ class WorkUnitFlow:
         )
         return self._save({**state, "activity": "model", "baseline_ref": ref})
 
+    def _pending_children(self):
+        plan = self.repository.get("run:" + self.binding.data["run_id"] + ":work-plan")
+        if not plan:
+            return []
+        return [
+            unit["unit_id"]
+            for unit in plan["content"]["units"].values()
+            if unit["parent_id"] == self.binding.actor
+            and unit["status"] == "active"
+            and (
+                not (
+                    work := self.repository.get(
+                        "run:" + self.binding.data["run_id"] + ":unit:" + unit["unit_id"] + ":work"
+                    )
+                )
+                or work["content"]["status"] != "proposal_ready"
+            )
+        ]
+
     def _model(self, state):
         state = self._fresh(state)
         if state["activity"] != "model":
@@ -226,6 +246,9 @@ class WorkUnitFlow:
                 if state.get("issue", {}).get("operation_ref")
                 else state.get("issue")
             ),
+            "previous_local_check": self.repository.read_reference(state["local_self_check_ref"])
+            if state.get("local_self_check_ref")
+            else None,
             "result_schema": WORK_RESULT_SCHEMA,
             "human_context": self.human.context(),
             "team_members": sorted(self.team.members),
@@ -235,6 +258,7 @@ class WorkUnitFlow:
                     "objective": unit["objective"],
                     "material_ref": row["content"].get("result_material_ref"),
                     "status": row["content"]["status"],
+                    "check_material_ref": row["content"].get("check_material_ref"),
                 }
                 for unit in self.binding.direct_units
                 if (
@@ -277,6 +301,8 @@ class WorkUnitFlow:
             "Acknowledge only supplied Queued input IDs in consumed_ids. Explicitly list a request "
             "in resolved_request_ids only when its consumed non-partial reply actually resolves it. "
             "Partial replies do not resolve a whole request. Preserve other pending questions; "
+            "If no actual human questions were supplied, return resolved_request_ids=[]; "
+            "proactive technical input IDs belong only in consumed_ids. "
             "resolved_request_ids contains human HITL IDs only. Team work requests use the "
             "resolve_work_request tool and must not be included in this result field. "
             "do not repeat an unchanged pending question. Reassess old replies against the actual baseline.",
@@ -330,36 +356,16 @@ class WorkUnitFlow:
                     "issue": error.as_dict(),
                 }
             )
-        plan = self.repository.get("run:" + self.binding.data["run_id"] + ":work-plan")
-        pending_children = []
-        if plan:
-            pending_children = [
-                unit["unit_id"]
-                for unit in plan["content"]["units"].values()
-                if unit["parent_id"] == self.binding.actor
-                and unit["status"] == "active"
-                and (
-                    not (
-                        work := self.repository.get(
-                            "run:"
-                            + self.binding.data["run_id"]
-                            + ":unit:"
-                            + unit["unit_id"]
-                            + ":work"
-                        )
-                    )
-                    or work["content"]["status"] != "proposal_ready"
-                )
-            ]
-            if pending_children and result["status"] == "proposed":
-                result = {
-                    **result,
-                    "status": "waiting_children",
-                    "issues": [
-                        *result["issues"],
-                        "Await direct children: " + ", ".join(pending_children),
-                    ],
-                }
+        pending_children = self._pending_children()
+        if self.binding.is_child and pending_children and result["status"] == "proposed":
+            result = {
+                **result,
+                "status": "waiting_children",
+                "issues": [
+                    *result["issues"],
+                    "Await direct children: " + ", ".join(pending_children),
+                ],
+            }
         candidate = self.repository.put_reference(
             f"{self.binding.identity}:candidate:{state['round']}",
             "candidate",
@@ -663,6 +669,20 @@ class WorkUnitFlow:
                 "objective": self.binding.data["objective"],
                 "actual_target": target,
                 "source_manifest": self.binding.data["source_manifest"],
+                "pending_child_units": self._pending_children(),
+                "child_self_checks": [
+                    {
+                        "unit_id": unit["unit_id"],
+                        "material_ref": row["content"]["check_material_ref"],
+                    }
+                    for unit in self.binding.direct_units
+                    if (
+                        row := self.repository.get(
+                            self.binding.for_unit(unit["unit_id"]).identity + ":work"
+                        )
+                    )
+                    and row["content"].get("check_material_ref")
+                ],
                 "feedback": state.get("issue"),
                 "instruction": "Read the actual model with query_semantic_context. Check business meaning "
                 "against approved sources; a candidate or successful application is not proof. "
@@ -670,7 +690,21 @@ class WorkUnitFlow:
                 "Describe needed model corrections in issues for the modeling stage; do not include "
                 "a draft change request or additional JSON blocks. Do not invent missing information. "
                 "consumed_ids may only contain IDs from Queued inputs, never material IDs; "
-                "return [] when that queue is empty.",
+                "return [] when that queue is empty. When pending_child_units is nonempty, "
+                "check the current safely applied portion and retain unfinished child scope in issues. "
+                "Do not repeat a pending child's question as a new parent human request; "
+                "if that portion is sound, return ready and the program keeps the task waiting. "
+                "Do not invent answers for those children; ready for this portion does not finish the task. "
+                "When semantic workspace is enabled, revisit your relevant coverage/open records "
+                "after the actual read: update the same record IDs with actual expression destinations "
+                "and remaining gaps. Repair invalid references using returned versioned refs, "
+                "and explicitly supersede duplicate notes instead of leaving conflicting current copies. "
+                "Model completeness does not automatically close unfinished workspace records.",
+                "local_review_contract": "When a ready direct child's bounded actual-model check "
+                "is needed, name it in review_units. The original unit checks its own proposal "
+                "with isolated production context and read tools, not application rights. "
+                "Reuse current child_self_checks when applicable; retain your own cross-unit "
+                "rules and unallocated scope judgment. This is production self-check, not acceptance.",
                 "result_schema": SELF_CHECK_SCHEMA,
                 "human_context": self.human.context(),
                 "human_input_contract": "Ask missing business facts with human_requests "
@@ -704,6 +738,10 @@ class WorkUnitFlow:
                 target["model_revisions"],
             )
             self._confirm_inputs(ref, result)
+            if set(result.get("review_units", [])) - {
+                u["unit_id"] for u in self.binding.direct_units
+            }:
+                raise FrameworkError("unit_check_scope_forbidden")
         except (ResultContractError, FrameworkError) as error:
             return self._save(
                 {
@@ -758,6 +796,41 @@ class WorkUnitFlow:
             )
         if result["status"] == "revise":
             return self._save({**update, "activity": "model", "round": state["round"] + 1})
+        checks = [
+            check_unit(self.binding, self.repository, self.bridge, unit)
+            for unit in result.get("review_units", [])
+        ]
+        if any(check["result"]["status"] != "ready" for check in checks):
+            return self._save(
+                {
+                    **update,
+                    "activity": "model",
+                    "status": "work_change_pending",
+                    "issue": {
+                        "code": "local_self_check_rework",
+                        "units": [
+                            check["unit_id"]
+                            for check in checks
+                            if check["result"]["status"] != "ready"
+                        ],
+                    },
+                }
+            )
+        if result["status"] == "ready" and (pending := self._pending_children()):
+            return self._save(
+                {
+                    **update,
+                    "activity": "model",
+                    "status": "waiting_children",
+                    "round": state["round"] + 1,
+                    "issue": {
+                        "issues": [
+                            *result["issues"],
+                            "Await unfinished children: " + ", ".join(pending),
+                        ]
+                    },
+                }
+            )
         return self._save(
             {
                 **update,

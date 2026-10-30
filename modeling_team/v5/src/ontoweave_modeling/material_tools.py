@@ -6,8 +6,10 @@ import argparse
 import hashlib
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -174,6 +176,67 @@ def material_server(
                         }
                     )
                 )
+            return result
+
+        @server.tool(
+            annotations=ToolAnnotations(
+                readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
+            )
+        )
+        def read_model_resource(
+            ontology_id: str,
+            resource_iri: str,
+            family: Literal["class-detail", "property-list", "relation-type-list", "entity-detail"],
+        ) -> dict:
+            """Expand an exact known model resource through its governed read projection.
+            Use actual IRIs from recall or the frozen target; a search miss is not proof of absence.
+            """
+            if ontology_id not in platform["ontology_ids"]:
+                raise ToolError(
+                    json.dumps({"code": "resource_scope_forbidden", "recoverable": True})
+                )
+            path = (
+                "/api/semantic/ontologies/"
+                + urllib.parse.quote(ontology_id, safe="")
+                + "/read-models/"
+                + family
+                + "?entity="
+                + urllib.parse.quote(resource_iri, safe="")
+                + "&field_set=detail"
+            )
+            request = urllib.request.Request(
+                platform["base_url"] + path,
+                headers={"Authorization": "Bearer " + platform["read_key"]},
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    result = json.loads(response.read())
+            except urllib.error.HTTPError as error:
+                raise ToolError(
+                    json.dumps(
+                        {
+                            "code": "platform_read_failed",
+                            "recoverable": True,
+                            "http_status": error.code,
+                            "detail": json.loads(error.read()),
+                        }
+                    )
+                ) from None
+            actual = {ontology_id: result["model_revision"]}
+            expected = platform.get("model_revisions")
+            if expected is not None and actual[ontology_id] != expected.get(ontology_id):
+                raise ToolError(
+                    json.dumps(
+                        {
+                            "code": "frozen_target_changed",
+                            "recoverable": True,
+                            "expected_revisions": expected,
+                            "actual_revisions": actual,
+                        }
+                    )
+                )
+            if semantic_workspace is not None:
+                semantic_workspace.observe_models(actual)
             return result
 
     if team_config is not None:

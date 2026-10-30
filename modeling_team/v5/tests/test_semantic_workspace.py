@@ -12,6 +12,42 @@ from ontoweave_modeling.semantic_workspace import SemanticWorkspace
 from ontoweave_modeling.workspace import WorkspaceRepository
 
 
+@pytest.mark.parametrize(
+    "reference",
+    [
+        {"material_id": "source", "sha256": "a" * 64},
+        {"record_id": "p"},
+        {"record_id": "p", "reference": {"record_id": "p", "revision": 1}},
+    ],
+)
+def test_malformed_dependency_is_rejected_before_record_commit(workspace, binding, reference):
+    space = SemanticWorkspace(workspace, binding.data)
+    with pytest.raises(FrameworkError, match="invalid_dependency_reference") as caught:
+        space.write("bad", "coverage", "Coverage", "Incomplete reference", depends_on=[reference])
+    assert caught.value.detail["path"] == "/depends_on/0"
+    assert workspace.get("semantic:bad") is None
+
+
+def test_retained_bad_dependency_is_readable_for_agent_repair(workspace, binding):
+    reference = {"material_id": "source", "sha256": "a" * 64}
+    workspace.put_reference(
+        "semantic:retained",
+        "semantic_record",
+        {
+            "kind": "coverage",
+            "view": "production",
+            "body": "Retained bad original",
+            "states": {"applicability": "current"},
+            "depends_on": [reference],
+        },
+        0,
+    )
+    actual = SemanticWorkspace(workspace, binding.data).read("retained")
+    assert actual["body"] == "Retained bad original"
+    assert actual["freshness"]["state"] == "needs_review"
+    assert actual["freshness"]["invalid_dependencies"] == [reference]
+
+
 def test_linked_proposition_decision_and_summary_refresh_by_exact_dependency(workspace, binding):
     space = SemanticWorkspace(workspace, binding.data)
     p = space.write(
@@ -236,7 +272,12 @@ def test_real_isolated_workspace_tools_with_bound_project(
                     for line in (self.root / "events.jsonl").read_text().splitlines()
                 ]
                 mcp = next(e["params"] for e in events if e["method"] == "mcpServerStatus/list")
-                assert set(mcp["data"][0]["tools"]) == {"read_material", "query_semantic_context"}
+                assert set(mcp["data"][0]["tools"]) == {
+                    "read_material",
+                    "query_semantic_context",
+                    "read_model_resource",
+                }
+                assert mcp["data"][0]["tools"]["read_model_resource"]["annotations"]["readOnlyHint"]
                 assert self.team_config is None
                 return {"status": "completed"}
             for tool, args in [

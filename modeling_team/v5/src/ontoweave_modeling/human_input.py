@@ -204,7 +204,10 @@ class HumanInput:
             raise FrameworkError(
                 "human_resolution_unconfirmed",
                 allowed_human_request_ids=sorted((allowed - {None}) | already_resolved),
-                hint="team work requests use resolve_work_request, not resolved_request_ids",
+                hint="resolved_request_ids accepts only the listed human question request IDs, "
+                "not queued input/message IDs. If allowed_human_request_ids is empty, return []. "
+                "Proactive or technical input does not create a human question. "
+                "Team work requests use resolve_work_request.",
             )
 
     def resolve(self, execution, consumed_ids, resolved_ids):

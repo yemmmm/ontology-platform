@@ -106,10 +106,20 @@ class MultiUnitFlow:
                             (u for u in self.binding.data["work_units"] if u["unit_id"] == actor),
                             {},
                         )
-                        dependencies = [
-                            *unit.get("dependencies", []),
-                            *[u["unit_id"] for u in flow.binding.direct_units],
-                        ]
+                        dependencies = unit.get("dependencies", [])
+                        children = flow.binding.direct_units
+                        if (
+                            children
+                            and not incoming
+                            and (
+                                state["status"] == "waiting_children"
+                                or not any(
+                                    states.get(u["unit_id"], {}).get("status") == "proposal_ready"
+                                    for u in children
+                                )
+                            )
+                        ):
+                            continue
                         answered_wait = state["status"] == "waiting_input" and incoming
                         generations = {
                             u["unit_id"]: u.get("generation", 0)

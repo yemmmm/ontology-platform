@@ -80,6 +80,35 @@ def test_healthy_peer_wait_does_not_need_an_invented_issue():
         decode_work_result(json.dumps(value), {})
 
 
+def test_new_binding_includes_executable_fields_only_request_grammar(task_file, tmp_path):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    raw = binding.data["instructions"].split(
+        "Technical representation contracts (not business sources):\n", 1
+    )[1]
+    contract = json.loads(raw)
+    request = contract["request_example"]
+    assert set(request) == {"schema_version", "candidate_ref", "changes"}
+    assert request["schema_version"] == "r4-3-025-model-changes/v1"
+    assert request["changes"][0]["fields"]["name"]
+    assert contract["relation_request_example"]["changes"][0]["fields"]["source_class_id"]
+
+
+def test_wrong_request_envelope_returns_actionable_correction():
+    value = {
+        "status": "proposed",
+        "candidate": None,
+        "changes": {"request_id": "r4-3-025-model-changes/v1", "changes": []},
+        "source_refs": [{"material_id": "source", "sha256": "a" * 64}],
+        "issues": [],
+        "consumed_ids": [],
+    }
+    with pytest.raises(FrameworkError, match="model_changes_required") as caught:
+        decode_work_result(json.dumps(value), {"source": {"sha256": "a" * 64}})
+    assert caught.value.detail["path"] == "/changes/schema_version"
+    assert caught.value.detail["expected"] == "r4-3-025-model-changes/v1"
+    assert "candidate_ref" in caught.value.detail["instruction"]
+
+
 def test_structured_human_question_already_contains_its_reason():
     value = {
         "status": "waiting_input",

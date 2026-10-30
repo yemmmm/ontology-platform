@@ -222,7 +222,7 @@ class CodexInvocation:
         from .work_plan import WORK_TOOLS
 
         role = "acceptance" if purpose == "acceptance" else "modeling"
-        tools = ("read_material", "query_semantic_context")
+        tools = ("read_material", "query_semantic_context", "read_model_resource")
         team_config = None
         instructions = self.instructions
         if (
@@ -292,7 +292,7 @@ class CodexInvocation:
                     "Use reopen_work_unit for explicit rework; ordinary notifications do not require "
                     "recreating a finished proposal."
                 )
-            if self.binding.is_child:
+            if self.binding.is_child and purpose == "modeling":
                 instructions += (
                     " You own this child work unit only. Return its source-grounded proposed "
                     "business candidate for the parent to integrate; changes may be null because "
@@ -300,6 +300,13 @@ class CodexInvocation:
                     "The program will publish your complete "
                     "result as a versioned handoff material. Do not claim application or full-task "
                     "completion. Ask missing business input using the supplied HITL result contract."
+                )
+            if self.binding.is_child and purpose == "self_check":
+                instructions += (
+                    " You are checking this original child's actual applied scope now, not proposing. "
+                    "Return only the supplied self-check result with ready, revise or waiting_input; "
+                    "never proposed, candidate or changes. This is bounded production read-back, "
+                    "not whole-task completion or independent acceptance."
                 )
             if purpose.startswith("peer:"):
                 instructions = (
@@ -336,6 +343,8 @@ class CodexInvocation:
                     "exact depends_on references; keep review, cognition, expression, work and applicability "
                     "separate. Application and independent acceptance are Host observations, not note states. "
                     "Summaries navigate to originals; stale/needs_review content is not current confirmation. "
+                    "Freshness checks declared dependencies only; after a shared meaning changes, "
+                    "search relevant semantic users too, including current notes with an omitted dependency. "
                     "get_modeling_context reports the actual bound project_ref; use scope=project for "
                     "shared project records when available, otherwise scope=task. "
                     "Preserve conditions, exceptions, negation, modality and unknowns, including unallocated scope. "

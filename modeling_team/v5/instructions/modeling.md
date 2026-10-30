@@ -25,6 +25,9 @@ be combined or revisited; they are not a required number of calls or approvals:
   existing expression, duplicate support, a real unknown/conflict or unfinished
   delivery. Check direct child boundaries, shared definitions, cross-unit rules
   and the parent's remaining scope; local completion does not prove the whole.
+  The root may propose a safe independent change group while unrelated children
+  wait. Preserve their unfinished scope; wait when the actual business dependency
+  prevents a safe group. A partial write and its local check do not finish the task.
 - S6/S7/S8: submit explicit change intent, then read the actual applied model.
   Separate missed capture, wrong interpretation, missing expression and retrieval
   failure. Return to the relevant activity. Independent acceptance belongs to its
@@ -43,6 +46,36 @@ unknowns and actual model resources; do not promote a summary into new source
 truth. Query actual models before refreshing model-based coverage or summaries;
 their observed model basis is recorded by the tool. A changed model or dependency
 requires re-review, not silent reuse of prior confirmation.
+Freshness checks only declared references. After a shared meaning changes, search
+for relevant semantic users as well as recorded dependents; a current note can
+still need review if its dependency was omitted. Recheck affected judgments from
+their sources and register the actual dependency without rereading unrelated work.
+
+Use the existing record fields concretely; a prose statement of completion alone
+does not maintain the independent states. Pass `states` on meaningful record
+writes, with only applicable dimensions: for example a fully reviewed material
+has `{"review":"reviewed"}`, a source-supported interpretation may have
+`{"cognition":"source_supported"}`, and coverage may have
+`{"expression":"partial","work":"needs_expression"}`. An unknown can be
+expressed while cognition remains unknown. These are examples, not mandatory
+enums or business confirmation. Do not set application or acceptance in notes.
+In material_review body, locate reviewed ranges and any unread/unreadable scope.
+In proposition/coverage body, map each meaningful proposition or coherent group
+to its candidate definition, actual model reference, duplicate support, explicit
+unknown/conflict or unfinished expression. Keep parent-unallocated scope visible.
+When a judgment or summary relies on another semantic record, put its exact
+returned `reference` in `depends_on`; mentioning its ID only in prose does not
+register the dependency. Original-source observations can use source_refs alone.
+After actual model self-check, update the same coverage records and their
+applicable states with actual resource references and remaining gaps; reuse stable
+record IDs and the returned revision instead of creating parallel current copies.
+Update underlying judgments before derived coverage/summaries, then use their new
+returned references. Recheck final freshness: changing a referenced record later
+in the same turn can stale an earlier write. Current navigation should point to
+current retained judgments, not to a historical resolved open item as live truth.
+Check relevant existing records in both task and project scopes before closing
+coverage. Refreshing a project summary does not update an older task coverage
+record; supersede that record explicitly if it no longer represents current work.
 
 For a child work unit, `proposed` is its source-grounded business proposal for the
 parent, not an application request. Return its bounded propositions or definitions
@@ -60,6 +93,9 @@ production team also has the collaboration tools described below. Query actual
 models when checking an existing baseline or applied result. Follow returned
 cursors when relevant content is incomplete. Use only actual authorized resource
 references; never invent resource IDs, IRIs or an applied result.
+Use read_model_resource to expand an exact actual resource when recall is
+insufficient; choose its class-detail, property-list, relation-type-list or
+entity-detail projection. A search miss does not prove the resource is absent.
 
 For modeling, return exactly one JSON object with the supplied work-result shape.
 Put the complete current
@@ -94,6 +130,10 @@ For self-check, actually query the applied model and compare it with the approve
 source. Return the supplied self-check JSON shape with `ready`, `revise`, or
 `waiting_input` and accurate issues. A successful write does not prove semantic
 completeness. An explicit out-of-scope unknown does not require invented details.
+When a ready direct child's bounded actual-model check is needed, the parent can
+request it in `review_units`. Reuse applicable returned check materials; keep
+parent-level rules and unallocated scope as your own judgment. Local production
+read-back does not grant independent acceptance or another application writer.
 Only acknowledge queued input IDs actually supplied and consumed in this call.
 Material IDs are not queued input IDs; with an empty input queue, return
 `consumed_ids: []`. Self-check returns only its result object, never a change draft.

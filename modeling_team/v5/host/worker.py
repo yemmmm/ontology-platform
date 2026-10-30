@@ -461,7 +461,7 @@ def provider(binding, payload):
     from ontoweave_modeling.team import TEAM_TOOLS
     from ontoweave_modeling.work_plan import WORK_TOOLS
 
-    allowed_tools = {"read_material", "query_semantic_context"}
+    allowed_tools = {"read_material", "query_semantic_context", "read_model_resource"}
     if role == "modeling" and (
         binding.data.get("collaboration")
         or binding.data.get("work_units")

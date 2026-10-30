@@ -16,6 +16,31 @@ from ontoweave_modeling.snapshots import RunSnapshots
 from ontoweave_modeling.team import TeamChannel
 
 
+def test_safe_parent_group_applies_while_other_child_waits_without_final_handoff(
+    binding, workspace, saver
+):
+    from ontoweave_modeling.flow import WorkUnitFlow
+    from ontoweave_modeling.work_plan import WorkPlan
+
+    binding.data["work_units"] = [
+        {"unit_id": "ready-child", "objective": "Independent ready meaning."},
+        {"unit_id": "waiting-child", "objective": "Needs a scoped answer."},
+    ]
+    WorkPlan(binding.data, workspace).row()
+    platform = Platform()
+    for unit, status in [("ready-child", "proposal_ready"), ("waiting-child", "waiting_input")]:
+        selected = binding.for_unit(unit)
+        flow = WorkUnitFlow(selected, workspace, platform, None)
+        flow._save({**flow.initialize(), "status": status})
+    actor = Actor(binding, platform)
+    parent = WorkUnitFlow(binding, workspace, platform, actor)
+    first = parent.advance(saver)
+    assert len(platform.effects) == 1
+    assert first["status"] == "waiting_children"
+    assert first["activity"] == "model" and first.get("handoff_ref") is None
+    assert workspace.read_reference(first["self_check_ref"])["result"]["status"] == "ready"
+
+
 def test_original_structured_hitl_result_is_reparsed_without_repeating_native_turn(
     binding, workspace, saver, monkeypatch
 ):
@@ -93,6 +118,17 @@ def test_local_hitl_wait_sibling_progress_restart_and_parent_single_apply(
                 if purpose == "modeling":
                     material_refs = json.loads(prompt)["child_results"]
                     assert len(material_refs) == 2
+                    if any(item["status"] != "proposal_ready" for item in material_refs):
+                        result = actor(root, purpose, prompt, inputs)
+                        response = json.loads(result["final_response"])
+                        response.update(
+                            status="waiting_children",
+                            candidate=None,
+                            changes=None,
+                            consumed_ids=[m["id"] for m in inputs],
+                        )
+                        result["final_response"] = json.dumps(response)
+                        return result
                     channel = TeamChannel(binding.data, workspace, TaskControl(workspace))
                     for item in material_refs:
                         assert item["status"] == "proposal_ready" and "changes" not in item
