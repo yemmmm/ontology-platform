@@ -164,7 +164,8 @@ print("completed-session-closed-and-unknown-preserved")
     assert process.stdout.strip() == "completed-session-closed-and-unknown-preserved"
 
 
-def test_host_worker_compiles_once_and_preserves_frozen_plan(task_file, tmp_path):
+@pytest.mark.parametrize("inline_candidate", [False, True])
+def test_host_worker_compiles_once_and_preserves_frozen_plan(task_file, tmp_path, inline_candidate):
     binding = TaskBinding.prepare(task_file, tmp_path / "run")
     bridge = HostBridge(binding.root)
     program = r"""
@@ -189,9 +190,24 @@ request = {"schema_version":"r4-3-025-model-changes/v1", "candidate_ref":None, "
                                       "business_meaning":"Approved business meaning",
                                       "applicability":"This bounded test", "unknowns":[]}}}]}
 payload = {"operation_id":"operation-a", "candidate":None, "changes":request}
-worker.apply(payload)
+if sys.argv[2] == "True":
+    payload["candidate"] = {
+        "schema_version":"r3-0-009-unified-graph/v2", "scenario_id":"generic-test",
+        "candidate_id":"candidate-a", "revision":1, "explicit_unknowns":[], "items":[{
+            "item_id":"property-a", "item_kind":"property", "business_meaning":"An approved value",
+            "value":{"name":"Value", "predicate_kind":"fact", "datatype":"string"},
+            "relation_endpoints":None, "slice_ids":["unit-a"], "shared_scope":None, "unknowns":[]}]}
+    request["changes"] = [{"change_id":"definition-a", "action":"create",
+        "resource_kind":"property", "item_id":"property-a", "target_ref":None, "fields":None}]
+result = worker.apply(payload)
+assert result["status"] == "completed", result
 plan_path = worker.root / "operations/operation-a/compiled.json"
 original = plan_path.read_bytes()
+if payload["candidate"] is not None:
+    saved = worker.root / "operations/operation-a/candidate.json"
+    assert json.loads(saved.read_text()) == payload["candidate"]
+    assert str(saved.relative_to(worker.binding.root)) in json.dumps(json.loads(original)["source_map"])
+    assert json.loads((saved.parent / "intent.json").read_text())["changes"]["candidate_ref"] is None
 def must_not_recompile(*args, **kwargs):
     raise AssertionError("original frozen plan must be reused")
 compiler.compile_model_changes = must_not_recompile
@@ -201,7 +217,7 @@ assert "modeling_team.runner" not in sys.modules
 print(json.dumps({"reused_plan":True, "batches":len(json.loads(original)["batches"])}))
 """
     process = subprocess.run(
-        [bridge.command[0], "-c", program, str(binding.root)],
+        [bridge.command[0], "-c", program, str(binding.root), str(inline_candidate)],
         env=bridge.env,
         capture_output=True,
         text=True,

@@ -306,6 +306,13 @@ class PlatformWorker:
                 return resolved[key]
 
             changes = intent["changes"]
+            if intent["candidate"] is not None and isinstance(changes, dict):
+                candidate_path = root / "candidate.json"
+                write_json(candidate_path, intent["candidate"])
+                changes = {
+                    **changes,
+                    "candidate_ref": str(candidate_path.relative_to(self.binding.root)),
+                }
             raw_changes = changes.get("changes", []) if isinstance(changes, dict) else []
             raw_changes = raw_changes if isinstance(raw_changes, list) else []
             authorized = getattr(scope, "ontology_ids", []) or [scope.ontology_id]

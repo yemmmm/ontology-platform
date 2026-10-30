@@ -93,6 +93,43 @@ def test_new_binding_includes_executable_fields_only_request_grammar(task_file, 
     assert contract["relation_request_example"]["changes"][0]["fields"]["source_class_id"]
 
 
+def test_new_binding_includes_neutral_candidate_shape_without_legacy_workflow(task_file, tmp_path):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    raw = binding.data["instructions"].split(
+        "Technical representation contracts (not business sources):\n", 1
+    )[1]
+    contract = json.loads(raw)
+    candidate = contract["candidate"]
+    assert candidate["fields"] == [
+        "schema_version",
+        "scenario_id",
+        "candidate_id",
+        "revision",
+        "items",
+        "explicit_unknowns",
+    ]
+    assert candidate["item_fields"] == [
+        "item_id",
+        "item_kind",
+        "business_meaning",
+        "value",
+        "relation_endpoints",
+        "slice_ids",
+        "shared_scope",
+        "unknowns",
+    ]
+    assert "semantic_definition" in candidate["item_optional_fields"]
+    assert "metric_definition" in candidate["item_kinds"]
+    metric = contract["metric_definition_payload"]
+    assert {"name", "grain", "time_field", "aggregation", "denominator_rule"} <= set(
+        metric["required"]
+    )
+    assert "metric_id" not in metric["fields"]
+    assert metric["fields"]["time_field"]["format"] == "absolute-rdf-iri"
+    assert "stage3_slot" not in contract
+    assert "approvals" not in contract
+
+
 def test_wrong_request_envelope_returns_actionable_correction():
     value = {
         "status": "proposed",

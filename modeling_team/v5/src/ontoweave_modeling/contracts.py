@@ -82,12 +82,28 @@ def modeling_instructions(task_instructions):
     if "Technical representation contracts (not business sources):" not in instructions:
         references = package.parent / "references"
         direct = json.loads((references / "r4-3-025-direct-modeling-contract.json").read_text())
+        unified = json.loads((references / "r3-0-009-unified-graph-contract.json").read_text())
+        batch = json.loads((references / "modeling-batch-item-contract.json").read_text())
         semantics = json.loads((references / "r4-0-012-modeling-contract.json").read_text())
+        metric = batch["create_payloads"]["create_metric_definition"]
         contract = {
             "change": direct["change"],
-            "candidate": direct["candidate"],
+            "candidate": {
+                **direct["candidate"],
+                **{
+                    key: unified["candidate"][key]
+                    for key in ("fields", "item_fields", "item_optional_fields")
+                },
+            },
             "request_example": direct["fields_only_example"]["request"],
             "relation_request_example": direct["fields_only_example"]["relation_request_template"],
+            "metric_definition_payload": {
+                **metric,
+                "fields": {
+                    key: value for key, value in metric["fields"].items() if key != "metric_id"
+                },
+            },
+            "metric_filter": batch["mapping_payload_structures"]["metric_filter"],
             "semantic_definition": semantics["multiview_semantic_definition"],
         }
         instructions += (

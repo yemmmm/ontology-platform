@@ -82,7 +82,8 @@ parent, not an application request. Return its bounded propositions or definitio
 in candidate; changes may be null. Only the root must supply complete executable
 changes before actual application. The parent must translate a child's business proposal into the
 attached execution grammar, not copy it as a unified graph. Class definitions
-are fields-only changes with candidate=null; `class` is not a unified graph item
+are fields-only changes; a fields-only submission can use candidate=null.
+`class` is not a unified graph item
 kind. Do not invent a candidate schema from a child's proposal shape.
 Preserve conditions, exceptions and remaining
 scope in the child result; the parent decides how to integrate them.
@@ -116,7 +117,20 @@ a ready proposal `recoverable_issue`.
 References inside a candidate or change must follow the attached contract. Local
 `definition_ref` values refer to a corresponding selected candidate item_id;
 existing references must come from actual governed results or Host receipts.
-For fields-only creates, item_id is null and change_id is not a definition_ref.
+Fields-only creation is supported for `class`, `relation_type`, `operation` and
+`mapping`. Creation of `entity`, `property`, `relation`, `table_mapping`,
+`join_mapping`, `enum_meaning` or `metric_definition` must select an actual unified
+candidate item with `fields=null`; generic name/semantic_definition fields do not
+replace that kind's business payload. For fields-only creates, item_id is null
+and change_id is not a definition_ref.
+Return an inline candidate in this result; the Host saves its exact snapshot and
+binds the request's candidate_ref to that real artifact. Keep candidate_ref=null
+instead of inventing a legacy candidate file path; do not write candidate files.
+For a metric_definition item, value must contain its supported metric business
+payload, including actual bound property references required by that carrier;
+a null value with only a semantic_definition annotation is not executable.
+Do not invent properties, aggregation meanings or IRIs to satisfy a carrier.
+Use a representation that fits the approved meaning and the actual contract.
 To link new Classes, either select real candidate definitions (item_id with
 fields null), or create the Classes first and use their actual receipt-backed
 references in a later relationship submission. Preserve remaining scope for
