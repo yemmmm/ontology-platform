@@ -186,7 +186,14 @@ def material_server(
         def read_model_resource(
             ontology_id: str,
             resource_iri: str,
-            family: Literal["class-detail", "property-list", "relation-type-list", "entity-detail"],
+            family: Literal[
+                "class-detail",
+                "property-list",
+                "relation-type-list",
+                "entity-detail",
+                "table-mapping-detail",
+                "join-mapping-detail",
+            ],
         ) -> dict:
             """Expand an exact known model resource through its governed read projection.
             Use actual IRIs from recall or the frozen target; a search miss is not proof of absence.

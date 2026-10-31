@@ -48,6 +48,7 @@ curl -s http://127.0.0.1:8787/calls \
 | POST /admin/models | 登记模型 |
 | GET /admin/models | 查看模型及状态 |
 | PATCH /admin/models/{model_id} | 启用或停用模型 |
+| PATCH /admin/models/{model_id}/quota-cost | 修改新调用的扣额单位，正文如 {"quota_cost":3} |
 | POST /admin/keys | 签发凭证；原文只在此次响应出现 |
 | GET /admin/keys、GET /admin/keys/{key_id} | 查看授权与剩余额度，不返回凭证原文 |
 | PATCH /admin/keys/{key_id} | 启用或停用凭证 |
@@ -55,7 +56,9 @@ curl -s http://127.0.0.1:8787/calls \
 | GET /admin/calls | 查看成功调用记录 |
 
 四张表是 models、api_keys、model_grants、calls，DDL 在 [app.py](app.py) 的初始化部分。
-额度单位是“成功新调用次数”，不是 token 或金额。重试、拒绝与回放的规则以业务说明为准。
+v0.2 的模型可配置正整数 quota_cost（默认 1）；额度为共享的调用单位，不是 token 或金额。
+新调用按模型当前配置扣额，历史回放不重新计价；旧 SQLite 自动为已有模型补上默认值。
+重试、拒绝与回放的规则以业务说明为准。
 
 ## 验证与建模输入
 
@@ -63,10 +66,15 @@ curl -s http://127.0.0.1:8787/calls \
 uv run --extra test pytest -q
 ```
 
-[开发验证记录](VERIFICATION.md)只证明程序行为。后继 GLM 首轮建模与修后默认建模均在各自
+[开发验证记录](VERIFICATION.md)只证明程序行为。历史 v1 的 GLM 首轮建模与修后默认建模均在各自
 实际 revision 3 通过二十项独立语义验收，覆盖两个切片及表／连接映射；中间未完成运行、
 模型和失败记录均保留，三个运行已封口。
 详见[建模测试记录](../../docs/research/2026-10-31-v5-llm-access-modeling-test.md)。这是构造业务的有界结果，不代表客户或独立开源业务验证。
+
+v0.2 扩展每模型扣额单位后，程序测试 37 项通过；空本体完整建模在 revision 3 独立
+29/29 PASS，原模型续建在 revision 4 独立 30/30 PASS（包含一次显式原生身份交接）。
+最终范围及失败／修复见
+[本次验证记录](../../docs/research/2026-11-01-v5-demo-incremental-modeling.md)。
 
 建议给建模 Agent 的首轮输入为 business.md、实际 OpenAPI 合同、四张表的 Schema 及获准样例数据。
 tests/、VERIFICATION.md 及后续隐藏验收题不作为生产输入，避免把测试断言当作业务理解。

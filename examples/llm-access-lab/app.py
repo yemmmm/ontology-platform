@@ -21,10 +21,15 @@ class ModelInput(Input):
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")
     name: str = Field(min_length=1, max_length=100)
     enabled: bool = True
+    quota_cost: int = Field(default=1, ge=1, strict=True)
 
 
 class EnabledInput(Input):
     enabled: bool
+
+
+class QuotaCostInput(Input):
+    quota_cost: int = Field(ge=1, strict=True)
 
 
 class KeyInput(Input):
@@ -57,7 +62,8 @@ def create_app(database_path: str | Path) -> FastAPI:
     with database() as connection:
         connection.executescript("""
             CREATE TABLE IF NOT EXISTS models (
-                id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL,
+                quota_cost INTEGER NOT NULL DEFAULT 1 CHECK (quota_cost >= 1)
             );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL,
@@ -76,11 +82,18 @@ def create_app(database_path: str | Path) -> FastAPI:
                 created_at TEXT NOT NULL, UNIQUE (key_id, request_id)
             );
         """)
+        if "quota_cost" not in {
+            row["name"] for row in connection.execute("PRAGMA table_info(models)")
+        }:
+            connection.execute(
+                "ALTER TABLE models ADD COLUMN quota_cost INTEGER NOT NULL DEFAULT 1 "
+                "CHECK (quota_cost >= 1)"
+            )
 
     app = FastAPI(
         title="模型访问与额度管理测试系统",
-        version="0.1.0",
-        description="构造业务：本机管理 API、测试调用凭证和次数额度；响应由本地生成。",
+        version="0.2.0",
+        description="构造业务：本机管理 API、测试调用凭证和模型扣额单位；响应由本地生成。",
     )
 
     def read_key(connection, key_id):
@@ -107,7 +120,8 @@ def create_app(database_path: str | Path) -> FastAPI:
         with database() as connection:
             try:
                 connection.execute(
-                    "INSERT INTO models VALUES (?, ?, ?)", (data.id, data.name, data.enabled)
+                    "INSERT INTO models (id, name, enabled, quota_cost) VALUES (?, ?, ?, ?)",
+                    (data.id, data.name, data.enabled, data.quota_cost),
                 )
             except sqlite3.IntegrityError:
                 raise HTTPException(409, "model_already_exists") from None
@@ -151,6 +165,17 @@ def create_app(database_path: str | Path) -> FastAPI:
             )
             return {**read_key(connection, key_id), "token": token}
 
+    @app.patch("/admin/models/{model_id}/quota-cost")
+    def set_model_quota_cost(model_id: str, data: QuotaCostInput):
+        with database() as connection:
+            changed = connection.execute(
+                "UPDATE models SET quota_cost = ? WHERE id = ?", (data.quota_cost, model_id)
+            )
+            if not changed.rowcount:
+                raise HTTPException(404, "model_not_found")
+            row = connection.execute("SELECT * FROM models WHERE id = ?", (model_id,)).fetchone()
+            return {**dict(row), "enabled": bool(row["enabled"])}
+
     @app.get("/admin/keys")
     def list_keys():
         with database() as connection:
@@ -189,7 +214,7 @@ def create_app(database_path: str | Path) -> FastAPI:
             "call_id": row["id"],
             "model_id": row["model_id"],
             "reply": row["reply"],
-            "charged_units": 0 if replayed else 1,
+            "charged_units": 0 if replayed else row["charged_units"],
             "remaining_quota": remaining_quota,
             "replayed": replayed,
         }
@@ -229,7 +254,8 @@ def create_app(database_path: str | Path) -> FastAPI:
                 raise HTTPException(403, "model_not_allowed")
             if not model_row["enabled"]:
                 raise HTTPException(409, "model_disabled")
-            if key_row["remaining_quota"] < 1:
+            cost = model_row["quota_cost"]
+            if key_row["remaining_quota"] < cost:
                 raise HTTPException(429, "quota_exhausted")
             row = {
                 "id": uuid4().hex,
@@ -238,19 +264,19 @@ def create_app(database_path: str | Path) -> FastAPI:
                 "model_id": data.model_id,
                 "prompt": data.prompt,
                 "reply": f"{data.model_id}: {data.prompt}",
-                "charged_units": 1,
+                "charged_units": cost,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             connection.execute(
-                "UPDATE api_keys SET remaining_quota = remaining_quota - 1 WHERE id = ?",
-                (key_row["id"],),
+                "UPDATE api_keys SET remaining_quota = remaining_quota - ? WHERE id = ?",
+                (cost, key_row["id"]),
             )
             connection.execute(
                 "INSERT INTO calls VALUES (:id, :key_id, :request_id, :model_id, :prompt, "
                 ":reply, :charged_units, :created_at)",
                 row,
             )
-            return receipt(row, key_row["remaining_quota"] - 1, False)
+            return receipt(row, key_row["remaining_quota"] - cost, False)
 
     return app
 

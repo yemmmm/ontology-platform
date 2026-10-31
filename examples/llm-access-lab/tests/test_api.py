@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import re
+import sqlite3
 import subprocess
 import sys
 import time
@@ -58,6 +59,110 @@ def test_success_charges_once_and_records_the_real_result(client):
     assert rows[0]["key_id"] == credential["id"]
     assert rows[0]["reply"] == receipt["reply"]
     assert client.get(f"/admin/keys/{credential['id']}").json()["remaining_quota"] == 1
+
+
+def test_model_cost_uses_shared_quota_and_preserves_recorded_charge(client):
+    model(client)
+    response = client.post("/admin/models", json={"id": "deep", "name": "Deep", "quota_cost": 3})
+    assert response.status_code == 201
+    assert response.json()["quota_cost"] == 3
+    credential = key(client, quota=4, allowed=["flash", "deep"])
+    assert call(client, credential, "deep-1", "deep").json()["charged_units"] == 3
+    receipt = call(client, credential, "fast-1").json()
+    assert receipt["charged_units"] == 1
+    assert receipt["remaining_quota"] == 0
+    assert [row["charged_units"] for row in client.get("/admin/calls").json()] == [3, 1]
+
+
+def test_cost_change_applies_to_new_calls_but_never_reprices_replay(client):
+    model(client)
+    credential = key(client, quota=5)
+    first = call(client, credential).json()
+    changed = client.patch("/admin/models/flash/quota-cost", json={"quota_cost": 3})
+    assert changed.status_code == 200
+    assert changed.json()["quota_cost"] == 3
+    assert client.get("/admin/models").json()[0]["quota_cost"] == 3
+    replay = call(client, credential).json()
+    assert replay["call_id"] == first["call_id"]
+    assert replay["charged_units"] == 0
+    assert replay["remaining_quota"] == 4
+    fresh = call(client, credential, "new").json()
+    assert fresh["charged_units"] == 3
+    assert fresh["remaining_quota"] == 1
+    rejected = call(client, credential, "insufficient")
+    assert rejected.status_code == 429
+    assert rejected.json()["detail"] == "quota_exhausted"
+    rows = client.get("/admin/calls").json()
+    assert [row["charged_units"] for row in rows] == [1, 3]
+    assert client.get(f"/admin/keys/{credential['id']}").json()["remaining_quota"] == 1
+    client.patch("/admin/models/flash", json={"enabled": False})
+    assert call(client, credential).json()["charged_units"] == 0
+    client.patch(f"/admin/keys/{credential['id']}", json={"enabled": False})
+    assert call(client, credential).status_code == 403
+
+
+@pytest.mark.parametrize("invalid", [0, -1, 1.5, True, "3", None])
+def test_model_cost_requires_positive_integer(client, invalid):
+    model(client)
+    assert (
+        client.post(
+            "/admin/models", json={"id": "bad", "name": "Bad", "quota_cost": invalid}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.patch("/admin/models/flash/quota-cost", json={"quota_cost": invalid}).status_code
+        == 422
+    )
+    assert client.get("/admin/models").json()[0]["quota_cost"] == 1
+
+
+def test_cost_change_does_not_enable_model_and_reports_missing_model(client):
+    model(client, enabled=False)
+    response = client.patch("/admin/models/flash/quota-cost", json={"quota_cost": 2})
+    assert response.status_code == 200
+    assert response.json()["enabled"] is False
+    assert (
+        client.patch("/admin/models/missing/quota-cost", json={"quota_cost": 2}).status_code == 404
+    )
+
+
+def test_variable_cost_is_atomic_under_concurrent_requests(client):
+    model(client)
+    assert client.patch("/admin/models/flash/quota-cost", json={"quota_cost": 3}).status_code == 200
+    credential = key(client, quota=5)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda rid: call(client, credential, rid), ["a", "b"]))
+    assert sorted(response.status_code for response in responses) == [200, 429]
+    assert client.get(f"/admin/keys/{credential['id']}").json()["remaining_quota"] == 2
+    assert len(client.get("/admin/calls").json()) == 1
+
+
+def test_existing_database_keeps_models_and_defaults_cost_to_one(tmp_path):
+    path = tmp_path / "legacy.sqlite"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE models (id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL)"
+        )
+        connection.execute("INSERT INTO models VALUES ('legacy', 'Legacy', 1)")
+    with TestClient(create_app(path)) as first:
+        assert first.get("/admin/models").json() == [
+            {"id": "legacy", "name": "Legacy", "enabled": True, "quota_cost": 1}
+        ]
+        credential = key(first, quota=4, allowed=["legacy"])
+        original = call(first, credential, model_id="legacy").json()
+        assert (
+            first.patch("/admin/models/legacy/quota-cost", json={"quota_cost": 2}).status_code
+            == 200
+        )
+    with TestClient(create_app(path)) as restarted:
+        assert restarted.get("/admin/models").json()[0]["quota_cost"] == 2
+        replay = call(restarted, credential, model_id="legacy").json()
+        assert replay["call_id"] == original["call_id"]
+        assert replay["charged_units"] == 0
+        fresh = call(restarted, credential, "next", "legacy").json()
+        assert fresh["charged_units"] == 2
+        assert fresh["remaining_quota"] == 1
 
 
 def test_same_request_replays_after_quota_is_exhausted_and_model_disabled(client):

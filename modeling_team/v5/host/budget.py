@@ -48,6 +48,7 @@ def _amount_state(binding, addition, role) -> dict:
             "id": root.name,
             "start": first["start"],
             "fresh_zero_baseline": True,
+            "follow": True,
             "end": datetime.now(UTC).isoformat(),
             "evidence_ref": str(root / "agent/events.jsonl") + "#thread/start",
         }

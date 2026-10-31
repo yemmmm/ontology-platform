@@ -2,6 +2,14 @@
 
 日期：2026-10-31。本记录证明测试项目的程序行为，不是 OntoWeave 的模型质量验收。
 
+## v0.2 扣额单位扩展（2026-11-01）
+
+- 增加每模型正整数 `quota_cost`（默认 1）及独立修改接口；成功新调用按当前配置扣额，历史记录保留实际扣额，回放本次扣额为 0。
+- 先增加 11 项用例，旧实现得到 **11 failed、26 deselected**，缺失功能表现为登记 422、修改接口 404 和旧库缺字段；实现后全量 **37 passed、1 条既有 warning、3.02 秒**。
+- 覆盖不同模型共享余额、变价不重计历史、正余额不足拒绝、严格正整数、停用状态不变、并发不透支、旧库补默认值及重启保留费用／余额／回放。
+- 实际 HTTP 观察共 23 组，包含默认费用下的旧规则回归及新增费用场景；使用动态本机端口，完成后停止服务器。原件位于 `workspaces/v5-runs/llm-access-v2-20261101-inputs/independent-v2/runtime-observations.json`。
+- Ruff format／check 通过。只修改独立 Demo，未改 OntoWeave 后端或前端，不需重启平台服务。模型续建及独立验收另见[本次记录](../../docs/research/2026-11-01-v5-demo-incremental-modeling.md)。
+
 ## 实际结果
 
 - 独立环境：uv sync --extra test 成功，生成并保留 uv.lock；Python 3.14.3，FastAPI 0.137.1，Uvicorn 0.49.0，pytest 9.1.0，httpx 0.28.1。

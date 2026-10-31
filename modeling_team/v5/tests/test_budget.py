@@ -256,6 +256,48 @@ def test_later_transport_attempts_are_not_filtered_by_native_observation_window(
     assert requests == {"request-one", "later-request"}
 
 
+def test_other_run_refresh_keeps_new_samples_from_live_native_stream(
+    task_file, tmp_path, workspace
+):
+    first = amount_binding(task_file, tmp_path, amount="1")
+    root, native = numeric_sources(first)
+    control = TaskControl(workspace)
+    assert synchronize_budget(first, control)["charged_estimate"] == "0.0024"
+    task = json.loads(task_file.read_text())
+    task["run_id"] = "second-run-refresh"
+    task_file.write_text(json.dumps(task))
+    second = TaskBinding.prepare(task_file, tmp_path / "second-run")
+    later = datetime.now(UTC).isoformat()
+    path = root / "provider-usage.jsonl"
+    template = json.loads(path.read_text().splitlines()[0])
+    with path.open("a") as stream:
+        for event, status in (("attempt_start", "unfinished"), ("attempt_end", "completed")):
+            stream.write(
+                json.dumps(
+                    {
+                        **template,
+                        "request_id": "later-request",
+                        "event": event,
+                        "status": status,
+                        "start": later,
+                        "end": later,
+                    }
+                )
+                + "\n"
+            )
+    native["received_at"] = later
+    native["total"] = {"inputTokens": 4000, "cachedInputTokens": 0, "outputTokens": 200}
+    with (root / "budget-native-usage.jsonl").open("a") as stream:
+        stream.write(json.dumps(native) + "\n")
+    # Only the second run registers its sources. The first stream's previous
+    # observation end must not discard receipts appended in the meantime.
+    state = synchronize_budget(second, control)
+    assert state["charged_estimate"] == "0.0048"
+    assert state["provisional_amount"] == "0"
+    assert state["coverage"]["status"] == "complete"
+    assert synchronize_budget(first, control)["charged_estimate"] == "0.0048"
+
+
 def test_amount_mode_requires_stable_budget_reference(task_file, tmp_path):
     task = json.loads(task_file.read_text())
     task["authorization"]["mode"] = "amount"

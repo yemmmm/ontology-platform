@@ -14,7 +14,8 @@
 
 生产、自查和独立评价在 `read_material`／`query_semantic_context` 外，可使用只读工具
 `read_model_resource(ontology_id, resource_iri, family)`。`family` 为 `class-detail`、
-`property-list`、`relation-type-list` 或 `entity-detail`；它沿既有受治理 read-model
+`property-list`、`relation-type-list`、`entity-detail`、`table-mapping-detail` 或
+`join-mapping-detail`；它沿既有受治理 read-model
 接口展开真实 IRI，保留 Host 绑定的本体范围、只读凭据和冻结 revision 检查。
 先召回定位、再按需精确展开；召回无命中不证明模型不存在相应事实。
 

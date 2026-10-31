@@ -23,7 +23,17 @@ def test_backend_worker_reuses_mechanics_without_loading_legacy_runner(tmp_path)
         bridge.call("arbitrary_python", {"source": "print('not allowed')"})
 
 
-def test_host_resolves_existing_reference_from_authorized_native_read(task_file, tmp_path):
+@pytest.mark.parametrize(
+    ("family", "resource_kind", "target_field"),
+    [
+        ("class-detail", "class", "class_iri"),
+        ("table-mapping-detail", "table_mapping", "table_mapping_iri"),
+        ("join-mapping-detail", "join_mapping", "join_mapping_iri"),
+    ],
+)
+def test_host_resolves_existing_reference_from_authorized_native_read(
+    task_file, tmp_path, family, resource_kind, target_field
+):
     binding = TaskBinding.prepare(task_file, tmp_path / "run")
     bridge = HostBridge(binding.root)
     program = r"""
@@ -40,16 +50,16 @@ def read(method,path):
     calls.append((method,path))
     return {"model_revision":7,"items":[{"id":"native-42","iri":iri}]}
 scope=SimpleNamespace(ontology_ids=["ontology"],ontology_id="ontology",_ok=read)
-ref={"artifact_ref":"model-read:class-detail:ontology","path":"/"+iri}
+ref={"artifact_ref":"model-read:"+sys.argv[2]+":ontology","path":"/"+iri}
 binding=worker.read_binding(scope,ref)
 assert binding["resource_id"]=="native-42" and binding["resource_iri"]==iri
 request={"schema_version":"r4-3-025-model-changes/v1","candidate_ref":None,"changes":[{
-    "change_id":"update-existing","action":"update","resource_kind":"class",
+    "change_id":"update-existing","action":"update","resource_kind":sys.argv[3],
     "item_id":None,"target_ref":ref,"fields":{"name":"Updated authorized concept"}}]}
 batches,_=compile_model_changes(request,candidate=None,ontology_by_item={"update-existing":"ontology"},resolve_binding=lambda value:worker.read_binding(scope,value))
-assert batches[0]["items"][0]["payload"]["class_iri"]==iri
+assert batches[0]["items"][0]["payload"][sys.argv[4]]==iri
 try:
-    worker.read_binding(scope,{"artifact_ref":"model-read:class-detail:another-ontology","path":"/"+iri})
+    worker.read_binding(scope,{"artifact_ref":"model-read:"+sys.argv[2]+":another-ontology","path":"/"+iri})
 except FrameworkError as error:
     assert error.code=="reference_scope_forbidden"
 else:
@@ -58,7 +68,7 @@ assert len(calls)==2
 print("native-read-identity-verified")
 """
     result = subprocess.run(
-        [bridge.command[0], "-c", program, str(binding.root)],
+        [bridge.command[0], "-c", program, str(binding.root), family, resource_kind, target_field],
         env=bridge.env,
         capture_output=True,
         text=True,
@@ -245,8 +255,9 @@ w.save_scope=lambda scope:None
 w.forwarder=lambda scope:SimpleNamespace(stop=lambda:None)
 w.executor=lambda *a,**k:None
 w._close_applied_sessions=lambda *a,**k:None
+write_state="applied"
 def execute(executor,batches,source_map):
-    return {"status":"completed","batches":[{"ontology_id":b["ontology_id"],"resource_bindings":[
+    return {"status":"completed","batches":[{"ontology_id":b["ontology_id"],"write_state":write_state,"resource_bindings":[
         {"change_id":i["client_item_id"],"resource_kind":"class",**({} if i["client_item_id"].startswith("update-") else
           {"resource_id":"urn:class:"+i["client_item_id"],"resource_iri":"urn:class:"+i["client_item_id"]})}
         for i in b["items"]]} for b in batches]}
@@ -269,6 +280,13 @@ update=call("updated")
 assert update["batches"][0]["ontology_id"]=="two"
 assert json.loads((w.root/"applied-bindings.json").read_text())["update-b"]["resource_iri"]=="urn:class:b"
 assert call("conflict",{"update-b":"one"})["errors"][0]["code"]=="ontology_target_conflict"
+applied=json.loads((w.root/"applied-bindings.json").read_text())
+for write_state in ("not_written","unknown"):
+    key="unapplied-"+write_state
+    request["changes"]=[create(key)]
+    rejected=call(key,{key:"one"})
+    assert rejected["batches"][0]["resource_bindings"], "retain original planned receipt"
+    assert json.loads((w.root/"applied-bindings.json").read_text())==applied, write_state
 print(json.dumps({"placed":True,"updated_second":True}))
 """
     process = subprocess.run(

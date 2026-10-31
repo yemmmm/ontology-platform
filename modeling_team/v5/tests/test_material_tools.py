@@ -123,7 +123,10 @@ def test_governed_read_preserves_authorized_scope_and_frozen_revision(tmp_path, 
 
 
 @pytest.mark.parametrize("actual_revision", [2, 3])
-def test_exact_resource_read_uses_scoped_key_and_checks_revision(tmp_path, actual_revision):
+@pytest.mark.parametrize(
+    "family", ["relation-type-list", "table-mapping-detail", "join-mapping-detail"]
+)
+def test_exact_resource_read_uses_scoped_key_and_checks_revision(tmp_path, actual_revision, family):
     received = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -161,7 +164,7 @@ def test_exact_resource_read_uses_scoped_key_and_checks_revision(tmp_path, actua
         arguments = {
             "ontology_id": "ontology",
             "resource_iri": "urn:test",
-            "family": "relation-type-list",
+            "family": family,
         }
         if actual_revision == 2:
             response = asyncio.run(server.call_tool("read_model_resource", arguments))
@@ -175,7 +178,7 @@ def test_exact_resource_read_uses_scoped_key_and_checks_revision(tmp_path, actua
             )
         assert len(received) == 1
         assert received[0] == (
-            "/api/semantic/ontologies/ontology/read-models/relation-type-list?entity=urn%3Atest&field_set=detail",
+            f"/api/semantic/ontologies/ontology/read-models/{family}?entity=urn%3Atest&field_set=detail",
             "Bearer scoped-read-key",
         )
     finally:

@@ -97,6 +97,8 @@ class PlatformWorker:
             "property-list": "property",
             "relation-type-list": "relation_type",
             "entity-detail": "entity",
+            "table-mapping-detail": "table_mapping",
+            "join-mapping-detail": "join_mapping",
         }
         if len(parts) != 3 or parts[0] != "model-read" or parts[1] not in kinds:
             return None
@@ -379,6 +381,8 @@ class PlatformWorker:
             bindings_path = self.root / "applied-bindings.json"
             bindings = json.loads(bindings_path.read_text()) if bindings_path.exists() else {}
             for batch in result.get("batches", []):
+                if batch.get("write_state") != "applied":
+                    continue
                 for binding in batch.get("resource_bindings", []):
                     if binding.get("change_id"):
                         bindings[binding["change_id"]] = {

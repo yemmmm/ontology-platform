@@ -1622,6 +1622,16 @@ class TaskBudget:
                 return "ignored", None
         window = metadata.get("window") or binding.get("window")
         segment = binding.get("cumulative_segment")
+        # A dedicated live thread stream can be read by another run sharing
+        # the ledger after its last registration. Its observation end is not
+        # a fixed slice: retain later receipts and extend their actual basis.
+        follow = (not window and isinstance(segment, dict)
+                  and segment.get("follow") is True and row.get("event") == "thread_usage")
+        if follow:
+            observed = row.get("timestamp") or row.get("received_at")
+            end = observed if (_timestamp(observed) or 0) > (_timestamp(now) or 0) else now
+            segment = {**segment, "end": end}
+            binding = {**binding, "cumulative_segment": segment}
         if not window and isinstance(segment, dict) and "start" in segment and "end" in segment:
             window = segment
         if isinstance(window, dict):
@@ -1632,7 +1642,8 @@ class TaskBudget:
             )
             start = _timestamp(window.get("start"))
             end = _timestamp(window.get("end"))
-            if None in (stamp, start, end) or not start <= stamp < end:
+            if (None in (stamp, start, end) or stamp < start
+                    or stamp > end or (stamp == end and not follow)):
                 return "ignored", None
 
         def binding_value(name: str):

@@ -16,6 +16,13 @@
    关联项目工作空间，无需提前猜 Project UUID。多个获准本体的创建变更用 ontology_targets
    明确放置；现有资源更新沿实际验证目标。当前入口不承诺任意自动扩展项目或授权范围。
 
+已有模型的映射精确读取使用 `table-mapping-detail`／`join-mapping-detail`，普通
+`entity-detail` 不覆盖这些资源。`model-read:<family>:<ontology_id>` 引用使用该真实 family。
+若读取只返回 IRI，更新还须有已核实的原生身份；可由 Host 将同 revision 平台快照中的
+显式 `v:id`／资源类型与实际应用回执交叉核对，交接到原有 `applied-bindings.json`。
+保留快照、核对及交接回执，不猜 IRI 后缀、不改候选，也不把一次人工技术交接称作
+自动 existing 初始化已经验证。当前该初始化仍需后续单独闭环。
+
 ```bash
 scripts/modeling start --task /absolute/task.json \
   --postgres-config /absolute/postgres-private.json \
