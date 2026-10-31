@@ -18,8 +18,11 @@
 接口展开真实 IRI，保留 Host 绑定的本体范围、只读凭据和冻结 revision 检查。
 先召回定位、再按需精确展开；召回无命中不证明模型不存在相应事实。
 
-新 Task 冻结的方法合同包含完整 Class／relation_type 请求示例。格式反馈沿原目标可修正，
-工作空间用现有 states 和精确 depends_on 维护业务状态及依赖，不新增语义必填硬门。
+新 Task 冻结的方法合同包含完整 Class／relation_type 请求示例，
+以及 table_mapping／join_mapping 的完整载荷、列／连接步骤和按类型限定的 mapping_definition
+结构；类型名选择结构，不作为 mapping_definition 的外层键。
+格式反馈沿原目标可修正。工作空间用现有 states 和精确 depends_on 维护业务状态及依赖，
+不新增语义必填硬门。
 工作空间导航显示已有 states／model_basis；根级与原单元自查附上本单元的 task／project
 记录导航。它包含分配给本单元及本单元署名的记录；分页使用相同 scope、unit_id、
 `include_authored=true` 和 next_offset。普通按单元搜索默认仍只匹配 unit_id。

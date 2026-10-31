@@ -123,6 +123,14 @@ Fields-only creation is supported for `class`, `relation_type`, `operation` and
 candidate item with `fields=null`; generic name/semantic_definition fields do not
 replace that kind's business payload. For fields-only creates, item_id is null
 and change_id is not a definition_ref.
+For table_mapping and join_mapping, read the attached payloads and
+relational_mapping_structures before composing value, including column mappings,
+join steps and mapping_definition. Use their exact field names and closed shapes.
+mapping_definition contains the selected kind's fields directly; table_mapping
+and join_mapping in the attached structures select schemas, not wrapper keys.
+When their Class/relation_type target is a fields-only create, apply that definition
+first and reuse its actual returned existing_resource_ref in the mapping payload;
+do not treat its change_id as a selected candidate item.
 Return an inline candidate in this result; the Host saves its exact snapshot and
 binds the request's candidate_ref to that real artifact. Keep candidate_ref=null
 instead of inventing a legacy candidate file path; do not write candidate files.

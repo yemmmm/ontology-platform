@@ -107,6 +107,26 @@ def modeling_instructions(task_instructions):
             "metric_filter": batch["mapping_payload_structures"]["metric_filter"],
             "semantic_definition": semantics["multiview_semantic_definition"],
         }
+        for kind in ("table_mapping", "join_mapping"):
+            payload = batch["create_payloads"]["create_" + kind]
+            contract[kind + "_payload"] = {
+                **payload,
+                "fields": {
+                    key: value for key, value in payload["fields"].items() if key != kind + "_id"
+                },
+            }
+            contract[kind + "_payload"]["fields"]["mapping_definition"] = {
+                **payload["fields"]["mapping_definition"],
+                "items": "relational_mapping_structures.mapping_definition." + kind,
+            }
+        structures = batch["mapping_payload_structures"]
+        contract["relational_mapping_structures"] = {
+            key: structures[key] for key in ("identifier_pattern", "column_mapping", "join_step")
+        }
+        contract["relational_mapping_structures"]["mapping_definition"] = {
+            kind: structures["mapping_definition"][kind]
+            for kind in ("table_mapping", "join_mapping")
+        }
         instructions += (
             "\n\nTechnical representation contracts (not business sources):\n"
             + json.dumps(contract, ensure_ascii=False)

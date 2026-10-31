@@ -132,6 +132,40 @@ def test_new_binding_includes_neutral_candidate_shape_without_legacy_workflow(ta
     assert "approvals" not in contract
 
 
+def test_new_binding_exposes_complete_relational_mapping_payloads(task_file, tmp_path):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    raw = binding.data["instructions"].split(
+        "Technical representation contracts (not business sources):\n", 1
+    )[1]
+    contract = json.loads(raw)
+    table = contract["table_mapping_payload"]
+    assert {"name", "table_name", "column_mappings", "schema_source"} <= set(table["required"])
+    assert table["exactly_one_required"] == ["mapped_class_iri", "mapped_definition_iri"]
+    assert "table_mapping_id" not in table["fields"]
+    assert table["fields"]["mapping_definition"]["items"] == (
+        "relational_mapping_structures.mapping_definition.table_mapping"
+    )
+    join = contract["join_mapping_payload"]
+    assert {"relation_type_iri", "join_direction", "join_path", "schema_source"} <= set(
+        join["required"]
+    )
+    assert "join_mapping_id" not in join["fields"]
+    assert join["fields"]["mapping_definition"]["items"] == (
+        "relational_mapping_structures.mapping_definition.join_mapping"
+    )
+    structures = contract["relational_mapping_structures"]
+    assert structures["column_mapping"]["required"] == ["column"]
+    assert structures["column_mapping"]["role"] == ["value", "business_key"]
+    assert structures["join_step"]["table_form_fields"] == [
+        "from_table",
+        "to_table",
+        "from_columns",
+        "to_columns",
+    ]
+    assert "field_meanings" in structures["mapping_definition"]["table_mapping"]["fields"]
+    assert "step_semantics" in structures["mapping_definition"]["join_mapping"]["fields"]
+
+
 def test_wrong_request_envelope_returns_actionable_correction():
     value = {
         "status": "proposed",
