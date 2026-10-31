@@ -119,6 +119,21 @@ def modeling_instructions(task_instructions):
                 **payload["fields"]["mapping_definition"],
                 "items": "relational_mapping_structures.mapping_definition." + kind,
             }
+            for field in contract[kind + "_payload"]["fields"].values():
+                if field.get("format") == "absolute-rdf-iri":
+                    field.update(
+                        type="object",
+                        compiled_format=field.pop("format"),
+                        exactly_one_required=["definition_ref", "existing_resource_ref"],
+                        fields={
+                            "definition_ref": {"type": "string", "meaning": "selected item_id"},
+                            "existing_resource_ref": {
+                                "type": "object",
+                                "required": ["artifact_ref", "path"],
+                                "meaning": "copy the exact authorized actual resource reference",
+                            },
+                        },
+                    )
         structures = batch["mapping_payload_structures"]
         contract["relational_mapping_structures"] = {
             key: structures[key] for key in ("identifier_pattern", "column_mapping", "join_step")
@@ -126,6 +141,82 @@ def modeling_instructions(task_instructions):
         contract["relational_mapping_structures"]["mapping_definition"] = {
             kind: structures["mapping_definition"][kind]
             for kind in ("table_mapping", "join_mapping")
+        }
+        example_items = [
+            {
+                "item_id": "example-table",
+                "item_kind": "table_mapping",
+                "business_meaning": "Replace with the approved table meaning.",
+                "value": {
+                    "name": "Replace with the approved mapping name",
+                    "table_name": "source_table",
+                    "schema_source": None,
+                    "mapped_class_iri": {
+                        "existing_resource_ref": {
+                            "artifact_ref": "actual-applied-bindings.json",
+                            "path": "/actual-class",
+                        }
+                    },
+                    "column_mappings": [{"column": "source_column", "role": "value"}],
+                },
+                "relation_endpoints": None,
+                "slice_ids": ["approved-slice"],
+                "shared_scope": None,
+                "unknowns": [],
+            },
+            {
+                "item_id": "example-join",
+                "item_kind": "join_mapping",
+                "business_meaning": "Replace with the approved relationship mapping meaning.",
+                "value": {
+                    "name": "Replace with the approved join name",
+                    "schema_source": None,
+                    "relation_type_iri": {
+                        "existing_resource_ref": {
+                            "artifact_ref": "actual-applied-bindings.json",
+                            "path": "/actual-relation",
+                        }
+                    },
+                    "join_direction": "forward",
+                    "join_path": [
+                        {
+                            "from_table": "source_table",
+                            "to_table": "target_table",
+                            "from_columns": ["source_column"],
+                            "to_columns": ["target_id"],
+                        }
+                    ],
+                },
+                "relation_endpoints": None,
+                "slice_ids": ["approved-slice"],
+                "shared_scope": None,
+                "unknowns": [],
+            },
+        ]
+        contract["relational_request_example"] = {
+            "candidate": {
+                "schema_version": contract["candidate"]["schema_version"],
+                "scenario_id": "approved-scenario",
+                "candidate_id": "mapping-example",
+                "revision": 1,
+                "items": example_items,
+                "explicit_unknowns": [],
+            },
+            "changes": {
+                "schema_version": "r4-3-025-model-changes/v1",
+                "candidate_ref": None,
+                "changes": [
+                    {
+                        "change_id": "create-" + item["item_id"],
+                        "action": "create",
+                        "resource_kind": item["item_kind"],
+                        "item_id": item["item_id"],
+                        "target_ref": None,
+                        "fields": None,
+                    }
+                    for item in example_items
+                ],
+            },
         }
         instructions += (
             "\n\nTechnical representation contracts (not business sources):\n"

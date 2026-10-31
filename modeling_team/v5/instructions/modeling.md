@@ -128,6 +128,15 @@ relational_mapping_structures before composing value, including column mappings,
 join steps and mapping_definition. Use their exact field names and closed shapes.
 mapping_definition contains the selected kind's fields directly; table_mapping
 and join_mapping in the attached structures select schemas, not wrapper keys.
+The mapping payloads describe candidate input: reference fields use wrapper objects;
+compiled_format describes the later API output, not a literal IRI to return.
+The relational_request_example is only a carrier fragment. Replace its table,
+column, slice and actual-reference placeholders from approved sources and receipts,
+and retain the full task's business mapping semantics and unknowns. Each candidate
+item includes all eight required fields; non-relation relation_endpoints and
+shared_scope may be null. Keep the target reference inside item.value, select
+that item_id in changes, and keep fields null. A business_key column requires a
+real property reference; do not invent a property IRI to satisfy that role.
 When their Class/relation_type target is a fields-only create, apply that definition
 first and reuse its actual returned existing_resource_ref in the mapping payload;
 do not treat its change_id as a selected candidate item.

@@ -1,6 +1,8 @@
 """Frozen inputs and references are contracts, not semantic quality judgments."""
 
 import json
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -164,6 +166,51 @@ def test_new_binding_exposes_complete_relational_mapping_payloads(task_file, tmp
     ]
     assert "field_meanings" in structures["mapping_definition"]["table_mapping"]["fields"]
     assert "step_semantics" in structures["mapping_definition"]["join_mapping"]["fields"]
+
+
+def test_mapping_input_reference_shapes_and_example_are_executable(task_file, tmp_path):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    contract = json.loads(
+        binding.data["instructions"].split(
+            "Technical representation contracts (not business sources):\n", 1
+        )[1]
+    )
+    for kind, names in {
+        "table_mapping": ("mapped_class_iri", "mapped_definition_iri"),
+        "join_mapping": ("relation_type_iri",),
+    }.items():
+        for name in names:
+            field = contract[kind + "_payload"]["fields"][name]
+            assert field["type"] == "object"
+            assert field["compiled_format"] == "absolute-rdf-iri"
+            assert field["exactly_one_required"] == ["definition_ref", "existing_resource_ref"]
+    example = contract["relational_request_example"]
+    assert {x["item_id"] for x in example["candidate"]["items"]} == {
+        x["item_id"] for x in example["changes"]["changes"]
+    }
+    assert all(x["fields"] is None for x in example["changes"]["changes"])
+    repo = Path(__file__).resolve().parents[3]
+    backend_python = repo / "backend/.venv/bin/python"
+    if not backend_python.exists():
+        pytest.skip("canonical candidate validator requires the existing backend environment")
+    result = subprocess.run(
+        [
+            str(backend_python),
+            "-c",
+            (
+                "import json,sys; "
+                "from modeling_team.staged_decisions import validate_unified_candidate; "
+                "issues=validate_unified_candidate(json.load(sys.stdin)); "
+                "print(issues); sys.exit(bool(issues))"
+            ),
+        ],
+        check=False,
+        input=json.dumps(example["candidate"]),
+        text=True,
+        capture_output=True,
+        cwd=repo,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_wrong_request_envelope_returns_actionable_correction():

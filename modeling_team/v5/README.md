@@ -21,6 +21,8 @@
 新 Task 冻结的方法合同包含完整 Class／relation_type 请求示例，
 以及 table_mapping／join_mapping 的完整载荷、列／连接步骤和按类型限定的 mapping_definition
 结构；类型名选择结构，不作为 mapping_definition 的外层键。
+候选引用字段按 definition_ref／existing_resource_ref 对象描述，compiled_format 单列后端
+IRI 类型；完整中立候选示例包含全部必填字段和 item_id 选择，避免把 API 输出形状当候选输入。
 格式反馈沿原目标可修正。工作空间用现有 states 和精确 depends_on 维护业务状态及依赖，
 不新增语义必填硬门。
 工作空间导航显示已有 states／model_basis；根级与原单元自查附上本单元的 task／project
