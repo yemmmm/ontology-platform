@@ -63,7 +63,10 @@ curl -s http://127.0.0.1:8787/calls \
 uv run --extra test pytest -q
 ```
 
-[开发验证记录](VERIFICATION.md)区分程序行为通过和独立模型验收。本项目没有创建 Ontology，也没有启动新的 GLM 建模任务。
+[开发验证记录](VERIFICATION.md)只证明程序行为。后继 GLM 首轮建模与修后默认建模均在各自
+实际 revision 3 通过二十项独立语义验收，覆盖两个切片及表／连接映射；中间未完成运行、
+模型和失败记录均保留，三个运行已封口。
+详见[建模测试记录](../../docs/research/2026-10-31-v5-llm-access-modeling-test.md)。这是构造业务的有界结果，不代表客户或独立开源业务验证。
 
 建议给建模 Agent 的首轮输入为 business.md、实际 OpenAPI 合同、四张表的 Schema 及获准样例数据。
 tests/、VERIFICATION.md 及后续隐藏验收题不作为生产输入，避免把测试断言当作业务理解。
