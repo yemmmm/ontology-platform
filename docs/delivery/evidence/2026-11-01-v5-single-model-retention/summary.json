@@ -1,0 +1,438 @@
+{
+  "date": "2026-11-01",
+  "authorization": "User explicitly requested selecting one most complete model and deleting the other test projects.",
+  "selection": {
+    "project_id": "40841ac8-1c93-4cb1-85ba-1a9e8fb7928b",
+    "project_name": "R2.3 team v5-llm-access-lab-20261031-start3",
+    "ontology_id": "755f1e0e-cf5d-47f2-a2a3-95220f4cba96",
+    "model_revision": 4,
+    "resource_count": 14,
+    "resource_composition": {
+      "Class": 4,
+      "relation_type": 3,
+      "table_mapping": 4,
+      "join_mapping": 3
+    },
+    "basis": "Confirmed-source coverage, full external mappings, original v2 independent acceptance, existing-model continuation and CQ continuation records. Not a cross-domain absolute quality ranking.",
+    "existing_independent_acceptance": {
+      "verdict": "PASS",
+      "freeze_id": "v5-llm-access-v2-incremental-30-20261101",
+      "model_revisions": {
+        "755f1e0e-cf5d-47f2-a2a3-95220f4cba96": 4
+      },
+      "passed": 30,
+      "total": 30
+    },
+    "acceptance_report_ref": "workspaces/v5-runs/llm-access-v2-20261101-existing/evaluations/existing-v2-full-30/public-feedback.json",
+    "acceptance_report_sha256": "6a96ab46064d6ce41831e014e0d00eef1dc8231ec4dffa5b099dc9252647847d",
+    "cq_count": 9,
+    "cq_capability_verdict": "PARTIAL",
+    "cq_criteria_status": "draft",
+    "rdf_content_hash_before_and_after": "84f8c969ae75542c4f722eba1ecbb6ea72145451f52c61969b64ec3d7f587c42"
+  },
+  "counts": {
+    "projects_before": 38,
+    "ontologies_before": 39,
+    "deleted_projects": 37,
+    "deleted_ontologies": 38,
+    "deleted_model_graphs": 38,
+    "projects_after": 1,
+    "ontologies_after": 1,
+    "named_graphs_before": 333,
+    "named_graphs_after": 295
+  },
+  "backup": {
+    "directory": "workspaces/v5-single-model-retention-20261101/backup",
+    "bytes": 1840513,
+    "deleted_project_snapshots": 37,
+    "deleted_model_graph_exports": 38,
+    "retained_demo_snapshot": "workspaces/v5-single-model-retention-20261101/backup/retained-demo-snapshot.json",
+    "all_deleted_project_snapshot_digests_verified": true,
+    "file_sha256_verified_before_deletion": true,
+    "restore_tested": false,
+    "scope": "Project model data snapshots and known owned RDF graphs; not full server database, credentials or leases."
+  },
+  "execution": {
+    "started_at": "2026-11-01T13:16:08.923410+00:00",
+    "resumed_at": "2026-11-01T13:17:22.172227+00:00",
+    "finished_at": "2026-11-01T13:17:26.060973+00:00",
+    "deletion_method_counts": {
+      "project_delete_api": 35,
+      "existing_host_project_delete_service": 2
+    },
+    "first_attempt": {
+      "deleted_projects": 13,
+      "blocked_code": "checkpoint_source_archived",
+      "evidence_preserved": "workspaces/v5-single-model-retention-20261101/cleanup-result-attempt1.json"
+    },
+    "archived_project_deletions": [
+      {
+        "project_id": "fdac1b9b-34cf-4b01-a91f-b2a9cf88d243",
+        "archive": {
+          "814de24d-1059-44eb-a32c-5c0d7afbf643": {
+            "snapshot_digest": "79d3279e1cd1e31a2f58e083fda2e3d8b7ab7277e1d4faf0b0a8f561dbbe742a",
+            "target_project_id": "c72e9fd7-9106-4608-8e33-c2544fac96a6"
+          }
+        },
+        "active_project_keys_before": 0
+      },
+      {
+        "project_id": "396a6166-7723-4a39-ba24-1b904252d91a",
+        "archive": {
+          "6a9e4c4f-cff6-4091-b8cf-116f68f1733a": {
+            "snapshot_digest": "d26e1fe68d2e2aeb890573421bd40de3acb058fbfd85617951c4c7572e228a2f",
+            "target_project_id": "99ceda58-191d-4d39-914e-0e83b9bf21a7"
+          }
+        },
+        "active_project_keys_before": 0
+      }
+    ],
+    "archive_handling_review": "workspaces/v5-single-model-retention-20261101/archive-delete-t0-review.json",
+    "platform_guard_changed": false,
+    "all_deleted_projects_readback_http_404": true,
+    "other_existing_named_graphs_retained": true,
+    "all_four_temporary_admins_revoked": true
+  },
+  "verification": {
+    "checks": {
+      "retained_model_hash_and_revision_unchanged": true,
+      "all_target_graphs_absent": true,
+      "cq_full_records_unchanged": true,
+      "retained_workspace_and_read_models_ready_complete": true
+    },
+    "retained_project_id": "40841ac8-1c93-4cb1-85ba-1a9e8fb7928b",
+    "retained_ontology_id": "755f1e0e-cf5d-47f2-a2a3-95220f4cba96",
+    "project_count": 1,
+    "ontology_count": 1,
+    "retained_model_revision": 4,
+    "zero_row_counts": {
+      "deleted_project_rows": 0,
+      "deleted_ontology_rows": 0,
+      "deleted_graph_state_rows": 0,
+      "deleted_graph_revision_rows": 0,
+      "deleted_ontology_registry_rows": 0,
+      "deleted_derived_pointer_rows": 0
+    },
+    "retained_rdf_content_hash": "84f8c969ae75542c4f722eba1ecbb6ea72145451f52c61969b64ec3d7f587c42",
+    "http_statuses": {
+      "project": 200,
+      "ontologies": 200,
+      "workspace": 200,
+      "resources": 200,
+      "relations": 200,
+      "questions": 200,
+      "health": 200
+    },
+    "resource_count": 14,
+    "cq_count": 9,
+    "relation_record_count": 13,
+    "retained_project_name": "R2.3 team v5-llm-access-lab-20261031-start3",
+    "frontend_health": 200,
+    "temporary_admin_revoked": true
+  },
+  "preserved": [
+    "Selected Demo model, project metadata and complete nine CQ records",
+    "Historical run directories, checkpoints, native events, failures and evaluation reports",
+    "Independent Demo application and external business database"
+  ],
+  "no_new_modeling_llm_calls": true,
+  "deleted_projects": [
+    {
+      "id": "1914d037-3024-4cb1-96d4-1dd25af8528b",
+      "name": "R2.3 team platform-normal-001",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "ccd76dc0-7c99-42de-9f5b-579f131d9066",
+      "name": "R2.3 team v5-codex-p0:platform-checkpoint-001:platform",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "d8f3a66c-dacf-4df6-8764-d4a91ac5cc93",
+      "name": "R2.3 team v5-codex-p0:platform-response-001:platform",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "096eb23c-d43b-4189-8761-8f3e64b839b6",
+      "name": "R2.3 team v5-codex-p0:platform-not-written-001:platform",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "e54c1c9b-0e73-43fe-8ed7-dd8782ad388e",
+      "name": "R2.3 team v5-codex-p0:platform-partial-001:platform",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "c5ba361b-db94-4fca-a20b-818a26bf4b6c",
+      "name": "R2.3 team v5-p11-runtime-20261029-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "2e36aee6-aa1d-4338-b7fa-2156c987aa7f",
+      "name": "R2.3 team v5-minimal-hitl-20261029-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "781b60bb-c62e-4593-b651-1acbb1cdb2d6",
+      "name": "R2.3 team v5-hitl-validation-20261029-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "a328b725-57f9-4670-b2e1-89b59b0cf7e6",
+      "name": "R2.3 team v5-minimal-team-20261029-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "bf31a8ae-d581-4cb4-b651-ee22bd255f96",
+      "name": "R2.3 team v5-team-cold-20261029-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "6fccaf4c-196b-45f5-9c0a-af0421135fb6",
+      "name": "R2.3 team v5-memory-snapshot-20261029-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "a5e389c4-7947-445e-af8c-89fc0900d8b3",
+      "name": "R2.3 team v5-amount-20261029-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "4dda3ff6-33e0-4d70-b606-16b8b3da6577",
+      "name": "R2.3 team v5-multi-unit-20261029-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "readback_status": 404,
+      "deletion_method": "project_delete_api"
+    },
+    {
+      "id": "fdac1b9b-34cf-4b01-a91f-b2a9cf88d243",
+      "name": "R2.3 team v5-continuous-20261029-start1",
+      "ontology_count": 1,
+      "http_status": null,
+      "deletion_method": "existing_host_project_delete_service",
+      "readback_status": 404
+    },
+    {
+      "id": "c72e9fd7-9106-4608-8e33-c2544fac96a6",
+      "name": "v5-snapshot-fork-20261030-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "9677c8af-ec6a-4118-a2ac-59e70ee5c550",
+      "name": "R2.3 team v5-dynamic-tree-20261029-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "4eb16443-bf9d-470d-9a01-eb2c5a20e8be",
+      "name": "R2.3 team v5-cold-repeat-20261030-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "7094f5a1-995c-4364-8dca-39b305329a01",
+      "name": "R2.3 team v5-multi-ontology-20261030-bootstrap",
+      "ontology_count": 2,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "2ea2edf4-7b59-475a-9509-86dd0c877406",
+      "name": "R2.3 team v5-followup-20261030-baseline",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "60dbfcc9-7b4e-4da1-bede-8d82b06cd3d7",
+      "name": "R2.3 team v5-followup-20261030-target-a",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "3d92621e-02c1-4700-bf7a-2e1d1e9cdbdb",
+      "name": "R2.3 team v5-followup-20261030-target-b",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "5c664cd7-1167-4ed6-80c2-e80f082ed21c",
+      "name": "R2.3 team v5-followup-20261030-improved-isolated",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "2f682a53-fd61-4e5a-8eaf-44322fdb1ffd",
+      "name": "R2.3 team v5-followup-20261030-target-c",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "53fa7968-adc3-4b36-8e59-a73ce95d6281",
+      "name": "R2.3 team v5-partial-application-20261030-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "31279902-eb91-4db1-b3bf-ed6bd90ca687",
+      "name": "R2.3 team v5-local-rework-20261030-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "fccc5c3e-bdcb-44f5-8666-9e7ec0310deb",
+      "name": "R2.3 team v5-workspace-closure-20261030-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "d7be9ee9-4378-420f-9dcc-775d6b8b5ad8",
+      "name": "R2.3 team v5-composite-contracts-20261030-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "8640de4c-3170-4d32-87bb-0c91e34971f8",
+      "name": "R2.3 team v5-composite-contracts-20261030-parent-omission",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "101a8933-e01b-4828-9a50-534342809d82",
+      "name": "R2.3 team v5-local-owner-closure-20261030-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "99ceda58-191d-4d39-914e-0e83b9bf21a7",
+      "name": "v5-fork-continuation-20261030-target",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "396a6166-7723-4a39-ba24-1b904252d91a",
+      "name": "R2.3 team v5-fork-continuation-20261030-source",
+      "ontology_count": 1,
+      "http_status": null,
+      "deletion_method": "existing_host_project_delete_service",
+      "readback_status": 404
+    },
+    {
+      "id": "e76c90d3-e0a6-4d80-a586-3fda3a850462",
+      "name": "R2.3 team v5-two-slice-service-20261031-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "ba94277d-180b-4535-b906-f9326e6a48bc",
+      "name": "R2.3 team v5-two-slice-service-20261031-start2",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "1ca99659-d874-4223-aec0-414a88e65a0e",
+      "name": "R2.3 team v5-two-slice-service-20261031-start3",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "aa57198c-ffee-4396-824d-15c54b7e0d0f",
+      "name": "R2.3 team v5-llm-access-lab-20261031-start1",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "5a3aaa52-13a1-4035-81fe-419db2f027d6",
+      "name": "R2.3 team v5-llm-access-lab-20261031-start2",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    },
+    {
+      "id": "596fa5ee-7b05-4e21-9cb6-a1296408d03c",
+      "name": "R2.3 team v5-llm-access-v2-20261101-fresh",
+      "ontology_count": 1,
+      "http_status": 204,
+      "deletion_method": "project_delete_api",
+      "readback_status": 404
+    }
+  ],
+  "raw_evidence_directory": "workspaces/v5-single-model-retention-20261101"
+}
