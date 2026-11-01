@@ -84,4 +84,3 @@ FROM calls
 GROUP BY request_id
 HAVING COUNT(DISTINCT key_id) >= 2
 ORDER BY request_id;
-

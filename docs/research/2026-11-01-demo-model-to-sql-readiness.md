@@ -101,7 +101,9 @@ SQL 目标由 Host 显式绑定到获准 Demo SQLite 的独立副本；没有从
 
 实际 SQL 用只读连接执行；六条全部执行成功，且逐行与 Demo API 返回的授权集合、成功记录、
 模型配置和余额独立计算结果一致。进一步用每次独立副本的七组真实调用验证准入预测。
-SQL 和模型都未在物理验证后回填或更改。原始执行行、API 观察和 SQL 生成冻结均在 inputs；
+实际执行的 SQL 语句与模型未在物理验证后回填或更改；规范 SQL 保存在冻结的 assessment.json。
+展示文件 queries.sql 发布时仅规范末尾空行，原始文件及前后 SHA256 另存 inputs/publication-normalization.json。
+原始执行行、API 观察和 SQL 生成冻结均在 inputs；
 可审阅汇总为 [verification.json](artifacts/2026-11-01-demo-model-to-sql/verification.json)。
 
 这证明当前绑定的小场景中，已有模型能约束人工 SQL 生成并得到正确结果；不证明自动 NL2SQL
