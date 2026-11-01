@@ -333,6 +333,54 @@ def test_pause_keeps_first_result_error_for_resume(binding, workspace, saver):
     assert len(platform.effects) == 1
 
 
+@pytest.mark.parametrize("material_channel", [False, True])
+def test_invalid_result_repair_receives_rejected_output_before_old_applied_proposal(
+    binding, workspace, saver, material_channel
+):
+    binding.data["work_management"] = material_channel
+    platform = Platform()
+    platform.effects["old-applied"] = {}
+    control = TaskControl(workspace)
+    actor = Actor(binding, platform)
+    rejected = []
+    flow = None
+
+    def invoke(root, purpose, prompt, inputs):
+        if purpose == "modeling" and actor.calls:
+            previous = json.loads(prompt)["previous_proposal"]
+            content = (
+                flow.team.read(previous["material_ref"])["text"]
+                if material_channel
+                else previous["content"]
+            )
+            assert content == rejected[0]
+            assert previous["application_state"] == "not_applied"
+        result = actor(root, purpose, prompt, inputs)
+        if purpose == "modeling" and len(actor.calls) == 1:
+            body = json.loads(result["final_response"])
+            body.update(status="已提出", issues=["new unapplied definition links"])
+            result["final_response"] = json.dumps(body, ensure_ascii=False)
+            rejected.append(result["final_response"])
+            control.enqueue("pause", "pause")
+        return result
+
+    flow = WorkUnitFlow(binding, workspace, platform, invoke)
+    state = flow.initialize()
+    old = workspace.put_reference(
+        binding.identity + ":older-applied-proposal",
+        "candidate",
+        {"issues": ["older applied scope"]},
+        0,
+    )
+    flow._save({**state, "candidate_ref": old})
+    paused = flow.advance(saver)
+    assert paused["issue"]["code"] == "work_result_invalid"
+    assert len(platform.effects) == 1
+    control.enqueue("resume", "resume")
+    assert flow.advance(saver)["status"] == "handoff_ready"
+    assert len(platform.effects) == 2
+
+
 def test_unknown_apply_keeps_original_activity_and_operation(binding, workspace, saver):
     platform = Platform()
     platform.uncertain = True

@@ -138,3 +138,22 @@ table_mapping 端点和本候选属性定义端点用例复现原拒绝；relati
 
 另针对前次评价输出把可选 CQ／SQL 键写到 case 括号外，普通冻结评价提示沿原 schema
 只要求必要 case 字段，不生成无绑定的 CQ ID／SQL 状态；custom CQ 路径保持原合同。
+
+## 被拒结果接续的上下文缺陷
+
+model-00006 实际已生成三个关联谓词与十九条跨资源边的完整提案，却把 status 返回为
+“已提出”，在应用前被 schema 拒绝。随后的 model-00007 误判无新变更。追踪原输入发现
+框架仍用 state.candidate_ref 的旧已应用提案填 previous_proposal，刚被拒的 native
+response 只保存在执行记录，未进入纠错上下文。这是 platform-contract 的上下文接线缺陷，
+不能归因于未表达业务范围已经完成，也不能由 Host 修改提案替 Agent 过格式门。
+
+最小修复复用已有 previous_proposal／handoff material：优先原样交接最后被拒的 native
+结果，明确 application_state=not_applied，要求核对其实际变更而非旧基线后才可 no_change。
+格式校验保留，不翻译枚举、不改业务候选、不自动应用，也不以旧成功回执覆盖这次拒绝。
+内联与 material 两条通道新用例均先复现失败，修复后 Flow 定向 **24 passed**；最终完整
+v5 回归 **248 passed、1 条既有 warning、209.11 秒**，真实 PostgreSQL 用例无 skip。
+
+当前 run 在自然边界暂停后，Host 通过已有 material 通道原样转交 model-00006 的完整
+native response，SHA256 与原文一致（rejected-proposal-transport.json），没有修改其
+无效 status 或任何业务内容；署名 host-execution-contract 输入仅澄清真实未应用状态和
+实际材料引用。随后同检查点接续进入 round 8；原自查也已确认十九条边仍是未完成范围。

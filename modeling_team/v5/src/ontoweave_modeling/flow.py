@@ -190,6 +190,7 @@ class WorkUnitFlow:
             )
             state = self._save({**state, "target_ref": target_ref, "refresh_baseline": False})
         local_execution = f"model-{state['round']:05d}"
+        rejected_result = None
         if (
             state.get("issue", {}).get("code")
             in {"unresolved_reason_required", "model_changes_required", "work_result_invalid"}
@@ -211,12 +212,16 @@ class WorkUnitFlow:
                         require_changes=not self.binding.is_child,
                     )
                 except FrameworkError:
-                    pass
+                    rejected_result = original["final_response"]
                 else:
                     local_execution = previous
         previous_proposal = None
-        if state.get("candidate_ref"):
-            previous = self.repository.read_reference(state["candidate_ref"])
+        if rejected_result is not None or state.get("candidate_ref"):
+            previous = (
+                rejected_result
+                if rejected_result is not None
+                else self.repository.read_reference(state["candidate_ref"])
+            )
             if (
                 self.binding.data.get("collaboration")
                 or self.binding.data.get("work_units")
@@ -224,13 +229,29 @@ class WorkUnitFlow:
             ):
                 previous_proposal = {
                     "material_ref": self.team.publish(
-                        "previous-" + digest(state["candidate_ref"])[:24],
-                        text=json.dumps(previous, ensure_ascii=False),
+                        "previous-"
+                        + digest(
+                            rejected_result
+                            if rejected_result is not None
+                            else state["candidate_ref"]
+                        )[:24],
+                        text=previous
+                        if isinstance(previous, str)
+                        else json.dumps(previous, ensure_ascii=False),
                     ),
                     "instruction": "Read this exact previous result using read_handoff_material and correct it against feedback. Preserve technical fixes already made; reassess business content against current sources and baseline.",
                 }
             else:
                 previous_proposal = {"content": previous}
+            if rejected_result is not None:
+                previous_proposal.update(
+                    application_state="not_applied",
+                    instruction="This is the exact last native result rejected before application, "
+                    "not an older applied proposal. Read it completely and correct the result "
+                    "contract while preserving its source-grounded unfinished scope. Verify its "
+                    "proposed changes against actual receipts/edges before claiming no_change; "
+                    "older applied resources do not prove these changes were applied.",
+                )
         prompt = {
             "objective": self.binding.data["objective"],
             "previous_proposal": previous_proposal,
@@ -975,7 +996,8 @@ class WorkUnitFlow:
 
     def _route(self, state):
         if (
-            self.binding.data.get("custom_cq") and not self.binding.is_child
+            self.binding.data.get("custom_cq")
+            and not self.binding.is_child
             and state.get("activity") != "prepare"
             and self.control.synchronize()["mode"] == "running"
         ):
