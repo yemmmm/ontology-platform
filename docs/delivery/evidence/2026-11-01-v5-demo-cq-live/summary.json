@@ -1,0 +1,430 @@
+{
+  "schema_version": "ontoweave-demo-cq-live-evidence/v1",
+  "observed_at": "2026-11-01T05:11:37.598844+00:00",
+  "task_ref": "v5-demo-cq-live-20261101",
+  "run_id": "v5-demo-cq-live-20261101",
+  "model": {
+    "provider": "glm-direct",
+    "model": "glm-5.3-flash",
+    "effort": "low"
+  },
+  "project_id": "40841ac8-1c93-4cb1-85ba-1a9e8fb7928b",
+  "ontology_id": "755f1e0e-cf5d-47f2-a2a3-95220f4cba96",
+  "engineering": {
+    "focused_tests_passed": 32,
+    "v5_regression_passed": 239,
+    "v5_regression_skipped": 0,
+    "v5_regression_warnings": 1,
+    "v5_regression_seconds": 226.59
+  },
+  "stages": [
+    {
+      "stage": "stage1",
+      "platform_cq_count": 3,
+      "snapshot_id": "cq-735c984aff916c43b7e64693",
+      "execution_id": "model-00001",
+      "thread_id": "01a19568-9884-7582-b0bd-98c31868258f",
+      "actual_goal_reads": [
+        {
+          "question_count": 3,
+          "source_ref": "cq-735c984aff916c43b7e64693",
+          "sha256": "46044c5bba8e5e2423e7e27b89d0581aa91f553fca9bbe03307a0fc9497aa279",
+          "next_offset": null
+        }
+      ],
+      "native_completed": true
+    },
+    {
+      "stage": "stage2-busy",
+      "platform_cq_count": 6,
+      "snapshot_id": "cq-f86981a17be09a2b0f7f3c0a",
+      "execution_id": "model-00002",
+      "thread_id": "01a1956c-8bf6-7373-a5ce-df0f3f6d9518",
+      "actual_goal_reads": [
+        {
+          "question_count": 6,
+          "source_ref": "cq-f86981a17be09a2b0f7f3c0a",
+          "sha256": "c1b34fe30288de5d163a5649ee4a662aff1befdd3188fffbe1b2a1644cf95a0e",
+          "next_offset": null
+        }
+      ],
+      "native_completed": true
+    },
+    {
+      "stage": "stage3-paused-checkpoint",
+      "platform_cq_count": 9,
+      "snapshot_id": "cq-f5588ac7d3aa493f530507f8",
+      "execution_id": "model-00003",
+      "thread_id": "01a19571-62d8-7361-909c-6d233eab4a8c",
+      "actual_goal_reads": [
+        {
+          "question_count": 9,
+          "source_ref": "cq-f5588ac7d3aa493f530507f8",
+          "sha256": "e98bcf3a6be466d391ea2a6160419cb803554b59cc0dbfb0b4c0b38056ac3eca",
+          "next_offset": null
+        }
+      ],
+      "native_completed": true
+    }
+  ],
+  "checkpoint": {
+    "snapshot_id": "22a924b6c4e443eb85265c47991a6c9a",
+    "name": "six-cq-paused-before-final-three",
+    "path": "/home/yangxiang/ontology-platform/workspaces/v5-runs/demo-cq-live-20261101/snapshots/22a924b6c4e443eb85265c47991a6c9a.json",
+    "object_count": 15,
+    "model_read_error": null
+  },
+  "paused_input_did_not_resume_run": true,
+  "production_handoff": {
+    "status": "handoff_ready",
+    "model_revisions": {
+      "755f1e0e-cf5d-47f2-a2a3-95220f4cba96": 4
+    },
+    "candidate_statuses": [
+      "no_change",
+      "no_change",
+      "no_change"
+    ],
+    "apply_operation_count": 0,
+    "consumed_host_technical_input_ids": [
+      "cq-live-host-scope-clarification"
+    ]
+  },
+  "cq": {
+    "cq_count": 9,
+    "stable_ids_preserved": true,
+    "all_nine_active_and_selected": true,
+    "all_nine_criteria_remain_draft": true,
+    "repeat_import_same_ids": true
+  },
+  "model_before_after": {
+    "model_revision_before": 4,
+    "model_revision_after": 4,
+    "resource_count_before": 14,
+    "resource_count_after": 14,
+    "same_resource_iris": true
+  },
+  "independent": {
+    "evaluation_id": "demo-nine-cq-20261101",
+    "snapshot_id": "cq-f5588ac7d3aa493f530507f8",
+    "freeze_id": "cq-freeze-2a4dbe6bafbd4da5ccf7f333",
+    "verdict": "PARTIAL",
+    "passed": 0,
+    "total": 9,
+    "valid_native_execution": "evaluation-582e71198f7406ddd8af-002",
+    "thread_id": "01a19580-feb8-7480-81a3-46ba60b4cffd",
+    "readonly_tool_names": [
+      "query_semantic_context",
+      "read_material",
+      "read_model_resource"
+    ],
+    "material_integrity": {
+      "api": {
+        "sha256": "9cf99d65e6c3138992321ad5439c432080fda3299fe4faa7ab4b0239c3834f6d",
+        "read_matches": true,
+        "bytes_match": true
+      },
+      "scope": {
+        "sha256": "3b123d7c2fd577b2434860273de37539975cd48334176bf18d6eff036fb18584",
+        "read_matches": true,
+        "bytes_match": true
+      },
+      "schema": {
+        "sha256": "edc3cee89d32aba59029da74b840c5b86f97a1f899bea582d5d264b1d08d30b9",
+        "read_matches": true,
+        "bytes_match": true
+      },
+      "business": {
+        "sha256": "b8a3c76fd07da907f6449a8beee65d47cc7e6ca771f70f28cbe9f15fdf9003fa",
+        "read_matches": true,
+        "bytes_match": true
+      },
+      "cq-goals": {
+        "sha256": "e98bcf3a6be466d391ea2a6160419cb803554b59cc0dbfb0b4c0b38056ac3eca",
+        "read_matches": true,
+        "bytes_match": true
+      },
+      "baseline-inventory": {
+        "sha256": "f8b12fe13fcbc8b5a809c16efddeca5dea5d0b9ae5faeeb9212ce425e53f1232",
+        "read_matches": true,
+        "bytes_match": true
+      },
+      "frozen-questions": {
+        "sha256": "2a4dbe6bafbd4da5ccf7f3337392fd87b817ebd234a0fc31928ee47f4b94e87f",
+        "read_matches": true,
+        "bytes_match": true
+      },
+      "human-inputs": {
+        "sha256": "2af04a867579c88115072adc414431b85cca590ded423ce88d1b15d1e8d77b68",
+        "read_matches": true,
+        "bytes_match": true
+      },
+      "target": {
+        "sha256": "b300d9443bd0c4570872409b1c3dbbc8583c71657cf816e3f50d11f37f98cb2b",
+        "read_matches": true,
+        "bytes_match": true
+      }
+    },
+    "rejected_attempts_retained": 2,
+    "cases": [
+      {
+        "index": 1,
+        "cq_id": "cde9247c-2250-4d12-bcd7-21acebb7a911",
+        "content_revision": 1,
+        "content_digest": "4d55452c694d4a4eb3921474bca51b86f6491f10f7590cbea2fbf72d297bda25",
+        "outcome": "question-answer-review",
+        "answerability": "supported",
+        "sql_readiness": "supported",
+        "sql_execution": "not_run",
+        "evidence_iri_count": 4
+      },
+      {
+        "index": 2,
+        "cq_id": "7bf569d7-bfc1-4668-9138-e1f05d58514f",
+        "content_revision": 1,
+        "content_digest": "682404a9b10557138b721152d8af9f653b6bc5d41bb1da6d2917e243951cafed",
+        "outcome": "question-answer-review",
+        "answerability": "supported",
+        "sql_readiness": "supported",
+        "sql_execution": "not_run",
+        "evidence_iri_count": 4
+      },
+      {
+        "index": 3,
+        "cq_id": "41a25ee0-c432-499c-bda7-df642c65c892",
+        "content_revision": 1,
+        "content_digest": "561ff1d7e84193eb06bfadae33f07cb47345d0bfe07fec0bcbad87fe66e5cd0b",
+        "outcome": "question-answer-review",
+        "answerability": "conditional",
+        "sql_readiness": "conditional",
+        "sql_execution": "not_run",
+        "evidence_iri_count": 3
+      },
+      {
+        "index": 4,
+        "cq_id": "4cf22b61-5e3d-419c-8651-8e898abcdf3b",
+        "content_revision": 3,
+        "content_digest": "78780e6fe975d2814a818aea540bd5e7ab48a256b6d8082303fd6528dde9e328",
+        "outcome": "question-answer-review",
+        "answerability": "conditional",
+        "sql_readiness": "conditional",
+        "sql_execution": "not_run",
+        "evidence_iri_count": 3
+      },
+      {
+        "index": 5,
+        "cq_id": "27bfd487-79a9-43f2-9eec-1f3b30f2e6b4",
+        "content_revision": 3,
+        "content_digest": "1c621683361a1eceb00cd0a5216c2b1205103c3174879732f0b9659f803e08b7",
+        "outcome": "question-answer-review",
+        "answerability": "supported",
+        "sql_readiness": "supported",
+        "sql_execution": "not_run",
+        "evidence_iri_count": 3
+      },
+      {
+        "index": 6,
+        "cq_id": "6508c976-0832-4197-ac89-b4ec16699b34",
+        "content_revision": 3,
+        "content_digest": "9413b62fb55c89a016208101423d1e7cd0851baa699074fe6dd71a9c0dd31866",
+        "outcome": "question-answer-review",
+        "answerability": "supported",
+        "sql_readiness": "supported",
+        "sql_execution": "not_run",
+        "evidence_iri_count": 2
+      },
+      {
+        "index": 7,
+        "cq_id": "b43fbc9c-07eb-4f40-9d82-847b1ff1afab",
+        "content_revision": 3,
+        "content_digest": "d03885ba17ed8ad0c0da6b8694bba0adbf4a8e3ff09665572b6a1e6011d21923",
+        "outcome": "question-answer-review",
+        "answerability": "conditional",
+        "sql_readiness": "conditional",
+        "sql_execution": "not_run",
+        "evidence_iri_count": 2
+      },
+      {
+        "index": 8,
+        "cq_id": "ba5b402d-79ca-4672-bae2-dec1ada222f8",
+        "content_revision": 3,
+        "content_digest": "e4ca774683c0ba2ec6737a5e28369ed50df7b9085a45c06238cf2291dfdef7f8",
+        "outcome": "question-answer-review",
+        "answerability": "unsupported",
+        "sql_readiness": "unsupported",
+        "sql_execution": "not_run",
+        "evidence_iri_count": 2
+      },
+      {
+        "index": 9,
+        "cq_id": "2ab3b102-f7cf-4317-8b0d-285e551b06ba",
+        "content_revision": 3,
+        "content_digest": "fcc61cb7e2828e680a755e04e7e14f0f497ed144cb0521ba5e0b605ff33acdb9",
+        "outcome": "question-answer-review",
+        "answerability": "unsupported",
+        "sql_readiness": "unsupported",
+        "sql_execution": "not_run",
+        "evidence_iri_count": 2
+      }
+    ],
+    "project_result_receipt": {
+      "recorded": [
+        "cde9247c-2250-4d12-bcd7-21acebb7a911",
+        "7bf569d7-bfc1-4668-9138-e1f05d58514f",
+        "41a25ee0-c432-499c-bda7-df642c65c892",
+        "4cf22b61-5e3d-419c-8651-8e898abcdf3b",
+        "27bfd487-79a9-43f2-9eec-1f3b30f2e6b4",
+        "6508c976-0832-4197-ac89-b4ec16699b34",
+        "b43fbc9c-07eb-4f40-9d82-847b1ff1afab",
+        "ba5b402d-79ca-4672-bae2-dec1ada222f8",
+        "2ab3b102-f7cf-4317-8b0d-285e551b06ba"
+      ],
+      "skipped_stale": []
+    }
+  },
+  "business_questions": {
+    "pending": 4,
+    "resolved": 0,
+    "business_reply_count": 0
+  },
+  "budget": {
+    "authorized_amount": "3",
+    "charged_estimate": "0.65230100",
+    "priced_amount": "0.65230100",
+    "provisional_amount": "0",
+    "remaining_estimate": "2.34769900",
+    "coverage": {
+      "ambiguous": 0,
+      "by_model": {
+        "glm-5.3-flash": {
+          "known_amount": "0.65230100",
+          "units": 8
+        }
+      },
+      "by_role": {
+        "acceptance": {
+          "known_amount": "0.18320004",
+          "units": 3
+        },
+        "modeling": {
+          "known_amount": "0.46910096",
+          "units": 5
+        }
+      },
+      "by_role_model": {
+        "acceptance|glm-5.3-flash": {
+          "known_amount": "0.18320004",
+          "units": 3
+        },
+        "modeling|glm-5.3-flash": {
+          "known_amount": "0.46910096",
+          "units": 5
+        }
+      },
+      "issues": [],
+      "known": 8,
+      "known_zero_sources": 0,
+      "provisional": 0,
+      "status": "complete",
+      "units": 8,
+      "unknown": 0
+    },
+    "coverage_gaps": [],
+    "out_of_scope": [
+      {
+        "amount": null,
+        "currency": "CNY",
+        "deducted": false,
+        "scope": "host",
+        "status": "unknown"
+      },
+      {
+        "amount": null,
+        "currency": "CNY",
+        "deducted": false,
+        "scope": "unwired_auxiliary",
+        "status": "unknown"
+      }
+    ]
+  },
+  "native_usage": {
+    "roles": {
+      "independent-acceptance": {
+        "input_tokens": 705193,
+        "output_tokens": 17176,
+        "cached_input_tokens": 602752,
+        "native_segments": 3,
+        "missing_usage_segments": 0,
+        "native_interval_union_seconds": 430.337
+      },
+      "production-modeling": {
+        "input_tokens": 1579157,
+        "output_tokens": 31187,
+        "cached_input_tokens": 1375744,
+        "native_segments": 3,
+        "missing_usage_segments": 0,
+        "native_interval_union_seconds": 811.549
+      },
+      "production-self-check": {
+        "input_tokens": 224639,
+        "output_tokens": 2945,
+        "cached_input_tokens": 125504,
+        "native_segments": 2,
+        "missing_usage_segments": 0,
+        "native_interval_union_seconds": 141.706
+      }
+    },
+    "totals": {
+      "input_tokens": 2508989,
+      "output_tokens": 51308,
+      "cached_input_tokens": 2104000,
+      "input_plus_output_tokens": 2560297
+    },
+    "first_native_start": "2026-11-01T04:40:23.372000+00:00",
+    "last_native_end": "2026-11-01T05:09:27.323000+00:00",
+    "native_window_seconds": 1743.951,
+    "production_union_seconds": 953.255,
+    "all_native_union_seconds": 1383.592,
+    "coverage": "complete-known-native",
+    "all_task_metering": "PARTIAL: external Host and internal ranking usage unknown"
+  },
+  "counting": {
+    "fresh_semantic_starts": 1,
+    "modeling_rounds": 1,
+    "production_modeling_turns": 3,
+    "production_self_check_turns": 2,
+    "independent_turns": 3,
+    "boundary": "One nine-CQ goal consumed incrementally; no substantive model revision or post-acceptance repair round. Source-cycle counters are not fresh semantic starts."
+  },
+  "cleanup": {
+    "control_mode": "stopped",
+    "control_active": {},
+    "scope_disposition": "existing-retained",
+    "no_in_flight_attempts": true,
+    "aggregate_keys_non_active": true,
+    "protocol_key_revoked": true,
+    "admin_key_revoked": true,
+    "active_session_count_after": 0,
+    "active_lease_count_after": 0,
+    "modeling_batch_count_before": 4,
+    "modeling_batch_count_after": 4,
+    "read_key_revocation": {
+      "read_key_count": 2,
+      "all_non_active": true
+    }
+  },
+  "host_interventions": [
+    "Verified explicit native IDs from retained applied receipts against current revision-4 inventory.",
+    "Recovered the skipped initial prepare state after the two-line source-activation fix.",
+    "Clarified bounded handoff scope without business answers.",
+    "Added required original-material read checklist to existing evaluation retry feedback.",
+    "Clarified draft-criteria report metadata without business answers or semantic classifications."
+  ],
+  "boundaries": [
+    "Existing stable CQ records were selected into goals in three stages; no duplicate nine-question set was created.",
+    "No RDF apply, Demo event feature, or SQL execution occurred.",
+    "This is a public constructed Demo regression, not customer blind acceptance or proof of fully autonomous default existing initialization.",
+    "Rejected native results and all technical interventions are retained; no old PASS is inherited.",
+    "Native metering does not include excluded external Host or unwired auxiliary usage and is not a final provider invoice."
+  ]
+}

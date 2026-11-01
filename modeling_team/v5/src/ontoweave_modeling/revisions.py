@@ -116,10 +116,10 @@ class SourceRevisions:
                     continue
                 state = {
                     **work["content"],
-                    "activity": "model",
+                    "activity": "model" if work["content"].get("baseline_ref") else "prepare",
                     "status": "ready",
                     "round": work["content"]["round"] + 1,
-                    "refresh_baseline": True,
+                    "refresh_baseline": bool(work["content"].get("baseline_ref")),
                     "semantic_acceptance": "unverified",
                     "source_change_id": change["change_id"],
                     "issue": {

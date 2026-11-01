@@ -59,6 +59,27 @@ def test_busy_cq_revision_queues_then_preserves_original_materials(binding, work
     assert CustomCQ(revised, workspace).stage(snapshot()) is None
 
 
+def test_first_cq_sync_after_prepare_only_keeps_platform_preparation(binding, workspace):
+    from test_framework_flow import Platform
+
+    from ontoweave_modeling.custom_cq import CustomCQ
+    from ontoweave_modeling.flow import WorkUnitFlow
+
+    WorkUnitFlow(binding, workspace, Platform(), None).initialize()
+    CustomCQ(binding, workspace).stage(snapshot())
+    revised = SourceRevisions(binding, workspace).activate()
+
+    work = workspace.get(revised.identity + ":work")["content"]
+    assert work["activity"] == "prepare"
+    assert work["status"] == "ready"
+    assert work["source_change_id"] == snapshot()["snapshot_id"]
+    assert "cq-goals" in revised.data["source_manifest"]
+    platform = Platform()
+    prepared = WorkUnitFlow(revised, workspace, platform, None)._prepare(work)
+    assert platform.calls[0][0] == "prepare_scope"
+    assert prepared["activity"] == "model" and prepared["baseline_ref"]
+
+
 def test_cq_snapshot_tampering_is_recoverable_before_any_material_write(binding, workspace):
     from ontoweave_modeling.custom_cq import CustomCQ
 
