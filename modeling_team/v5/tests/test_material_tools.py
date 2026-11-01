@@ -124,7 +124,8 @@ def test_governed_read_preserves_authorized_scope_and_frozen_revision(tmp_path, 
 
 @pytest.mark.parametrize("actual_revision", [2, 3])
 @pytest.mark.parametrize(
-    "family", ["relation-type-list", "table-mapping-detail", "join-mapping-detail"]
+    "family",
+    ["relation-type-list", "table-mapping-detail", "join-mapping-detail", "operation-detail"],
 )
 def test_exact_resource_read_uses_scoped_key_and_checks_revision(tmp_path, actual_revision, family):
     received = []

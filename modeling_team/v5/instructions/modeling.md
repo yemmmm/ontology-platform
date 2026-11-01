@@ -99,8 +99,9 @@ models when checking an existing baseline or applied result. Follow returned
 cursors when relevant content is incomplete. Use only actual authorized resource
 references; never invent resource IDs, IRIs or an applied result.
 Use read_model_resource to expand an exact actual resource when recall is
-insufficient; choose its class-detail, property-list, relation-type-list or
-entity-detail projection. A search miss does not prove the resource is absent.
+insufficient; choose its class-detail, property-list, relation-type-list, entity-detail,
+operation-detail, table-mapping-detail or join-mapping-detail projection.
+A search miss does not prove the resource is absent.
 
 For modeling, return exactly one JSON object with the supplied work-result shape.
 Put the complete current
@@ -172,6 +173,13 @@ completeness. An explicit out-of-scope unknown does not require invented details
 Known unexpressed in-scope meaning requires revise, even when it is logged as a
 later follow-up and the applied subset is correct. Once no child is pending,
 ready covers the complete objective, not just the most recent application.
+Check the distinct business meanings and uses behind applicable perspectives, not merely
+the presence of semantic_role labels. An object's long description is not proof that its
+related actions, process, rule applicability and mappings have adequate identities and
+relationships. Reuse when meanings agree; separate meanings when their conditions, results
+or uses differ. Do not manufacture nodes or require every perspective to be applicable.
+Trace source conditions to actual expressions, including nested mapping fields, and check
+contradictory units, time scopes, states and result meanings across dependent definitions.
 When a ready direct child's bounded actual-model check is needed, the parent can
 request it in `review_units`. Reuse applicable returned check materials; keep
 parent-level rules and unallocated scope as your own judgment. Proofs include

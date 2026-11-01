@@ -191,6 +191,7 @@ def material_server(
                 "property-list",
                 "relation-type-list",
                 "entity-detail",
+                "operation-detail",
                 "table-mapping-detail",
                 "join-mapping-detail",
             ],

@@ -9,14 +9,17 @@
    `glm-flash-low`；默认新任务金额沿 AGENTS 的 3 元，Host 先创建稳定金额账本并在 Task
    写入 amount／budget_ref。本轮明确不限额的研发任务可沿其既有 usage_only 特例。
 2. 创建 v5 Task，形状见 v5 README。instructions 只需本任务补充：prepare 会冻结当前
-   v5 方法与可复用平台语法，不要手工复制旧角色包。新任务建议
+   v5 方法、ontology-modeling 的可复用业务分析／多视角章节与既有动作／流程／规则／接口
+   语义合同；这些内容固定进入新 binding，不依赖环境 Skill 自动发现，也不恢复旧执行路由。
+   不要手工复制旧角色包。新任务建议
    semantic_workspace/shared_memory/work_management=true，按业务需要委派，简单任务无需子级。
 3. 获准材料按 manifest 固定 ID／路径／SHA256；生产只拿公开投影，隐藏题另存独立包。
    scope 使用 create 或明确 existing Project／Ontology IDs。新建项目在实际创建后自动
    关联项目工作空间，无需提前猜 Project UUID。多个获准本体的创建变更用 ontology_targets
    明确放置；现有资源更新沿实际验证目标。当前入口不承诺任意自动扩展项目或授权范围。
 
-已有模型的映射精确读取使用 `table-mapping-detail`／`join-mapping-detail`，普通
+已有 Operation 的精确读取使用 `operation-detail`；映射精确读取使用
+`table-mapping-detail`／`join-mapping-detail`，普通
 `entity-detail` 不覆盖这些资源。`model-read:<family>:<ontology_id>` 引用使用该真实 family。
 若读取只返回 IRI，更新还须有已核实的原生身份；可由 Host 将同 revision 平台快照中的
 显式 `v:id`／资源类型与实际应用回执交叉核对，交接到原有 `applied-bindings.json`。

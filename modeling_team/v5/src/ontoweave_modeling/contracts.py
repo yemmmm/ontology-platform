@@ -80,6 +80,27 @@ def modeling_instructions(task_instructions):
             + instructions
         )
     if "Technical representation contracts (not business sources):" not in instructions:
+        skill = (package.parent / "skills/ontology-modeling/SKILL.md").read_text()
+        sections = []
+        for heading, following in (
+            ("## Read approved business inputs", "## Resolve consequential gaps"),
+            ("## Design a coherent scenario", "## Coordinate viewpoints and shared changes"),
+            ("## Coordinate viewpoints and shared changes", "### Report current progress"),
+        ):
+            sections.append(
+                heading + "\n" + skill.split(heading, 1)[1].split(following, 1)[0].strip()
+            )
+        instructions += (
+            "\n\n# Reused ontology-modeling business method\n\n"
+            "These sections reuse the approved ontology-modeling Skill. For v5, the root work unit "
+            "carries the integration responsibility. Coordinator/Protocol and scenario-map references "
+            "describe business responsibilities: use the current work units and semantic records, "
+            "not legacy tools, files or execution approvals. Current Task authorization and the v5 "
+            "direct-application contract govern execution. Assess relevant perspectives and record "
+            "grounded applicability, actual expression references and remaining scope in existing "
+            "records. Role labels alone do not demonstrate that analysis.\n\n"
+            + "\n\n".join(sections)
+        )
         references = package.parent / "references"
         direct = json.loads((references / "r4-3-025-direct-modeling-contract.json").read_text())
         unified = json.loads((references / "r3-0-009-unified-graph-contract.json").read_text())
@@ -107,6 +128,13 @@ def modeling_instructions(task_instructions):
             "metric_filter": batch["mapping_payload_structures"]["metric_filter"],
             "semantic_definition": semantics["multiview_semantic_definition"],
         }
+        for name in (
+            "reusable_action_semantics",
+            "process_binding_semantics",
+            "business_rule_semantics",
+            "interface_mapping",
+        ):
+            contract[name] = semantics[name]
         for kind in ("table_mapping", "join_mapping"):
             payload = batch["create_payloads"]["create_" + kind]
             contract[kind + "_payload"] = {

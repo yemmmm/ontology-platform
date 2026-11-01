@@ -26,6 +26,35 @@ def test_frozen_binding_keeps_material_and_model_after_original_changes(task_fil
         TaskBinding.prepare(task_file, root)
 
 
+def test_frozen_method_reuses_multiview_business_guidance_and_semantics(task_file, tmp_path):
+    binding = TaskBinding.prepare(task_file, tmp_path / "run")
+    instructions = binding.data["instructions"]
+    root = Path(__file__).resolve().parents[3]
+    skill = (root / "modeling_team/skills/ontology-modeling/SKILL.md").read_text()
+    for heading, following in (
+        ("## Read approved business inputs", "## Resolve consequential gaps"),
+        ("## Design a coherent scenario", "## Coordinate viewpoints and shared changes"),
+        ("## Coordinate viewpoints and shared changes", "### Report current progress"),
+    ):
+        section = skill.split(heading, 1)[1].split(following, 1)[0].strip()
+        assert section in instructions
+    contract = json.loads(
+        instructions.split("Technical representation contracts (not business sources):\n", 1)[1]
+    )
+    semantics = json.loads(
+        (root / "modeling_team/references/r4-0-012-modeling-contract.json").read_text()
+    )
+    for name in (
+        "reusable_action_semantics",
+        "process_binding_semantics",
+        "business_rule_semantics",
+        "interface_mapping",
+    ):
+        assert contract[name] == semantics[name]
+    assert "root work unit carries the integration responsibility" in instructions
+    assert TaskBinding.load(binding.root).data["instructions"] == instructions
+
+
 def test_unsupported_authorization_never_creates_run(task_file, tmp_path):
     task = json.loads(task_file.read_text())
     task["authorization"]["mode"] = "unsupported"

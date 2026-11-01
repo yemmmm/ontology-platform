@@ -137,9 +137,15 @@ def evaluate(
         "Never create, continue, repair or modify production work. A candidate or production "
         "self-check is not model evidence. When recall leaves a known resource unverified, use "
         "read_model_resource with its actual ontology_id/IRI and class-detail, property-list, "
-        "relation-type-list, entity-detail, table-mapping-detail or join-mapping-detail family. "
+        "relation-type-list, entity-detail, operation-detail, table-mapping-detail or join-mapping-detail family. "
         "Preserve retrieval gaps separately from "
         "confirmed model omissions; sources cannot fill missing model facts. "
+        "For each criterion, locate every operative condition in actual model fields, definitions "
+        "or relationships. Include the decisive model wording or field path in actual_answer/reason; "
+        "an IRI, role label or a read receipt alone is not proof of all required conditions. "
+        "Check contradictions across related definitions and nested mapping units, state/time scope "
+        "and stored facts versus response values. A rule may use natural language, but verify its "
+        "scope and relevant object/action/process relationships when the criterion requires them. "
         "For modeled relationships, verify actual endpoints resolve to the intended actual "
         "resources; correct definition text alone does not prove valid topology. "
         "For relation-type-list exact reads use the relation IRI itself as entity, not its source "
@@ -179,7 +185,9 @@ def evaluate(
                 "sql_execution must be not_run or blocked: this evaluator has no SQL executor. "
                 "PASS requires all selected goals supported; unresolved criteria produce PARTIAL; "
                 "any confirmed model/recall insufficiency produces REVISE, retaining incomplete counts."
-            ) if "custom_cq" in handoff["evaluation"] else None,
+            )
+            if "custom_cq" in handoff["evaluation"]
+            else None,
             "source_ids": [
                 *handoff["source_revisions"],
                 *(["human-inputs"] if "human-inputs" in manifest else []),
@@ -261,8 +269,12 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         help="Frozen bounded/additional evaluation scope; preserves primary reports",
     )
-    commands.append(sub.add_parser("cq-sync", help="Queue current project CQ goals at a safe boundary"))
-    cq_evaluate = sub.add_parser("cq-evaluate", help="Freeze and independently check project CQ goals")
+    commands.append(
+        sub.add_parser("cq-sync", help="Queue current project CQ goals at a safe boundary")
+    )
+    cq_evaluate = sub.add_parser(
+        "cq-evaluate", help="Freeze and independently check project CQ goals"
+    )
     cq_evaluate.add_argument("--evaluation-id", required=True)
     cq_evaluate.add_argument("--question-id", action="append", default=None)
     commands.append(cq_evaluate)
@@ -408,8 +420,10 @@ def dispatch(args) -> dict:
             if not work or work["content"]["status"] != "handoff_ready":
                 raise FrameworkError("handoff_not_ready")
             handoff = repo.read_reference(work["content"]["handoff_ref"])
-            frozen_snapshot = bridge.call("cq_snapshot", {"question_ids": args.question_id}
-                                          if args.question_id is not None else {})
+            frozen_snapshot = bridge.call(
+                "cq_snapshot",
+                {"question_ids": args.question_id} if args.question_id is not None else {},
+            )
             if frozen_snapshot is None:
                 raise FrameworkError("cq_project_binding_missing")
             evaluation = CustomCQ(binding, repo).evaluation_package(
@@ -425,10 +439,17 @@ def dispatch(args) -> dict:
             }
             write_json(folder / "snapshot.json", frozen_snapshot)
             write_json(folder / "scope.json", scope)
-        public = evaluate(binding, repo, bridge, folder / "materials", args.evaluation_id, scope=scope)
-        receipt = bridge.call("cq_results", {
-            "snapshot": frozen_snapshot, "public": public, "evaluation_id": args.evaluation_id,
-        })
+        public = evaluate(
+            binding, repo, bridge, folder / "materials", args.evaluation_id, scope=scope
+        )
+        receipt = bridge.call(
+            "cq_results",
+            {
+                "snapshot": frozen_snapshot,
+                "public": public,
+                "evaluation_id": args.evaluation_id,
+            },
+        )
         return {**public, "project_result_receipt": receipt}
     if args.command in {"overview-refresh", "overview-show"}:
         from .overviews import read_overview, refresh_overview
