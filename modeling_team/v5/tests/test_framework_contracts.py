@@ -124,6 +124,8 @@ def test_new_binding_includes_executable_fields_only_request_grammar(task_file, 
     assert contract["relation_request_example"]["changes"][0]["fields"]["source_class_id"]
     assert "owl:NamedIndividual" in contract["semantic_level"]
     assert "Class/relation_type" in contract["semantic_level"]
+    assert "ordinary entity definitions" in contract["semantic_level"]
+    assert "not a concrete source row" in contract["semantic_level"]
 
 
 def test_new_binding_includes_neutral_candidate_shape_without_legacy_workflow(task_file, tmp_path):
