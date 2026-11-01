@@ -225,11 +225,12 @@ def test_parent_requests_original_child_read_back_before_handoff(
 
 
 @pytest.mark.parametrize("purpose", ["modeling", "self_check"])
-def test_child_prompt_keeps_proposal_and_actual_check_roles_separate(
-    binding, workspace, tmp_path, monkeypatch, purpose
+@pytest.mark.parametrize("child", [False, True])
+def test_prompt_keeps_proposal_and_actual_check_roles_separate(
+    binding, workspace, tmp_path, monkeypatch, purpose, child
 ):
     binding.data["work_units"] = [{"unit_id": "local", "objective": "Bounded child meaning."}]
-    selected = binding.for_unit("local")
+    selected = binding.for_unit("local") if child else binding
     (binding.root / "private-runtime.json").write_text(
         json.dumps(
             {
@@ -267,7 +268,7 @@ def test_child_prompt_keeps_proposal_and_actual_check_roles_separate(
     root = tmp_path / purpose
     root.mkdir()
     CodexInvocation(selected, Bridge())(root, purpose, "Only this phase", [])
-    assert ("changes may be null because" in observed[0]) == (purpose == "modeling")
+    assert ("changes may be null because" in observed[0]) == (child and purpose == "modeling")
     assert ("not proposing" in observed[0]) == (purpose == "self_check")
 
 

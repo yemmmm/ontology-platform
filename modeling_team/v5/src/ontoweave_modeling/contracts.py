@@ -166,6 +166,9 @@ def modeling_instructions(task_instructions):
         contract["relational_mapping_structures"] = {
             key: structures[key] for key in ("identifier_pattern", "column_mapping", "join_step")
         }
+        contract["relational_mapping_structures"]["reference_inputs"] = direct[
+            "mapping_reference_inputs"
+        ]
         contract["relational_mapping_structures"]["mapping_definition"] = {
             kind: structures["mapping_definition"][kind]
             for kind in ("table_mapping", "join_mapping")
@@ -185,7 +188,18 @@ def modeling_instructions(task_instructions):
                             "path": "/actual-class",
                         }
                     },
-                    "column_mappings": [{"column": "source_column", "role": "value"}],
+                    "column_mappings": [
+                        {
+                            "column": "source_column",
+                            "role": "business_key",
+                            "property_iri": {
+                                "existing_resource_ref": {
+                                    "artifact_ref": "actual-applied-bindings.json",
+                                    "path": "/actual-property",
+                                }
+                            },
+                        }
+                    ],
                 },
                 "relation_endpoints": None,
                 "slice_ids": ["approved-slice"],

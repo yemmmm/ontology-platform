@@ -185,6 +185,15 @@ def test_new_binding_exposes_complete_relational_mapping_payloads(task_file, tmp
         "relational_mapping_structures.mapping_definition.join_mapping"
     )
     structures = contract["relational_mapping_structures"]
+    assert "column_mappings[*].property_iri" in structures["reference_inputs"]["paths"]
+    assert (
+        "mapping_definition.identifiers[*].property_iri" in structures["reference_inputs"]["paths"]
+    )
+    assert "join_path[*].from_mapping_iri" in structures["reference_inputs"]["paths"]
+    assert (
+        "mapping_definition.step_semantics[*].condition_rule_iri"
+        in structures["reference_inputs"]["paths"]
+    )
     assert structures["column_mapping"]["required"] == ["column"]
     assert structures["column_mapping"]["role"] == ["value", "business_key"]
     assert structures["join_step"]["table_form_fields"] == [
@@ -214,6 +223,8 @@ def test_mapping_input_reference_shapes_and_example_are_executable(task_file, tm
             assert field["compiled_format"] == "absolute-rdf-iri"
             assert field["exactly_one_required"] == ["definition_ref", "existing_resource_ref"]
     example = contract["relational_request_example"]
+    column = example["candidate"]["items"][0]["value"]["column_mappings"][0]
+    assert "existing_resource_ref" in column["property_iri"]
     assert {x["item_id"] for x in example["candidate"]["items"]} == {
         x["item_id"] for x in example["changes"]["changes"]
     }
@@ -228,13 +239,19 @@ def test_mapping_input_reference_shapes_and_example_are_executable(task_file, tm
             "-c",
             (
                 "import json,sys; "
-                "from modeling_team.staged_decisions import validate_unified_candidate; "
-                "issues=validate_unified_candidate(json.load(sys.stdin)); "
-                "print(issues); sys.exit(bool(issues))"
+                "from modeling_team.direct_modeling import compile_model_changes; "
+                "example=json.load(sys.stdin); "
+                "example['changes']['candidate_ref']='candidate.json'; "
+                "batches,_=compile_model_changes(example['changes'], candidate=example['candidate'], "
+                "ontology_by_item={x['item_id']:'ontology-1' for x in example['candidate']['items']}, "
+                "resolve_binding=lambda ref: {'ontology_id':'ontology-1', "
+                "'resource_iri':'https://example.test'+ref['path'], 'resource_id':ref['path']}); "
+                "assert batches[0]['items'][0]['payload']['column_mappings'][0]['property_iri'] "
+                "== 'https://example.test/actual-property'"
             ),
         ],
         check=False,
-        input=json.dumps(example["candidate"]),
+        input=json.dumps(example),
         text=True,
         capture_output=True,
         cwd=repo,

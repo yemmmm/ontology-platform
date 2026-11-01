@@ -301,13 +301,6 @@ class CodexInvocation:
                     "result as a versioned handoff material. Do not claim application or full-task "
                     "completion. Ask missing business input using the supplied HITL result contract."
                 )
-            if self.binding.is_child and purpose == "self_check":
-                instructions += (
-                    " You are checking this original child's actual applied scope now, not proposing. "
-                    "Return only the supplied self-check result with ready, revise or waiting_input; "
-                    "never proposed, candidate or changes. This is bounded production read-back, "
-                    "not whole-task completion or independent acceptance."
-                )
             if purpose.startswith("peer:"):
                 instructions = (
                     "You are a bounded production peer, not an independent evaluator. "
@@ -351,6 +344,19 @@ class CodexInvocation:
                     "When the actual existing model already satisfies the source, return no_change with null "
                     "candidate/changes and source_refs; the program still performs actual governed self-check."
                 )
+        if purpose == "self_check":
+            scope = (
+                "this original child's assigned scope"
+                if self.binding.is_child
+                else "the complete root objective"
+            )
+            instructions += (
+                f" You are checking {scope} against actual applied evidence now, not proposing. "
+                "Return only the supplied self-check result with ready, revise or waiting_input; "
+                "never proposed, candidate or changes. Necessary edits belong in issues with revise "
+                "for the next modeling stage. Queued authoring guidance does not change this phase. "
+                "This is production read-back, not independent acceptance."
+            )
         native_requested = False
         try:
             read_payload = {"role": role}
