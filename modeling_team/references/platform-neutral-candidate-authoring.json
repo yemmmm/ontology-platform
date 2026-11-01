@@ -1693,6 +1693,7 @@
     "requirements": [
       "Preserve confirmed conditions, thresholds, calculation definitions, scope, exceptions, conflicts and explicit unknowns from the source.",
       "Connect rules to their relevant objects, Actions and processes through ordinary authorized relationships.",
+      "Verify a link against its predicate meaning, both endpoints' meanings/applicability and original source conditions. When propositions have distinct triggers, responsibilities or effects, justify a shared definition identity from the sources or preserve the distinctions. Shared objects or graph connectivity do not prove that one activity follows or implements another activity's rule.",
       "Source scripts may remain ordinary explanatory material; do not require scripts, language/version/runtime declarations, executable inputs/outputs, evaluation or automatic derivation."
     ],
     "readback": "Use ordinary governed detail, statement, relationship and Context Query reads. Missing links or missing specialized annotations never prove there is no business constraint."

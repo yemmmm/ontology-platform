@@ -157,3 +157,29 @@ v5 回归 **248 passed、1 条既有 warning、209.11 秒**，真实 PostgreSQL 
 native response，SHA256 与原文一致（rejected-proposal-transport.json），没有修改其
 无效 status 或任何业务内容；署名 host-execution-contract 输入仅澄清真实未应用状态和
 实际材料引用。随后同检查点接续进入 round 8；原自查也已确认十九条边仍是未完成范围。
+
+round 8 的引用路径误用候选 item_id，19 条关系的 from 端点被 binding_not_found 拒绝，
+批次未写入；原 Agent 在 round 9 自行改用 actual_baseline.resource_refs 的实际路径，
+三个谓词和十九条跨定义关系在同次原子应用成功。实际 revision 5 为 **58 资源／60 关系**，
+六个旧规则定义均有实际关联；Host 完整读回记录为 model-verification-linked.json 与
+host-rule-edge-observation-linked.json，不作为独立裁决。原 Demo hash／revision／九 CQ 未变。
+生产自查 ready，并刷新 task/project 覆盖记录到 revision 5；最终独立 35 项上下文已启动。
+
+初始 3 CNY 账本计量至 2.81084228 CNY。依据用户原话“模型选用glm，额度你自己把控”，
+Host 已明确告知并追加 **1 CNY**，本轮总上限 **4 CNY**，只用于同一 Demo 验证收尾。
+预算原引用不变、没有清零或扩大业务范围，授权事件和回执为
+budget-supplement-final-acceptance.json；不是原 3 元上限内完成的承诺。
+
+## 关联存在与关联语义的再次区分
+
+multiview-repaired-35 在 revision 5 返回 35/35 PASS。Host 对实际字段进一步复核发现：
+“登记模型”行为包含管理员登记与旧库启动升级两段含义，且通过“关联业务规则”连接到
+适用范围仅为旧库启动路径的升级规则；该谓词实际声明“遵循或实现”。独立报告第 33 项
+虽给出了真实三元组，仍未核对这两个触发／职责是否支持该关联。因此此 PASS 同样保留
+原件而不作为最终完整性结论；这是 modeling-quality 和评价漏检，不是写入失败。
+
+在原通用业务规则合同补明：关联还须核对谓词含义、两端含义／适用性及原文条件；不同
+触发／职责／效果必须由源支持共同身份或保留区分，连通不证明遵循关系。同步既有
+platform-neutral 镜像而不新增表示格式；独立提示同样要求来源支持的关联含义。
+Host 只交接公开原文一致性复核问题和真实资源引用，不提供私有评分、候选或指定图改法。
+沿已有 WorkPlan 根重开 generation 2／round 10，在同一 4 CNY 账本内继续此有界语义复核。
