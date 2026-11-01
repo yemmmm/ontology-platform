@@ -1358,6 +1358,26 @@ class DirectModelExecutor:
                     if outputs.get(key) is not None:
                         row[key] = outputs[key]
                 row["receipt_item_path"] = f"/structuredContent/data/items/{receipt_index}"
+                if item.get("command_kind") == "create_relation" and observed.get("status") == "applied":
+                    # Relation commands have no resource IRI output. Their identity
+                    # is the applied tuple, resolving same-batch refs from receipts.
+                    identity = {}
+                    for key in ("source_entity_iri", "relation_type_iri", "target_entity_iri"):
+                        value = item.get("payload", {}).get(key)
+                        if isinstance(value, Mapping) and set(value) == {"item_ref"}:
+                            ref = value["item_ref"]
+                            target = by_id.get(ref.get("client_item_id"), (None, {}))[1]
+                            target_outputs = target.get("resource_outputs", {})
+                            value = (
+                                target_outputs.get(ref.get("output"))
+                                if target.get("status") == "applied"
+                                else None
+                            )
+                        if not _nonempty(value):
+                            break
+                        identity[key] = value
+                    else:
+                        row.update(identity)
             bindings.append(row)
         return bindings
 

@@ -234,6 +234,9 @@ python -m ontoweave_modeling resume --run-dir /absolute/path/run
 `proposed`，应用尚未发生不构成 `recoverable_issue`。后续变更复制 Host snapshot 的
 `resource_refs` 到 `existing_resource_ref`；`receipt_item_path` 仅为来源位置，不是该绑定
 引用的 path，`artifact_ref` 由 Host 解析，无需 Agent 尝试读取同名文件或 MCP resource。
+更新／删除把同一实际引用复制到 `target_ref`。关系没有独立资源 IRI，其三元组身份由
+Host 从已应用 payload 和真实同批输出保留在绑定元数据；不要把这些字段加进
+`target_ref`／`existing_resource_ref`，引用对象仍仅含 `artifact_ref` 和 `path`。
 真实任务中的缺口及修复见[推进记录](../../docs/delivery/records/2026-10-29-v5-runtime-capability-progression.md)。
 
 暂停／停止先登记，等待在途原生回合自然结束，不调用 steer／interrupt；已返回候选保留。

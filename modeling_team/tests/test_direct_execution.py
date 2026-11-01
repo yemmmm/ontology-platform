@@ -107,6 +107,38 @@ def _applied_response(batch: Mapping[str, object], *, attempt_status: str = "app
     }
 
 
+@pytest.mark.parametrize("item_status", ["applied", "failed"])
+@pytest.mark.parametrize("predicate_output", [True, False])
+def test_relation_binding_retains_observed_tuple_only_after_applied_receipt(
+    item_status, predicate_output
+):
+    identity = {
+        "source_entity_iri": "https://example.test/action",
+        "relation_type_iri": "https://example.test/predicate",
+        "target_entity_iri": "https://example.test/class",
+    }
+    batch = {
+        "items": [{
+            "client_item_id": "edge", "command_kind": "create_relation",
+            "payload": {**identity, "relation_type_iri": {
+                "item_ref": {"client_item_id": "predicate", "output": "resource_iri"}}},
+        }],
+        "source_items": [{"client_item_id": "edge", "change_id": "edge-change",
+                          "item_id": "edge", "resource_kind": "relation"}],
+    }
+    result = {"items": [
+        {"client_item_id": "predicate", "status": "applied", "resource_outputs":
+         {"resource_iri": identity["relation_type_iri"]} if predicate_output else {}},
+        {"client_item_id": "edge", "status": item_status, "resource_outputs": {}},
+    ]}
+    row = DirectModelExecutor._resource_bindings(result, batch, {})[0]
+    assert row["receipt_item_path"] == "/structuredContent/data/items/1"
+    if item_status == "applied" and predicate_output:
+        assert {key: row.get(key) for key in identity} == identity
+    else:
+        assert not set(identity).intersection(row)
+
+
 def test_direct_executor_applies_atomic_batch_and_finishes(tmp_path):
     scope = _Scope()
     submitted: list[dict[str, object]] = []

@@ -183,3 +183,22 @@ multiview-repaired-35 在 revision 5 返回 35/35 PASS。Host 对实际字段进
 platform-neutral 镜像而不新增表示格式；独立提示同样要求来源支持的关联含义。
 Host 只交接公开原文一致性复核问题和真实资源引用，不提供私有评分、候选或指定图改法。
 沿已有 WorkPlan 根重开 generation 2／round 10，在同一 4 CNY 账本内继续此有界语义复核。
+
+## 修订删除关系时的回执身份缺陷
+
+原 Agent 按公开原文区分管理员登记与系统旧库启动升级，新增独立升级行为、修订登记定义，
+并拟删除错误“遵循”边。apply-00010 在写入前准确拒绝 relation_binding_incomplete：
+旧 applied-bindings 只有关系的回执位置，没有删除所需三元组。底层关系命令原就没有资源
+IRI 输出，DirectModelExecutor 只复制通用 outputs，遗漏了已应用语句的身份交接。
+
+保留删除的真实身份与闭合 target_ref 守卫；只在已应用 create_relation 回执上，从原
+应用 payload 和真实同批 item outputs 确定性保留 source_entity_iri／relation_type_iri／
+target_entity_iri。失败项或缺失输出不生成身份；不猜 IRI、不允许调用方自填身份覆盖。
+新增用例先 1 failed／3 passed，直接执行／跨批绑定／后端整合及边界回归 **45 passed**。
+执行器 7 条 Ruff 既有诊断与 HEAD 相同，新诊断 0；未更改后端 HTTP 合同或服务代码。
+
+当前已写模型的 33 条关系绑定由同一修复方法从原封存成功 snapshot 还原，并逐条与完整
+授权关系图交叉核对，模型仍 revision 5，无业务图修改。原件为
+relation-binding-repair-proof.json／relation-binding-governed-proof.json；这是 Host 技术
+身份修复，不是替 Agent 修改候选。原 Agent 曾把三元组字段加进 target_ref，已明确交接
+其仍必须仅含 artifact_ref／path，实际身份由 Host 解析；同检查点继续纠错。
