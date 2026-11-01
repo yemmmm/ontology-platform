@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useT } from "../i18n";
+import { ProjectQuestions } from "../components/ProjectQuestions";
 import { workspaceApi } from "../workspaceApi";
 import type { Artifact, JsonObject, Project, Run, RunIndex } from "../workspaceTypes";
 const terminal = new Set(["CLEANED", "FAILED", "TERMINAL_REPORT_COMPLETE"]);
@@ -112,6 +113,7 @@ export function OverviewPage({ project }: { project: Project }) {
     {loading && <p role="status">{t("Loading…")}</p>}{error && <p className="errorMessage" role="alert">{t("Overview could not be read")}: {error}</p>}
     <div className="overviewGrid"><section className="panel" aria-label={t("Project introduction")}><p className="eyebrow">{t("Project introduction")}</p><h2>{project.name}</h2><p>{project.description || t("Project introduction has not been recorded")}</p></section>
     <section className="panel" aria-label={t("Project progress")}><h2>{t("Project progress")}</h2><p className="progressSentence">{progress}</p>{run && <p className="sourceHint">{t(historical ? "Latest record (historical)" : "Current record")}: {run.run_id}</p>}{index && !index.completeness.complete && <p className="notice">{t("Run enumeration is incomplete")}</p>}{index && !index.runs.length && <p>{t("No run records")}</p>}<small>{t("Observed")}: {run?.observed_at || index?.observed_at || t("Unknown")}</small></section>
+    <ProjectQuestions key={`project-questions:${project.id}`} projectId={project.id} />
     <Questions key={`questions:${questionRun?.run_id ?? "none"}:${revision}`} run={questionRun} /></div>
   </section>;
 }

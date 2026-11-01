@@ -279,6 +279,8 @@ class TaskBinding:
                 "semantic_workspace",
                 "project_ref",
                 "workspace_ref",
+                "custom_cq",
+                "cq_question_ids",
             }
             != required
         ):
@@ -358,6 +360,29 @@ class TaskBinding:
             "source_manifest_digest": digest(manifest),
         }
         data["instructions"] = modeling_instructions(task["instructions"])
+        data["custom_cq"] = task.get(
+            "custom_cq", bool(task.get("project_ref") or "cq_question_ids" in task)
+        )
+        if type(data["custom_cq"]) is not bool:
+            raise FrameworkError("custom_cq_option_invalid")
+        if "cq_question_ids" in task:
+            selected = task["cq_question_ids"]
+            if (
+                not isinstance(selected, list)
+                or any(not isinstance(value, str) or not value for value in selected)
+                or len(set(selected)) != len(selected)
+            ):
+                raise FrameworkError("cq_selection_invalid")
+        if data["custom_cq"]:
+            data["semantic_workspace"] = True
+            data["instructions"] += (
+                "\nProject CQ materials (material_type=competency_goal) express user goals, "
+                "not confirmed business facts or proof of existing capability. Read their fixed "
+                "versions; use the approved business sources to propose answer criteria and "
+                "retain unknowns. Use write_semantic_record kind=coverage to record each cq_id, "
+                "its responsible unit_ids and cross-unit integration needs; the parent owns "
+                "unassigned and combined goals. Draft criteria cannot prove PASS."
+            )
         root.mkdir(parents=True, exist_ok=False, mode=0o700)
         for entry in manifest.values():
             destination = root / "materials" / entry["path"]

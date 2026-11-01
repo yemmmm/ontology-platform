@@ -24,6 +24,8 @@ OPERATIONS = frozenset(
         "budget",
         "capture_data",
         "fork_data",
+        "cq_snapshot",
+        "cq_results",
     }
 )
 

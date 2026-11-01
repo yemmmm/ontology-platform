@@ -364,11 +364,12 @@ test("T12 empty roles and T13 minimal settings without any model requests", asyn
   expect(requests.some(path => /ontologies|keys|members|users|health|protection/.test(path))).toBe(false);
   expect(await page.locator(".settingsPanel button").allTextContents()).toEqual(["Sign out"]);
 });
-test("T14 retired source files, CRUD API and class-specific pages are physically absent", async () => {
+test("T14 retired source files and model CRUD pages stay absent with the custom CQ exception", async () => {
   for (const filename of ["ClassesPage", "EntitiesPage", "ProjectWorkbenchPage", "SemanticModelPage", "ContextQueryPage", "ProjectAccessPage", "BuildContextDebugPage", "McpToolsPage", "GraphSetPage", "GraphGovernancePage", "FactAuditPage", "ProjectBriefPage", "RequirementQuestionsPage", "EntitiesSearchPage"]) expect(existsSync(`src/pages/${filename}.tsx`)).toBe(false);
   for (const filename of ["src/semanticApi.ts", "src/types.ts", "src/utils.ts", "src/hooks/useWorkspaceLocation.ts", "src/pages/workbenchTypes.ts", "src/components/semantic", "src/components/workbench"]) expect(existsSync(filename)).toBe(false);
   const api = readFileSync("src/workspaceApi.ts", "utf8");
-  expect(api).not.toMatch(/validation-runs|reasoning-runs|exports|datasets:load|method: "(?:PUT|PATCH|DELETE)"/);
+  // R5.0-010 explicitly permits versioned CQ PATCH; retired model CRUD stays absent.
+  expect(api).not.toMatch(/validation-runs|reasoning-runs|exports|datasets:load|method: "(?:PUT|DELETE)"/);
 });
 test("T15 desktop and 390px preserve brand, keyboard focus and no document overflow", async ({ page }) => {
   await mockWorkspace(page); await page.setViewportSize({ width: 1440, height: 1000 });

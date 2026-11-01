@@ -10,6 +10,8 @@ from app.api.schemas import (
     CompetencyQuestionRead,
     CompetencyQuestionStatusUpdate,
     CompetencyQuestionUpdate,
+    CustomCQImport,
+    CustomCQSnapshotRequest,
     InterviewAnswerCreate,
     InterviewAnswerRead,
     ProjectBriefRead,
@@ -73,16 +75,42 @@ def list_competency_questions(
     status_code=status.HTTP_201_CREATED,
 )
 def create_competency_question(
-    project_id: str, payload: CompetencyQuestionCreate, session: Session = Depends(get_db_session)
+    project_id: str, payload: CompetencyQuestionCreate,
+    principal: AuthPrincipal = Depends(principal_dependency),
+    session: Session = Depends(get_db_session),
 ):
-    return service.create_question(session, project_id, payload)
+    return service.create_question(session, project_id, payload, principal.actor)
+
+
+@router.post("/projects/{project_id}/competency-questions/import")
+def import_custom_competency_questions(
+    project_id: str, payload: CustomCQImport,
+    principal: AuthPrincipal = Depends(principal_dependency),
+    session: Session = Depends(get_db_session),
+):
+    from app.services.custom_cq import import_questions
+
+    rows = import_questions(session, project_id, payload, principal.actor)
+    return {"questions": [CompetencyQuestionRead.model_validate(row) for row in rows]}
+
+
+@router.post("/projects/{project_id}/competency-questions/snapshot")
+def snapshot_custom_competency_questions(
+    project_id: str, payload: CustomCQSnapshotRequest,
+    session: Session = Depends(get_db_session),
+):
+    from app.services.custom_cq import snapshot
+
+    return snapshot(session, project_id, payload.question_ids)
 
 
 @router.patch("/competency-questions/{question_id}", response_model=CompetencyQuestionRead)
 def update_competency_question(
-    question_id: str, payload: CompetencyQuestionUpdate, session: Session = Depends(get_db_session)
+    question_id: str, payload: CompetencyQuestionUpdate,
+    principal: AuthPrincipal = Depends(principal_dependency),
+    session: Session = Depends(get_db_session),
 ):
-    return service.update_question(session, question_id, payload)
+    return service.update_question(session, question_id, payload, principal.actor)
 
 
 @router.post("/competency-questions/{question_id}/status", response_model=CompetencyQuestionRead)

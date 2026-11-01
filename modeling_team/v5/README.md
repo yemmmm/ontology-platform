@@ -241,6 +241,40 @@ Host 统一统计所有在途角色供暂停／停止判断。私有题目、答
 仅投影 verdict、范围及目标身份。格式或必需读取错误可沿同一评价身份重试，保持原冻结标准；
 未知在途执行不会借新报告尝试重启。当前工程 fixture 的 PASS 不代表真实语义 PASS。
 
+## 项目自定义 CQ
+
+项目总览支持保存、编辑、停用、选用和 JSON 导入 CQ。只需题干，不要求 Ontology、
+答案或切片。公开判定口径与资料引用可稍后补充并确认；私有验收答案继续沿原独立包。
+示例种子位于 `examples/llm-access-lab/competency-questions.json`，导入不触发建模或收费。
+
+新任务绑定 `project_ref` 时默认启用项目 CQ；其他任务可显式设置 `custom_cq: true`，
+在实际项目建立后读取。旧 binding 不追溯启用，`custom_cq: false` 可明确禁用自动读取。
+Host 将选定题固定为 `cq-goals` 材料（类型 competency_goal）；它是目标，不是业务事实。
+生产仍须读取原始业务来源。标准草稿不能证明 PASS；Agent 可以通过既有语义记录与 HITL
+整理／核对口径，用户在问题编辑中确认可用标准。覆盖用现有 kind=coverage 记录 CQ ID、
+负责单元及跨单元整合要求，用户界面不要求切片选择。
+
+自动读取在安全推进边界比较版本，沿 SourceRevisions 排队并保留旧材料和报告；忙碌回合
+不被中断，新的问题版本会使旧候选重新核对。手动同步不启动模型：
+
+```bash
+scripts/modeling cq-sync --run-dir /absolute/path/to/run
+scripts/modeling cq-evaluate --run-dir /absolute/path/to/run --evaluation-id cq-regression-1
+```
+
+`cq-sync` 只排队，后续获准推进在自然回合边界生效；stopped run 不被重新打开。
+`cq-evaluate` 将当前选定题冻结成追加批次，复用实际 handoff、原始来源与独立只读评价，
+保留主冻结题和旧报告。同 evaluation-id 重试复用原题集，题库变化需新的评价身份。
+新任务可用 `cq_question_ids: [实际CQ-ID, ...]` 限定本次范围，独立 CQ 验证也可重复传入
+`--question-id 实际CQ-ID` 选取本批子集，不必改变项目后续默认选题。
+正常授权／预算控制继续适用；本命令不授予启动或恢复权限。
+
+每题绑定 CQ ID、内容版本及摘要，区分 pass、model-recall-insufficient、
+question-answer-review、platform-runtime-incomplete，以及模型可回答性、SQL 生成条件、
+SQL 实际执行。缺标准或引用无法绑定来源的题保留在分母并待复核；来源缺口不能归因为
+模型质量失败。本评价没有 SQL 执行器，只能报告 not_run／blocked，不能宣称实际 SQL PASS。
+公开摘要写回匹配版本的项目问题，旧版本结果不覆盖新问题；答案和私有理由保留在原运行。
+
 ## 可选生产成员通信与任务卡
 
 任务可增加 `collaboration`，例如：

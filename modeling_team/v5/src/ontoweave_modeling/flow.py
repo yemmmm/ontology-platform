@@ -974,6 +974,14 @@ class WorkUnitFlow:
         return self._save({**state, "handoff_ref": ref, "status": "handoff_ready"})
 
     def _route(self, state):
+        if (
+            self.binding.data.get("custom_cq") and not self.binding.is_child
+            and state.get("activity") != "prepare"
+            and self.control.synchronize()["mode"] == "running"
+        ):
+            from .custom_cq import CustomCQ
+
+            CustomCQ(self.binding, self.repository).sync(self.bridge)
         plan = self.repository.get("run:" + self.binding.data["run_id"] + ":work-plan")
         if plan:
             generation = (

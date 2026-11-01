@@ -777,10 +777,16 @@ class ProjectBriefModel(Base):
 
 class CompetencyQuestionModel(Base):
     __tablename__ = "competency_questions"
+    __table_args__ = (UniqueConstraint("project_id", "external_id", name="uq_cq_external_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    ontology_id: Mapped[str] = mapped_column(ForeignKey("ontologies.id", ondelete="CASCADE"))
+    ontology_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=True
+    )
+    external_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    content_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    cq_definition: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     importance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

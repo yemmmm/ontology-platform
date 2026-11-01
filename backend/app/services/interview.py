@@ -280,18 +280,23 @@ def list_questions(
 
 
 def create_question(
-    session: Session, project_id: str, payload: CompetencyQuestionCreate
+    session: Session, project_id: str, payload: CompetencyQuestionCreate, actor_id: str | None = None
 ) -> CompetencyQuestionModel:
     _project(session, project_id)
-    ontology = session.get(OntologyModel, payload.ontology_id)
-    if ontology is None or ontology.project_id != project_id:
-        raise HTTPException(status_code=400, detail="Ontology must belong to the project")
+    if payload.ontology_id is not None:
+        ontology = session.get(OntologyModel, payload.ontology_id)
+        if ontology is None or ontology.project_id != project_id:
+            raise HTTPException(status_code=400, detail="Ontology must belong to the project")
     _validate_answer_ids(session, project_id, set(payload.source_answer_ids))
     unknown = set(payload.source_brief_fields) - set(BRIEF_FIELDS)
     if unknown:
         raise HTTPException(
             status_code=422, detail=f"Unknown source brief fields: {sorted(unknown)}"
         )
+    if payload.cq_definition is not None or payload.ontology_id is None:
+        from app.services.custom_cq import create_question as create_custom
+
+        return create_custom(session, project_id, payload, actor_id)
     position = payload.position
     if position is None:
         maximum = session.scalar(
@@ -305,7 +310,7 @@ def create_question(
         project_id=project_id,
         status="draft",
         active=True,
-        **payload.model_dump(exclude={"position"}),
+        **payload.model_dump(exclude={"position", "cq_definition"}),
         position=position,
     )
     session.add(question)
@@ -322,10 +327,11 @@ def _question(session: Session, question_id: str) -> CompetencyQuestionModel:
 
 
 def update_question(
-    session: Session, question_id: str, payload: CompetencyQuestionUpdate
+    session: Session, question_id: str, payload: CompetencyQuestionUpdate,
+    actor_id: str | None = None,
 ) -> CompetencyQuestionModel:
     question = _question(session, question_id)
-    values = payload.model_dump(exclude_unset=True)
+    values = payload.model_dump(exclude_unset=True, exclude={"expected_revision"})
     if "source_answer_ids" in values:
         _validate_answer_ids(session, question.project_id, set(values["source_answer_ids"]))
     if "source_brief_fields" in values:
@@ -334,6 +340,12 @@ def update_question(
             raise HTTPException(
                 status_code=422, detail=f"Unknown source brief fields: {sorted(unknown)}"
             )
+    from app.services.custom_cq import is_custom, update_question as update_custom
+
+    if is_custom(question):
+        return update_custom(session, question, payload, actor_id)
+    if "cq_definition" in values:
+        raise HTTPException(422, detail="Legacy CQ cannot change its validation type")
     substantive = set(values) - {"position", "active"}
     for key, value in values.items():
         setattr(question, key, value)
@@ -349,6 +361,8 @@ def set_question_status(
     session: Session, question_id: str, payload: CompetencyQuestionStatusUpdate
 ) -> CompetencyQuestionModel:
     question = _question(session, question_id)
+    if (question.cq_definition or {}).get("kind") == "custom":
+        raise HTTPException(409, detail={"code": "custom_cq_requires_semantic_evaluation"})
     if not question.active:
         raise HTTPException(
             status_code=409, detail="Inactive competency questions cannot transition"
@@ -409,6 +423,8 @@ def run_question_validation(session, store, question_id, settings):
     from app.repositories.rdf_store import SparqlQueryTimeout
 
     question = _question(session, question_id)
+    if (question.cq_definition or {}).get("kind") == "custom":
+        raise HTTPException(409, detail={"code": "custom_cq_requires_semantic_evaluation"})
     if question.status != "testable":
         raise HTTPException(status_code=409, detail="Only testable questions can be validated")
 

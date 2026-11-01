@@ -25,6 +25,24 @@ REPORT_SCHEMA = {
                     "actual_answer": {"type": "string"},
                     "reason": {"type": "string"},
                     "evidence_iris": {"type": "array", "items": {"type": "string"}},
+                    "cq_id": {"type": "string"},
+                    "content_revision": {"type": "integer", "minimum": 1},
+                    "content_digest": {"type": "string"},
+                    "outcome": {
+                        "enum": [
+                            "pass",
+                            "model-recall-insufficient",
+                            "question-answer-review",
+                            "platform-runtime-incomplete",
+                        ]
+                    },
+                    "answerability": {
+                        "enum": ["supported", "conditional", "unsupported", "unverified"]
+                    },
+                    "sql_readiness": {
+                        "enum": ["supported", "conditional", "unsupported", "unverified"]
+                    },
+                    "sql_execution": {"enum": ["pass", "fail", "not_run", "blocked"]},
                 },
                 "required": ["index", "passed", "actual_answer", "reason", "evidence_iris"],
             },
@@ -113,10 +131,16 @@ def validate_report(
         if material_reads.get(material_id, {}).get("sha256") != sha256:
             raise FrameworkError("evaluation_human_source_not_read", material_id=material_id)
     require_governed_read(events_path, target["model_revisions"])
-    return {
+    public = {
         "verdict": report["verdict"],
         "freeze_id": frozen["freeze_id"],
         "model_revisions": report["model_revisions"],
         "passed": sum(c["passed"] for c in report["cases"]),
         "total": frozen["case_count"],
     }
+    if "custom_cq" in frozen:
+        from .custom_cq import validate_cases
+
+        public["custom_cq"] = validate_cases(report, frozen["custom_cq"])
+        public["cq_snapshot_id"] = frozen["cq_snapshot_id"]
+    return public

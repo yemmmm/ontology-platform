@@ -1,0 +1,37 @@
+{
+  "project_id": "40841ac8-1c93-4cb1-85ba-1a9e8fb7928b",
+  "ontology_id": "755f1e0e-cf5d-47f2-a2a3-95220f4cba96",
+  "before": {
+    "revision": 4,
+    "resource_count": 14
+  },
+  "after": {
+    "revision": 4,
+    "resource_count": 14
+  },
+  "imported": 9,
+  "repeat_import_preserves_identity": true,
+  "cq_ids": [
+    "cde9247c-2250-4d12-bcd7-21acebb7a911",
+    "7bf569d7-bfc1-4668-9138-e1f05d58514f",
+    "41a25ee0-c432-499c-bda7-df642c65c892",
+    "4cf22b61-5e3d-419c-8651-8e898abcdf3b",
+    "27bfd487-79a9-43f2-9eec-1f3b30f2e6b4",
+    "6508c976-0832-4197-ac89-b4ec16699b34",
+    "b43fbc9c-07eb-4f40-9d82-847b1ff1afab",
+    "ba5b402d-79ca-4672-bae2-dec1ada222f8",
+    "2ab3b102-f7cf-4317-8b0d-285e551b06ba"
+  ],
+  "snapshot_id": "cq-8009b19cc11b98d079c5a1a0",
+  "host_worker_respects_task_subset": true,
+  "host_subset_count": 2,
+  "frozen_count": 9,
+  "pending_criteria": 9,
+  "source_copy_and_freeze_verified": true,
+  "evaluation_sha256": "faeecbc8b424e23f66acc5ef5bff921d851eeece9421046bf6b8b955babb42d2",
+  "invalid_selection_error": "cq_selection_unavailable",
+  "native_dispatches": 0,
+  "model_writes": 0,
+  "semantic_verdict": "unverified",
+  "temporary_admin_revoked": true
+}

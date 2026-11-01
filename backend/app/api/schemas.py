@@ -115,14 +115,45 @@ class ProjectBriefRead(BaseModel):
     completeness: float
 
 
+class CustomCQDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["custom"] = "custom"
+    external_id: str | None = Field(default=None, min_length=1, max_length=200)
+    business_topic: str | None = Field(default=None, max_length=1000)
+    reference_answer: str | None = Field(default=None, max_length=20000)
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    required_context: list[str] = Field(default_factory=list)
+    validation_dimensions: list[Literal["model_answerability", "sql_readiness"]] = Field(
+        default_factory=lambda: ["model_answerability", "sql_readiness"]
+    )
+    criteria_status: Literal["draft", "confirmed"] = "draft"
+    default_use: Literal["modeling_and_regression"] = "modeling_and_regression"
+    selected: bool = True
+    authored_by: str | None = None
+
+    @model_validator(mode="after")
+    def check_criteria(self):
+        for values in (self.acceptance_criteria, self.source_refs, self.required_context):
+            if any(not value.strip() for value in values):
+                raise ValueError("CQ criteria and source references must not be blank")
+        if self.criteria_status == "confirmed" and not (
+            self.source_refs and (self.acceptance_criteria or self.reference_answer)
+        ):
+            raise ValueError("Confirmed CQ criteria require an answer or criteria and sources")
+        return self
+
+
 class CompetencyQuestionCreate(BaseModel):
-    ontology_id: str
+    ontology_id: str | None = None
     question: str = Field(min_length=1, max_length=4000)
     importance: int = Field(default=3, ge=1, le=5)
     position: int | None = Field(default=None, ge=0)
     query_definition: dict[str, Any] = Field(default_factory=dict)
     source_answer_ids: list[str] = Field(default_factory=list)
     source_brief_fields: list[str] = Field(default_factory=list)
+    cq_definition: CustomCQDefinition | None = None
 
 
 class CompetencyQuestionUpdate(BaseModel):
@@ -133,6 +164,43 @@ class CompetencyQuestionUpdate(BaseModel):
     source_answer_ids: list[str] | None = None
     source_brief_fields: list[str] | None = None
     active: bool | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
+    cq_definition: CustomCQDefinition | None = None
+
+
+class CustomCQSeedQuestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    external_id: str = Field(min_length=1, max_length=200)
+    original_id: str | None = None
+    question: str = Field(min_length=1, max_length=4000)
+    business_topic: str | None = None
+    reference_answer: str | None = None
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    required_context: list[str] = Field(default_factory=list)
+    validation_dimensions: list[Literal["model_answerability", "sql_readiness"]] = Field(
+        default_factory=lambda: ["model_answerability", "sql_readiness"]
+    )
+
+
+class CustomCQImport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal[
+        "ontoweave-custom-cq-seed/v1", "ontoweave-custom-cq-seed/design-v1"
+    ]
+    seed_id: str
+    revision: int = Field(ge=1)
+    status: str | None = None
+    description: str | None = None
+    default_use: Literal["modeling_and_regression"] = "modeling_and_regression"
+    visibility: Literal["public"] = "public"
+    criteria_status: Literal["draft"] = "draft"
+    source_refs: list[str] = Field(default_factory=list)
+    questions: list[CustomCQSeedQuestion] = Field(min_length=1)
+
+
+class CustomCQSnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question_ids: list[str] | None = None
 
 
 class CompetencyQuestionStatusUpdate(BaseModel):
@@ -143,7 +211,7 @@ class CompetencyQuestionStatusUpdate(BaseModel):
 class CompetencyQuestionRead(BaseModel):
     id: str
     project_id: str
-    ontology_id: str
+    ontology_id: str | None
     question: str
     importance: int
     position: int
@@ -153,6 +221,8 @@ class CompetencyQuestionRead(BaseModel):
     validation_result: dict[str, Any]
     source_answer_ids: list[str]
     source_brief_fields: list[str]
+    content_revision: int = 1
+    cq_definition: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

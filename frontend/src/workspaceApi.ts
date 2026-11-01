@@ -1,4 +1,5 @@
 import { apiRequest } from "./api";
+import type { ProjectQuestion } from "./workspaceTypes";
 import type { ConversationIndex, ConversationStatus, ConversationEvents, ConversationMessage, ConversationInput } from "./workspaceTypes";
 
 const conversationPath = (project: string, session?: string) => `/projects/${encodeURIComponent(project)}/delivery-conversations${session ? `/${encodeURIComponent(session)}` : ""}`;
@@ -10,6 +11,11 @@ export const workspaceApi = {
   conversationReceipt: (project: string, session: string, message: string) => apiRequest<ConversationMessage>(`${conversationPath(project, session)}/messages/${encodeURIComponent(message)}`),
   conversationSend: (project: string, session: string, message: ConversationInput) => apiRequest<{ message: ConversationMessage; created: boolean }>(`${conversationPath(project, session)}/messages`, { method: "POST", body: JSON.stringify(message) }),
   projects: () => apiRequest<Project[]>("/projects"),
+  projectQuestions: (project: string) => apiRequest<ProjectQuestion[]>(`/projects/${encodeURIComponent(project)}/competency-questions?include_inactive=true`),
+  createQuestion: (project: string, value: unknown) => apiRequest<ProjectQuestion>(`/projects/${encodeURIComponent(project)}/competency-questions`, { method: "POST", body: JSON.stringify(value) }),
+  updateQuestion: (id: string, value: unknown) => apiRequest<ProjectQuestion>(`/competency-questions/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
+  importQuestions: (project: string, value: unknown) => apiRequest<{ questions: ProjectQuestion[] }>(`/projects/${encodeURIComponent(project)}/competency-questions/import`, { method: "POST", body: JSON.stringify(value) }),
+  freezeQuestions: (project: string) => apiRequest<Record<string, unknown>>(`/projects/${encodeURIComponent(project)}/competency-questions/snapshot`, { method: "POST", body: "{}" }),
   index: (project: string) => apiRequest<RunIndex>(`/projects/${encodeURIComponent(project)}/workbench`),
   run: (project: string, run: string) => apiRequest<Run>(`/projects/${encodeURIComponent(project)}/workbench/runs/${encodeURIComponent(run)}`),
   questions: (project: string, run: string) => apiRequest<Run>(`/projects/${encodeURIComponent(project)}/workbench/runs/${encodeURIComponent(run)}/competency-questions`),

@@ -1,0 +1,18 @@
+{
+  "tool": "GitNexus detect_changes staged",
+  "reported_risk": "critical",
+  "reported_affected_processes": 267,
+  "reported_changed_symbols": 61,
+  "schema_attributed_symbols": 49,
+  "index_commit": "50d54d25185b9a2b6c55f65f18126e9a584c681f",
+  "indexed_at": "2026-09-15T01:00:50.535Z",
+  "graph_coverage_claimed": false,
+  "current_evidence": [
+    "focused CQ caller inspection",
+    "backend full regression plus final targeted cases",
+    "v5 full regression plus final targeted cases",
+    "real PostgreSQL migration",
+    "real API/Host/UI checks"
+  ],
+  "note": "The old index includes retired pages and non-edited schema field names. Treat as an alert, not an exact current call graph."
+}

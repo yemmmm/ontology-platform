@@ -74,3 +74,13 @@ export type ConversationEvents = {
   items: ConversationEvent[]; next_after_seq: number; has_more: boolean;
   history_complete: boolean; read_error?: string;
 };
+export type CustomCQDefinition = {
+  kind: "custom"; external_id?: string | null; business_topic?: string | null;
+  reference_answer?: string | null; acceptance_criteria?: string[]; source_refs?: string[];
+  criteria_status: "draft" | "confirmed"; selected: boolean;
+};
+export type ProjectQuestion = {
+  id: string; project_id: string; ontology_id: string | null; question: string;
+  active: boolean; content_revision: number; cq_definition: CustomCQDefinition;
+  validation_result: Record<string, unknown>;
+};

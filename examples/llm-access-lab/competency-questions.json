@@ -1,13 +1,13 @@
 {
-  "schema_version": "ontoweave-custom-cq-seed/design-v1",
+  "schema_version": "ontoweave-custom-cq-seed/v1",
   "seed_id": "llm-access.analytics",
   "revision": 1,
-  "status": "design_only_not_imported",
-  "description": "九条公开问数回归问题及待核对标准；这是拟议导入格式，当前产品与 v5 未直接识别。",
+  "status": "ready_for_import",
+  "description": "九条公开问数回归问题及待核对标准；可在项目能力问题区域导入，标准须按实际业务来源核对。",
   "default_use": "modeling_and_regression",
   "visibility": "public",
   "criteria_status": "draft",
-  "source_refs": ["business.md", "../../docs/research/2026-11-01-demo-model-to-sql-readiness.md"],
+  "source_refs": ["business.md"],
   "questions": [
     {
       "external_id": "llm-access.analytics.Q1",

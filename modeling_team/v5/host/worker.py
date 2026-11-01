@@ -79,6 +79,42 @@ class PlatformWorker:
         self.save_scope(scope)
         return scope
 
+    def competency_questions(self, payload, *, publish=False):
+        from fastapi import HTTPException
+        from app.core.config import Settings
+        from app.repositories.postgres import create_session_factory
+        from app.services.custom_cq import record_results, snapshot
+
+        project = self.binding.data.get("project_ref")
+        actual = self.binding.data["scope"].get("project_id")
+        scope_path = self.root / "scope-private.json"
+        if scope_path.exists():
+            actual = json.loads(scope_path.read_text())["project_id"]
+        if project and actual and project != actual:
+            raise FrameworkError("cq_project_binding_mismatch")
+        project = project or actual
+        if not project:
+            if publish:
+                raise FrameworkError("cq_project_binding_missing")
+            return None
+        factory = create_session_factory(Settings(_env_file=ROOT / "backend/.env"))
+        try:
+            with factory() as session:
+                if publish:
+                    return record_results(session, project, payload["snapshot"], payload["public"],
+                                          payload["evaluation_id"])
+                return snapshot(session, project, payload.get(
+                    "question_ids", self.binding.data.get("cq_question_ids")
+                ))
+        except HTTPException as error:
+            detail = error.detail if isinstance(error.detail, dict) else {"message": error.detail}
+            raise FrameworkError(
+                detail.get("code", "cq_request_invalid"),
+                detail={"http_status": error.status_code, **detail},
+            ) from error
+        finally:
+            factory.kw["bind"].dispose()
+
     def save_scope(self, scope):
         values = {}
         for field in fields(scope):
@@ -638,6 +674,8 @@ def main():
             "budget",
             "capture_data",
             "fork_data",
+            "cq_snapshot",
+            "cq_results",
         ],
     )
     args = parser.parse_args()
@@ -673,6 +711,10 @@ def main():
                 )
             elif args.operation == "read_config":
                 result = PlatformWorker(binding).read_config(payload)
+            elif args.operation in {"cq_snapshot", "cq_results"}:
+                result = PlatformWorker(binding).competency_questions(
+                    payload, publish=args.operation == "cq_results"
+                )
             elif args.operation in {"capture_data", "fork_data"}:
                 result = getattr(PlatformWorker(binding), args.operation)(payload)
             else:

@@ -399,6 +399,26 @@ cd backend
 uv run python ../scripts/sync-interface-docs.py --write
 ```
 
+## 项目自定义 CQ（R5.0-010）
+
+`POST /api/projects/{project_id}/competency-questions` 支持仅提供 `question`，保存项目级
+自定义题；也可提供 `cq_definition`（kind=custom）。`ontology_id` 可空，旧带本体的计数
+题保持原合同。自定义定义接受业务主题、可选参考答案、判定要点、资料引用、draft／confirmed
+状态和 selected。confirmed 要求判定要点或答案以及来源；隐藏内容不进入通用项目题库。
+
+自定义题更新走原 PATCH 接口，必须携带 `expected_revision`；409 cq_revision_conflict
+返回 current_revision 和 reload_question，成功实质修改增加 content_revision。停用／选题
+同样绑定版本。原 `/status`、`/validate` 的计数路径不能用于自定义语义／SQL 验证。
+
+`POST /api/projects/{project_id}/competency-questions/import` 接收版本化 JSON 种子，
+按项目内 external_id 复用身份；重复导入相同内容幂等，用户已改内容返回 409，不覆盖。
+`POST .../competency-questions/snapshot` 接收可选 question_ids；未提供时选择 active 且
+selected 的自定义题。返回完整确定版本、内容摘要、snapshot_id／sha256，作为 v5 输入。
+创建、编辑、导入和快照不会启动模型、扩大授权或追加预算；全部继续经过项目授权检查。
+
+运行后公开验证摘要保存在 validation_result，显示所验模型版本与内容版本。它不是当前
+模型永远有效的结论；编辑后标 stale，独立报告及冻结题集继续保留在原 run。
+
 <!-- BEGIN GENERATED HTTP API INVENTORY -->
 
 | Tag | Method | Path | Summary |
@@ -464,6 +484,8 @@ uv run python ../scripts/sync-interface-docs.py --write
 | project interview | `POST` | `/api/competency-questions/{question_id}/status` | Set Competency Question Status |
 | project interview | `POST` | `/api/competency-questions/{question_id}/validate` | Validate Competency Question |
 | project interview | `POST` | `/api/projects/{project_id}/competency-questions` | Create Competency Question |
+| project interview | `POST` | `/api/projects/{project_id}/competency-questions/import` | Import Custom Competency Questions |
+| project interview | `POST` | `/api/projects/{project_id}/competency-questions/snapshot` | Snapshot Custom Competency Questions |
 | project interview | `POST` | `/api/projects/{project_id}/interview-answers` | Create Interview Answer |
 | project interview | `PATCH` | `/api/competency-questions/{question_id}` | Update Competency Question |
 | project interview | `PATCH` | `/api/projects/{project_id}/brief` | Update Project Brief |

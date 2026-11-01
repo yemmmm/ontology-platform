@@ -57,6 +57,11 @@ def evaluate(
             "source_revisions": {key: handoff["source_revisions"][key] for key in selected},
         }
     manifest = _check_sources(package)
+    material_roots = {key: package for key in manifest}
+    # CQ goals are public targets added by Host, not replacements for the private main freeze.
+    if "cq-goals" in handoff["source_revisions"] and "cq-goals" not in manifest:
+        manifest["cq-goals"] = binding.data["source_manifest"]["cq-goals"]
+        material_roots["cq-goals"] = binding.materials
     if set(required_artifacts) - manifest.keys():
         raise FrameworkError(
             "evaluation_artifact_missing",
@@ -71,10 +76,10 @@ def evaluate(
     root = binding.root / "evaluations" / evaluation_id
     if not root.exists():
         root.mkdir(parents=True, mode=0o700)
-        for entry in manifest.values():
+        for material_id, entry in manifest.items():
             path = root / "materials" / entry["path"]
             path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            path.write_bytes((package / entry["path"]).read_bytes())
+            path.write_bytes((material_roots[material_id] / entry["path"]).read_bytes())
         human = handoff.get("human_context", {})
         answers = [
             {key: answer[key] for key in ("message_id", "body", "metadata")}
@@ -160,6 +165,21 @@ def evaluate(
             "required_artifacts": list(required_artifacts),
             "artifact_contract": "Read required artifacts as scoped targets or attributed subordinate reports. They cannot supply facts missing from the actual model. Judge overall conditions independently, not by adding subordinate PASS scores.",
             "materials": list(manifest),
+            "custom_cq_cases": handoff["evaluation"].get("custom_cq"),
+            "custom_cq_contract": (
+                "For each custom CQ return its frozen cq_id, content_revision and content_digest, "
+                "plus outcome, answerability, sql_readiness and sql_execution. If criteria_ready is "
+                "false, use question-answer-review (or platform-runtime-incomplete when reads "
+                "cannot finish), passed=false, and retain every case. Questions are goals, not "
+                "business facts. Read original sources to check criteria; source gaps or out-of-scope "
+                "goals need question-answer-review, not modeling-quality failure. Only a source-backed "
+                "fact missing from the actual model/recall warrants model-recall-insufficient. "
+                "State exact missing codes, time semantics or event sources privately in reason. "
+                "Correctly acknowledging a gap does not satisfy a requested statistics capability. "
+                "sql_execution must be not_run or blocked: this evaluator has no SQL executor. "
+                "PASS requires all selected goals supported; unresolved criteria produce PARTIAL; "
+                "any confirmed model/recall insufficiency produces REVISE, retaining incomplete counts."
+            ) if "custom_cq" in handoff["evaluation"] else None,
             "source_ids": [
                 *handoff["source_revisions"],
                 *(["human-inputs"] if "human-inputs" in manifest else []),
@@ -241,6 +261,11 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         help="Frozen bounded/additional evaluation scope; preserves primary reports",
     )
+    commands.append(sub.add_parser("cq-sync", help="Queue current project CQ goals at a safe boundary"))
+    cq_evaluate = sub.add_parser("cq-evaluate", help="Freeze and independently check project CQ goals")
+    cq_evaluate.add_argument("--evaluation-id", required=True)
+    cq_evaluate.add_argument("--question-id", action="append", default=None)
+    commands.append(cq_evaluate)
     commands.append(sub.add_parser("questions", help="List durable questions and reply states"))
     commands.append(sub.add_parser("budget", help="Read and refresh the bound amount budget"))
     budget_add = sub.add_parser("budget-add", help="Apply a Host-authorized budget addition file")
@@ -346,7 +371,7 @@ def dispatch(args) -> dict:
         binding = TaskBinding.load(args.run_dir)
     pending_path = binding.root / "fork-pending.json"
     if (
-        args.command in {"resume", "evaluate"}
+        args.command in {"resume", "evaluate", "cq-evaluate"}
         and pending_path.exists()
         and json.loads(pending_path.read_text())["status"] != "ready"
     ):
@@ -361,6 +386,50 @@ def dispatch(args) -> dict:
         binding = plan.binding(binding)
     control, bridge = TaskControl(repo), HostBridge(binding.root)
     human = HumanInput(binding, repo, control)
+    if args.command == "cq-sync":
+        from .custom_cq import CustomCQ
+
+        if control.synchronize()["mode"] == "stopped":
+            return {"status": "task_stopped", "queued": False}
+        staged = CustomCQ(binding, repo).sync(bridge)
+        return {"status": "queued" if staged else "unchanged", "change": staged}
+    if args.command == "cq-evaluate":
+        from .custom_cq import CustomCQ
+
+        safe_id(args.evaluation_id)
+        folder = binding.root / "cq-evaluation-inputs" / args.evaluation_id
+        if (folder / "scope.json").exists():
+            scope = json.loads((folder / "scope.json").read_text())
+            frozen_snapshot = json.loads((folder / "snapshot.json").read_text())
+            if args.question_id is not None and args.question_id != scope.get("selection_ids"):
+                raise FrameworkError("cq_evaluation_selection_changed")
+        else:
+            work = repo.get(binding.identity + ":work")
+            if not work or work["content"]["status"] != "handoff_ready":
+                raise FrameworkError("handoff_not_ready")
+            handoff = repo.read_reference(work["content"]["handoff_ref"])
+            frozen_snapshot = bridge.call("cq_snapshot", {"question_ids": args.question_id}
+                                          if args.question_id is not None else {})
+            if frozen_snapshot is None:
+                raise FrameworkError("cq_project_binding_missing")
+            evaluation = CustomCQ(binding, repo).evaluation_package(
+                frozen_snapshot, folder / "materials"
+            )
+            scope = {
+                "scope_id": args.evaluation_id,
+                "base_freeze_id": handoff["evaluation"]["freeze_id"],
+                "source_ids": list(handoff["source_revisions"]),
+                "objective": "Check the frozen project CQ goals against the actual governed model.",
+                "evaluation": evaluation,
+                "selection_ids": args.question_id,
+            }
+            write_json(folder / "snapshot.json", frozen_snapshot)
+            write_json(folder / "scope.json", scope)
+        public = evaluate(binding, repo, bridge, folder / "materials", args.evaluation_id, scope=scope)
+        receipt = bridge.call("cq_results", {
+            "snapshot": frozen_snapshot, "public": public, "evaluation_id": args.evaluation_id,
+        })
+        return {**public, "project_result_receipt": receipt}
     if args.command in {"overview-refresh", "overview-show"}:
         from .overviews import read_overview, refresh_overview
 
@@ -492,6 +561,10 @@ def dispatch(args) -> dict:
             raise FrameworkError("run_already_active") from error
         from .revisions import SourceRevisions
 
+        if binding.data.get("custom_cq"):
+            from .custom_cq import CustomCQ
+
+            CustomCQ(binding, repo).sync(bridge)
         binding = SourceRevisions(binding, repo).activate()
         while True:
             flow = create_flow(binding)
