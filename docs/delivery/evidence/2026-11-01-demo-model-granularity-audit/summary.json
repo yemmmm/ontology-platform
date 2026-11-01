@@ -204,5 +204,30 @@
     "workspaces/v5-runs/llm-access-v2-20261101-existing/evaluations/existing-v2-full-30/private-report.json",
     "workspaces/demo-model-granularity-audit-20261101/semantic-records-readonly.json",
     "workspaces/demo-model-granularity-audit-20261101/semantic-history-kind-counts.json"
-  ]
+  ],
+  "v4_granularity_comparison": {
+    "run_id": "r4009-20261014-glmhigh-smallchain-0657-start1",
+    "snapshot_path": "workspaces/pre-v5-model-cleanup-20261101/backup/projects/5fa9f983-2ae0-4618-985c-227d89bc3db0.json",
+    "snapshot_sha256": "93b23c038787f8f5eaa951843587b6d9b9403ef92376a41ce7b67b74b24dcd41",
+    "resource_count": 49,
+    "types": {
+      "NamedIndividual": 7,
+      "ObjectProperty": 41,
+      "DatatypeProperty": 1
+    },
+    "attribute_relation_examples": [
+      "hasTechnicalIdentifier",
+      "hasOpenedAt",
+      "hasSeverity",
+      "hasResolvedAt",
+      "locatedAt",
+      "isOfModel"
+    ],
+    "historical_quality_status": "PARTIAL",
+    "limitations": [
+      "Not the same business scope as current Demo.",
+      "49 counts resources including property/predicate definitions; it is not a confirmed count of 49 visible canvas nodes.",
+      "Current model is insufficient because of actual omissions and expression quality, not a numeric minimum node requirement."
+    ]
+  }
 }
