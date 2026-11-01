@@ -1,0 +1,2154 @@
+{
+  "date": "2026-11-01",
+  "observation_completed_at_utc": "2026-11-01T10:33:55.754974+00:00",
+  "source_commit": "93b2ce456ea473a27c0c3ed8c36f4f1fa6a96816",
+  "mode": "read-only-investigation",
+  "projection_scope": "All views; replay of current frontend filters and deduplication using live governed API responses; not browser rendering verification",
+  "sources": {
+    "live_counts": "workspaces/v5-model-size-investigation-20261101/model-counts-live.json",
+    "task_scopes_and_evaluations": "workspaces/v5-model-size-investigation-20261101/run-scopes-and-results.json",
+    "per_project_projection": "workspaces/v5-model-size-investigation-20261101/project-counts-and-scopes.json",
+    "rdf_hash_comparison": "workspaces/v5-model-size-investigation-20261101/hash-comparison-to-cleanup-before.json",
+    "cleanup_baseline": "workspaces/pre-v5-model-cleanup-20261101/cleanup-plan-backed-up.json",
+    "frontend": "frontend/src/pages/ModelBrowserPage.tsx:51-83",
+    "api_endpoints": "frontend/src/workspaceApi.ts:23-25",
+    "p0_scope_records": "docs/delivery/test-docs/2026-10-28-v5-codex-p0-independent-functional-test.md:299-300"
+  },
+  "counts": {
+    "projects": 38,
+    "ontologies": 39,
+    "engineering_reference_or_counterexample_projects": 31,
+    "business_scenario_run_projects": 7,
+    "projects_le_3_projected_nodes": 29,
+    "projects_le_5_projected_nodes": 30,
+    "projects_with_no_projected_edges": 34,
+    "ontologies_with_no_projected_edges": 35,
+    "api_resources_sum_by_ontology": 256,
+    "projected_nodes_sum_by_ontology": 167,
+    "api_relation_records_sum_by_ontology": 166,
+    "projected_edges_sum_by_ontology": 21,
+    "max_resources_per_ontology": 40,
+    "unchanged_rdf_graph_hashes": 39
+  },
+  "projected_node_distribution_by_project": {
+    "1": 8,
+    "2": 11,
+    "3": 10,
+    "5": 1,
+    "7": 1,
+    "8": 1,
+    "10": 1,
+    "11": 1,
+    "13": 1,
+    "17": 1,
+    "18": 2
+  },
+  "checks": {
+    "all_39_workspace_contexts_ready": true,
+    "all_117_endpoint_calls_http_200": true,
+    "all_78_read_model_windows_complete": true,
+    "resource_relation_revisions_equal": true,
+    "all_rdf_hashes_unchanged_from_before_cleanup": true,
+    "current_revisions_equal_cleanup_baseline": true,
+    "temporary_probe_admin_revoked": true
+  },
+  "limitations": [
+    "No browser-rendering test or inspection of the user selected view and user-specific permissions.",
+    "Historical independent evaluations apply only to their stated model revisions and frozen source scope; this is not new semantic acceptance.",
+    "Resource count and connectivity are not semantic completeness measures.",
+    "Domain/range declarations are relation schema constraints, not asserted business instance facts.",
+    "Initial probe used incorrect relation-list route; only corrected resource-relations responses are used here."
+  ],
+  "projects": [
+    {
+      "project_id": "1914d037-3024-4cb1-96d4-1dd25af8528b",
+      "project_name": "R2.3 team platform-normal-001",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 3,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "1715cc34-391f-490e-b451-1fb67eaacd6b",
+          "revision": 2,
+          "rdf_triples": 24,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 2,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 1
+          },
+          "api_resource_count": 3,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 2,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "1715cc34-391f-490e-b451-1fb67eaacd6b",
+            "model_revision": 2,
+            "sha256": "77ee0039d09fba5ba6e3efbe82742e1d034a5f1adaff2d90514be8dd59bdd98b",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [],
+      "classification_evidence": "P0 platform normal/checkpoint/response/not-written/partial engineering probes; see p0_scope_records."
+    },
+    {
+      "project_id": "ccd76dc0-7c99-42de-9f5b-579f131d9066",
+      "project_name": "R2.3 team v5-codex-p0:platform-checkpoint-001:platform",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 3,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "b073c6d7-85d6-4c6c-8faf-8f961f05cbc6",
+          "revision": 2,
+          "rdf_triples": 24,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 1,
+            "http://www.w3.org/2002/07/owl#Class": 2
+          },
+          "api_resource_count": 3,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 2,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "b073c6d7-85d6-4c6c-8faf-8f961f05cbc6",
+            "model_revision": 2,
+            "sha256": "b82e0e23b68d82c497816d8ecd032fa042d3a12b9c3e967f563c8d45131812a9",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [],
+      "classification_evidence": "P0 platform normal/checkpoint/response/not-written/partial engineering probes; see p0_scope_records."
+    },
+    {
+      "project_id": "d8f3a66c-dacf-4df6-8764-d4a91ac5cc93",
+      "project_name": "R2.3 team v5-codex-p0:platform-response-001:platform",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 3,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "3403316c-ee13-4ee6-9ecf-b01f141aa41a",
+          "revision": 2,
+          "rdf_triples": 24,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 2,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 1
+          },
+          "api_resource_count": 3,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 2,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "3403316c-ee13-4ee6-9ecf-b01f141aa41a",
+            "model_revision": 2,
+            "sha256": "ca67292fb92a561b5494a31d0410668f3722ca5568fdbba20c37b4fa57c7ab88",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [],
+      "classification_evidence": "P0 platform normal/checkpoint/response/not-written/partial engineering probes; see p0_scope_records."
+    },
+    {
+      "project_id": "096eb23c-d43b-4189-8761-8f3e64b839b6",
+      "project_name": "R2.3 team v5-codex-p0:platform-not-written-001:platform",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 3,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "4330c2d9-07cb-4c7b-bfbc-517a700e2db1",
+          "revision": 2,
+          "rdf_triples": 24,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 1,
+            "http://www.w3.org/2002/07/owl#Class": 2
+          },
+          "api_resource_count": 3,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 2,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "4330c2d9-07cb-4c7b-bfbc-517a700e2db1",
+            "model_revision": 2,
+            "sha256": "89730fa63075e2de08c2c24ee51f7e357284e4a5e66950dc54df72d96abace7e",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [],
+      "classification_evidence": "P0 platform normal/checkpoint/response/not-written/partial engineering probes; see p0_scope_records."
+    },
+    {
+      "project_id": "e54c1c9b-0e73-43fe-8ed7-dd8782ad388e",
+      "project_name": "R2.3 team v5-codex-p0:platform-partial-001:platform",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 1,
+      "ui_edges": 0,
+      "api_resource_count": 1,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "ba4c874c-80a6-479f-9a2d-346f96edbf3c",
+          "revision": 1,
+          "rdf_triples": 6,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "ba4c874c-80a6-479f-9a2d-346f96edbf3c",
+            "model_revision": 1,
+            "sha256": "1dd378f6a1d416ec5097c86ef3ea4735ce75ac4a4e2a76a2510f95629a7c8f88",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [],
+      "classification_evidence": "P0 platform normal/checkpoint/response/not-written/partial engineering probes; see p0_scope_records."
+    },
+    {
+      "project_id": "c5ba361b-db94-4fca-a20b-818a26bf4b6c",
+      "project_name": "R2.3 team v5-p11-runtime-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 3,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "448fda4a-381d-49d3-98c4-c308d02aa30d",
+          "revision": 2,
+          "rdf_triples": 21,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 2,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 1
+          },
+          "api_resource_count": 3,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 2,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "448fda4a-381d-49d3-98c4-c308d02aa30d",
+            "model_revision": 2,
+            "sha256": "734b027cefcf264eed9c2c74593a605341b3ddf99e24bbed957d303dc205db13",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/p11-runtime-20261029-start1",
+          "run_id": "v5-p11-runtime-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "runtime-assessment-001",
+              "verdict": "PASS",
+              "passed": 6,
+              "total": 6,
+              "model_revisions": {
+                "448fda4a-381d-49d3-98c4-c308d02aa30d": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Model the complete bounded business scope in the approved scenario. Exercise the v5 modeling, application, governed self-check and independent handoff path; preserve honest semantic limitations. Do not add unsupported business facts.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/p11-runtime-20261029-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "2e36aee6-aa1d-4338-b7fa-2156c987aa7f",
+      "project_name": "R2.3 team v5-minimal-hitl-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 1,
+      "ui_edges": 0,
+      "api_resource_count": 1,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "58cf883e-59de-4af6-be23-91d81e7a9fe6",
+          "revision": 1,
+          "rdf_triples": 5,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "58cf883e-59de-4af6-be23-91d81e7a9fe6",
+            "model_revision": 1,
+            "sha256": "12f65686d10e44a719550e8a936368fbc97696d365e376ada1b1653ab9219e5c",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/hitl-20261029-start1",
+          "run_id": "v5-minimal-hitl-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "hitl-engineering-001",
+              "verdict": "PASS",
+              "passed": 1,
+              "total": 1,
+              "model_revisions": {
+                "58cf883e-59de-4af6-be23-91d81e7a9fe6": 1
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "通过真实人工问答完成获准材料中的有界概念定义。先实际读取 scenario；缺失的名称必须由用户提供，不能自行选名。名称确认后使用当前通用变更合同建模、实际应用和治理自查。只验证最小 HITL 和原工作单元接续，不宣称完整业务语义验收。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/hitl-20261029-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "781b60bb-c62e-4593-b651-1acbb1cdb2d6",
+      "project_name": "R2.3 team v5-hitl-validation-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 1,
+      "ui_edges": 0,
+      "api_resource_count": 1,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "bd0244fc-b59e-4952-b399-bad18b73b7dd",
+          "revision": 1,
+          "rdf_triples": 5,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "bd0244fc-b59e-4952-b399-bad18b73b7dd",
+            "model_revision": 1,
+            "sha256": "a663a6e888ae6aa8d533ff45fbd492e674f67e90e59f4649a3ba756d5fab750d",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/hitl-validation-20261029-start1",
+          "run_id": "v5-hitl-validation-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "hitl-validation-check-001",
+              "verdict": "PASS",
+              "passed": 1,
+              "total": 1,
+              "model_revisions": {
+                "bd0244fc-b59e-4952-b399-bad18b73b7dd": 1
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "通过真实人工问答完成获准材料中的有界概念定义。先实际读取 scenario；缺失的名称必须由用户提供，不能自行选名。名称确认后使用当前通用变更合同建模、实际应用和治理自查。只验证最小 HITL 和原工作单元接续，不宣称完整业务语义验收。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/hitl-validation-20261029-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "a328b725-57f9-4670-b2e1-89b59b0cf7e6",
+      "project_name": "R2.3 team v5-minimal-team-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 1,
+      "ui_edges": 0,
+      "api_resource_count": 1,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "6fdd60ba-e426-469e-a1e1-fd948523c8c9",
+          "revision": 1,
+          "rdf_triples": 5,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "6fdd60ba-e426-469e-a1e1-fd948523c8c9",
+            "model_revision": 1,
+            "sha256": "dddc5859335b94f598735f1557c971aab98eaa64d157dc87445b452c2bd6150a",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/team-20261029-start1",
+          "run_id": "v5-minimal-team-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "team-check-001",
+              "verdict": "PASS",
+              "passed": 1,
+              "total": 1,
+              "model_revisions": {
+                "6fdd60ba-e426-469e-a1e1-fd948523c8c9": 1
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Run a minimal real modeling task using only the approved source. In the first modeling turn read scenario, update your own work card, publish the approved scenario using source_material_id without retranscribing it, and send reviewer a signed work_request with the material reference to check source fidelity and scope. Send ordinary conversation through the same tool as appropriate. End that turn with waiting_peer. After the reviewer replies, actu",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/team-20261029-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "bf31a8ae-d581-4cb4-b651-ee22bd255f96",
+      "project_name": "R2.3 team v5-team-cold-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 1,
+      "ui_edges": 0,
+      "api_resource_count": 1,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "037509c4-2717-4774-98fd-4f45c9f06f4a",
+          "revision": 1,
+          "rdf_triples": 5,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "037509c4-2717-4774-98fd-4f45c9f06f4a",
+            "model_revision": 1,
+            "sha256": "f230396dd9dc216331883029e3d3aa8371e3080a015c786272ee039d00825668",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/team-cold-20261029-start1",
+          "run_id": "v5-team-cold-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "cold-check-001",
+              "verdict": "PASS",
+              "passed": 1,
+              "total": 1,
+              "model_revisions": {
+                "037509c4-2717-4774-98fd-4f45c9f06f4a": 1
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Run a minimal real modeling task using only the approved source. In the first modeling turn read scenario, update your own work card, publish the approved scenario using source_material_id without retranscribing it, and send reviewer a signed work_request with the material reference to check source fidelity and scope. Send ordinary conversation through the same tool as appropriate. End that turn with waiting_peer. After the reviewer replies, actu",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/team-cold-20261029-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "6fccaf4c-196b-45f5-9c0a-af0421135fb6",
+      "project_name": "R2.3 team v5-memory-snapshot-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 1,
+      "ui_edges": 0,
+      "api_resource_count": 1,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "aadbeeb9-1ddf-49c2-a387-142ae03cba0b",
+          "revision": 1,
+          "rdf_triples": 5,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "aadbeeb9-1ddf-49c2-a387-142ae03cba0b",
+            "model_revision": 1,
+            "sha256": "91f0573589051fbc3be1c740a73e6ea54862d49477c3936c8ab8e4d2891f1364",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/memory-snapshot-20261029-start1",
+          "run_id": "v5-memory-snapshot-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "memory-snapshot-check-001",
+              "verdict": "PASS",
+              "passed": 1,
+              "total": 1,
+              "model_revisions": {
+                "aadbeeb9-1ddf-49c2-a387-142ae03cba0b": 1
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Run the approved minimal single-concept modeling task and verify shared business memory. FIRST turn: actually read scenario, maintain your own card, write a compact source-bounded decision note using write_memory (stable entry_id of your choice, kind decision, title mentioning the concept name, body retaining exclusions/unknowns, source_refs from the actual source). Send reviewer a signed request asking it to FIND the relevant note using search_m",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/memory-snapshot-20261029-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "a5e389c4-7947-445e-af8c-89fc0900d8b3",
+      "project_name": "R2.3 team v5-amount-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 1,
+      "ui_edges": 0,
+      "api_resource_count": 1,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "ca5ed3f6-a94c-447a-8d99-7bf7a0ced1f8",
+          "revision": 1,
+          "rdf_triples": 5,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "ca5ed3f6-a94c-447a-8d99-7bf7a0ced1f8",
+            "model_revision": 1,
+            "sha256": "ad4ad19b0f4d7a4a02e778c55c08c913aac6967519de7af212bbe224a2862a82",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/amount-20261029-start1",
+          "run_id": "v5-amount-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "amount-check-001",
+              "verdict": "PASS",
+              "passed": 1,
+              "total": 1,
+              "model_revisions": {
+                "ca5ed3f6-a94c-447a-8d99-7bf7a0ced1f8": 1
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Run the approved minimal single-concept modeling task and verify shared business memory. FIRST turn: actually read scenario, maintain your own card, write a compact source-bounded decision note using write_memory (stable entry_id of your choice, kind decision, title mentioning the concept name, body retaining exclusions/unknowns, source_refs from the actual source). Send reviewer a signed request asking it to FIND the relevant note using search_m",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/amount-20261029-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "4dda3ff6-33e0-4d70-b606-16b8b3da6577",
+      "project_name": "R2.3 team v5-multi-unit-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 6,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "281a3d19-b6af-45f0-b29d-9f6240cae816",
+          "revision": 2,
+          "rdf_triples": 48,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 3,
+            "http://www.w3.org/2002/07/owl#Class": 3
+          },
+          "api_resource_count": 6,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 6,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "281a3d19-b6af-45f0-b29d-9f6240cae816",
+            "model_revision": 2,
+            "sha256": "173550170705f107b56269141eb2cf315101457c83e19c26de3f438343cbdce6",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/multi-unit-20261029-start1",
+          "run_id": "v5-multi-unit-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "multi-unit-check-001",
+              "verdict": "PASS",
+              "passed": 1,
+              "total": 1,
+              "model_revisions": {
+                "281a3d19-b6af-45f0-b29d-9f6240cae816": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Integrate the two direct child proposals and the approved source. Read each child result material by its exact reference, original scenario, relevant shared notes and actual scoped human replies. Establish one coherent minimal model for the three stated concepts and their explicit overall condition; do not equate child readiness with overall correctness. Only the parent submits changes for application. Do not expand the public engineering scope.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/multi-unit-20261029-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "c72e9fd7-9106-4608-8e33-c2544fac96a6",
+      "project_name": "v5-snapshot-fork-20261030-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 6,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "a8919dc8-8385-5778-8d68-5c4e8afb9be4",
+          "revision": 4,
+          "rdf_triples": 48,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 3,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 3
+          },
+          "api_resource_count": 6,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 6,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "a8919dc8-8385-5778-8d68-5c4e8afb9be4",
+            "model_revision": 4,
+            "sha256": "456bc9efe2586a5de9085338f711816502d371eecf433e4fb9269db8b0d83661",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/snapshot-fork-20261030-start1",
+          "run_id": "v5-snapshot-fork-20261030-start1",
+          "independent_reports": [
+            {
+              "id": "fork-business-continuation",
+              "verdict": "PASS",
+              "passed": 3,
+              "total": 3,
+              "model_revisions": {
+                "a8919dc8-8385-5778-8d68-5c4e8afb9be4": 3
+              },
+              "scope": null
+            },
+            {
+              "id": "format-installation-unit",
+              "verdict": "PASS",
+              "passed": 2,
+              "total": 2,
+              "model_revisions": {
+                "a8919dc8-8385-5778-8d68-5c4e8afb9be4": 4
+              },
+              "scope": {
+                "scope_id": "installation",
+                "base_freeze_id": "v5-format-revision-public-20261030"
+              }
+            },
+            {
+              "id": "format-parent-model-and-navigation",
+              "verdict": "PASS",
+              "passed": 6,
+              "total": 6,
+              "model_revisions": {
+                "a8919dc8-8385-5778-8d68-5c4e8afb9be4": 4
+              },
+              "scope": null
+            },
+            {
+              "id": "format-verification-unit",
+              "verdict": "PASS",
+              "passed": 1,
+              "total": 1,
+              "model_revisions": {
+                "a8919dc8-8385-5778-8d68-5c4e8afb9be4": 4
+              },
+              "scope": {
+                "scope_id": "verification",
+                "base_freeze_id": "v5-format-revision-public-20261030"
+              }
+            }
+          ],
+          "objective_excerpt": "Continue from captured actual model and attributed business records. Reuse valid existing definitions; return no_change if the actual model already satisfies the sources. Historical workflow states and acceptance are not inherited proof. Continue in a fresh context with no prior native history. Call get_modeling_context, search/read the existing project semantic records and shared installation-meaning memory by scope=project, including complete c",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/snapshot-fork-20261030-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "fdac1b9b-34cf-4b01-a91f-b2a9cf88d243",
+      "project_name": "R2.3 team v5-continuous-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 6,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "814de24d-1059-44eb-a32c-5c0d7afbf643",
+          "revision": 3,
+          "rdf_triples": 48,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 3,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 3
+          },
+          "api_resource_count": 6,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 6,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "814de24d-1059-44eb-a32c-5c0d7afbf643",
+            "model_revision": 3,
+            "sha256": "af076ec683ad65c49406497fe4bf25ec646b727942deda7f18119a3621a41afb",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/continuous-20261029-start1",
+          "run_id": "v5-continuous-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "initial-public-check",
+              "verdict": "PASS",
+              "passed": 1,
+              "total": 1,
+              "model_revisions": {
+                "814de24d-1059-44eb-a32c-5c0d7afbf643": 2
+              },
+              "scope": null
+            },
+            {
+              "id": "numbering-public-check",
+              "verdict": "PASS",
+              "passed": 2,
+              "total": 2,
+              "model_revisions": {
+                "814de24d-1059-44eb-a32c-5c0d7afbf643": 3
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Integrate the two bounded child results and approved scenario into the three distinct business concepts and necessary explicit relations/conditions. Read original sources and exact result references; check whole-rule coverage. Only the parent applies. Preserve unknowns. This is the initial baseline for an incremental-change capability test, not a full business acceptance claim.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/continuous-20261029-start1/binding.json:objective"
+        },
+        {
+          "root": "workspaces/v5-runs/project-memory-20261030-first",
+          "run_id": "v5-project-memory-20261030-first",
+          "independent_reports": [
+            {
+              "id": "project-memory-first-public",
+              "verdict": "PASS",
+              "passed": 2,
+              "total": 2,
+              "model_revisions": {
+                "814de24d-1059-44eb-a32c-5c0d7afbf643": 3
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Verify and reuse the existing authorized model; do not rebuild it. At this new context call get_modeling_context, read every approved material and query the actual model. Persist compact project-scope semantic records: source-review (material_review), installation-propositions (complete proposition including numbering boundary and whole completion condition), identity-reuse (decision), coverage-and-unknowns (coverage with unallocated/unknown limi",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/project-memory-20261030-first/binding.json:objective"
+        },
+        {
+          "root": "workspaces/v5-runs/project-memory-20261030-second",
+          "run_id": "v5-project-memory-20261030-second",
+          "independent_reports": [
+            {
+              "id": "project-memory-second-public",
+              "verdict": "PASS",
+              "passed": 3,
+              "total": 3,
+              "model_revisions": {
+                "814de24d-1059-44eb-a32c-5c0d7afbf643": 3
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Continue in a fresh context with no prior native history. Call get_modeling_context, search/read the existing project semantic records and shared installation-meaning memory by scope=project, including complete conditions and unknowns. Then reread approved sources and actual governed model. Inspect stale project-overview/coverage dependency refs: copy the exact returned reference objects including scope and current revision; refresh derived recor",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/project-memory-20261030-second/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "9677c8af-ec6a-4118-a2ac-59e70ee5c550",
+      "project_name": "R2.3 team v5-dynamic-tree-20261029-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 5,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "4f850be9-ac2f-495e-90cb-6235f2c61942",
+          "revision": 2,
+          "rdf_triples": 37,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 3,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 2
+          },
+          "api_resource_count": 5,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 4,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "4f850be9-ac2f-495e-90cb-6235f2c61942",
+            "model_revision": 2,
+            "sha256": "a10497333af7aa1ed33f0e6bbf9f58c963016f2464db1202024b0598a4d8d77f",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/dynamic-tree-20261029-start1",
+          "run_id": "v5-dynamic-tree-20261029-start1",
+          "independent_reports": [
+            {
+              "id": "dynamic-formal-independent",
+              "verdict": "PASS",
+              "passed": 3,
+              "total": 3,
+              "model_revisions": {
+                "4f850be9-ac2f-495e-90cb-6235f2c61942": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Read the approved source and use delegate_work to create bounded installation and verification children at runtime, not through Host configuration. For this engineering case require the installation child to delegate a device-definition child, giving two levels of actual work. Return waiting_children after delegation. On reentry use get_work_tree and read direct child result materials by exact references. Keep the whole completion rule, rare emer",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/dynamic-tree-20261029-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "4eb16443-bf9d-470d-9a01-eb2c5a20e8be",
+      "project_name": "R2.3 team v5-cold-repeat-20261030-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 5,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "e18c7207-6fd4-4018-810b-194315467b76",
+          "revision": 2,
+          "rdf_triples": 37,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 2,
+            "http://www.w3.org/2002/07/owl#Class": 3
+          },
+          "api_resource_count": 5,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 4,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "e18c7207-6fd4-4018-810b-194315467b76",
+            "model_revision": 2,
+            "sha256": "5bf80304ba6c1bee9b8d76c7c294216aa270add80d05a52ca1bef9b45a0507b6",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/cold-repeat-20261030-start1",
+          "run_id": "v5-cold-repeat-20261030-start1",
+          "independent_reports": [
+            {
+              "id": "cold-repeat-formal",
+              "verdict": "PASS",
+              "passed": 3,
+              "total": 3,
+              "model_revisions": {
+                "e18c7207-6fd4-4018-810b-194315467b76": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Read the approved source and use delegate_work to create bounded installation and verification children at runtime, not through Host configuration. For this engineering case require the installation child to delegate a device-definition child, giving two levels of actual work. Return waiting_children after delegation. On reentry use get_work_tree and read direct child result materials by exact references. Keep the whole completion rule, rare emer",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/cold-repeat-20261030-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "7094f5a1-995c-4364-8dca-39b305329a01",
+      "project_name": "R2.3 team v5-multi-ontology-20261030-bootstrap",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 2,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "ba9de10c-32df-42b5-bfb0-30a3507ce46b",
+          "revision": 1,
+          "rdf_triples": 5,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "ba9de10c-32df-42b5-bfb0-30a3507ce46b",
+            "model_revision": 1,
+            "sha256": "ed4675df39c5ab4344c2527951119b2e780c06283b3954a2a6ce2b4034c9d6d8",
+            "matches_before_legacy_cleanup": true
+          }
+        },
+        {
+          "ontology_id": "d0439127-d8c5-4e52-8c04-0ce312cf2606",
+          "revision": 1,
+          "rdf_triples": 5,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "d0439127-d8c5-4e52-8c04-0ce312cf2606",
+            "model_revision": 1,
+            "sha256": "e36c8a19f78b3c6fc342d89258629ecd421d8c4a22aa2ad44c3d9d2a2d586d6b",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/multi-ontology-20261030-start1",
+          "run_id": "v5-multi-ontology-20261030-start1",
+          "independent_reports": [
+            {
+              "id": "multi-ontology-independent",
+              "verdict": "PASS",
+              "passed": 2,
+              "total": 2,
+              "model_revisions": {
+                "ba9de10c-32df-42b5-bfb0-30a3507ce46b": 1,
+                "d0439127-d8c5-4e52-8c04-0ce312cf2606": 1
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Express only the two approved Class definitions with their distinctions and unknowns in the two authorized Ontologies from scope-layout. Return ontology_targets using exact actual IDs. Maintain necessary source/proposition/coverage records, then actual governed self-check. Do not add instances or relations.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/multi-ontology-20261030-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "2ea2edf4-7b59-475a-9509-86dd0c877406",
+      "project_name": "R2.3 team v5-followup-20261030-baseline",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 5,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "e0a1220e-936a-4c2f-a1f4-9699bb66b5e2",
+          "revision": 2,
+          "rdf_triples": 37,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 3,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 2
+          },
+          "api_resource_count": 5,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 4,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "e0a1220e-936a-4c2f-a1f4-9699bb66b5e2",
+            "model_revision": 2,
+            "sha256": "7b8a040454e762ca68a4b4ca8685383b24283a77c00b50df0b5be3043cf9ba57",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/followup-20261030-baseline",
+          "run_id": "v5-followup-20261030-baseline",
+          "independent_reports": [],
+          "objective_excerpt": "Model the complete bounded approved scenario and its representation decision. Review the original material; maintain necessary semantic workspace records for material review, complete propositions, decisions, expression coverage, explicit unknowns and summary. Preserve the whole completion condition, rare emergency exception, permission modality and unallocated scope. Use supported Class/relation_type definitions and actual references. No delegat",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/followup-20261030-baseline/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "60dbfcc9-7b4e-4da1-bede-8d82b06cd3d7",
+      "project_name": "R2.3 team v5-followup-20261030-target-a",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 5,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "2a7c2b35-6c6a-4b7a-b781-6edbbd73797b",
+          "revision": 2,
+          "rdf_triples": 37,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 3,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 2
+          },
+          "api_resource_count": 5,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 4,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "2a7c2b35-6c6a-4b7a-b781-6edbbd73797b",
+            "model_revision": 2,
+            "sha256": "f5a33fd5b5c73b4e49cb7dd466cfa9b6ee53da58c782e3ff7ccc227a8dee40bf",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/followup-20261030-memory-impact",
+          "run_id": "v5-followup-20261030-memory-impact",
+          "independent_reports": [
+            {
+              "id": "shared-impact-check",
+              "verdict": "PASS",
+              "passed": 3,
+              "total": 3,
+              "model_revisions": {
+                "2a7c2b35-6c6a-4b7a-b781-6edbbd73797b": 2
+              },
+              "scope": {
+                "scope_id": "v5-shared-interpretation-impact",
+                "base_freeze_id": "v5-followup-public-20261030-v1"
+              }
+            }
+          ],
+          "objective_excerpt": "Maintain source-grounded shared interpretations and their dependent project records; no RDF changes.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/followup-20261030-memory-impact/binding.json:objective"
+        },
+        {
+          "root": "workspaces/v5-runs/followup-20261030-target-a",
+          "run_id": "v5-followup-20261030-target-a",
+          "independent_reports": [
+            {
+              "id": "evidence-control-a",
+              "verdict": "PASS",
+              "passed": 6,
+              "total": 6,
+              "model_revisions": {
+                "2a7c2b35-6c6a-4b7a-b781-6edbbd73797b": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Evaluate the complete approved engineering model against the original sources; preserve unknowns and verify actual governed model evidence.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/followup-20261030-target-a/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "3d92621e-02c1-4700-bf7a-2e1d1e9cdbdb",
+      "project_name": "R2.3 team v5-followup-20261030-target-b",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 5,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "4c6895ef-7dce-4fc1-af92-7552fd6e36e5",
+          "revision": 2,
+          "rdf_triples": 37,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 2,
+            "http://www.w3.org/2002/07/owl#Class": 3
+          },
+          "api_resource_count": 5,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 4,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "4c6895ef-7dce-4fc1-af92-7552fd6e36e5",
+            "model_revision": 2,
+            "sha256": "f54653e386ace61ac8c82dae9fe8c9d4d97fff1e5f02492c66afd24f191321c7",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/followup-20261030-target-b",
+          "run_id": "v5-followup-20261030-target-b",
+          "independent_reports": [
+            {
+              "id": "evidence-control-b",
+              "verdict": "PARTIAL",
+              "passed": 3,
+              "total": 6,
+              "model_revisions": {
+                "4c6895ef-7dce-4fc1-af92-7552fd6e36e5": 2
+              },
+              "scope": null
+            },
+            {
+              "id": "evidence-control-b-expanded",
+              "verdict": "PARTIAL",
+              "passed": 4,
+              "total": 6,
+              "model_revisions": {
+                "4c6895ef-7dce-4fc1-af92-7552fd6e36e5": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Evaluate the complete approved engineering model against the original sources; preserve unknowns and verify actual governed model evidence.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/followup-20261030-target-b/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "5c664cd7-1167-4ed6-80c2-e80f082ed21c",
+      "project_name": "R2.3 team v5-followup-20261030-improved-isolated",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 5,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "3e672b12-e90b-4e23-8f49-781ab988915a",
+          "revision": 2,
+          "rdf_triples": 37,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 3,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 2
+          },
+          "api_resource_count": 5,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 4,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "3e672b12-e90b-4e23-8f49-781ab988915a",
+            "model_revision": 2,
+            "sha256": "5b30fdee2d65c87abd8ffcb505bdd95cbeee48f75cd4d9f01f587c4cfb5403b6",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/followup-20261030-improved-isolated",
+          "run_id": "v5-followup-20261030-improved-isolated",
+          "independent_reports": [
+            {
+              "id": "complete-model-check",
+              "verdict": "PASS",
+              "passed": 6,
+              "total": 6,
+              "model_revisions": {
+                "3e672b12-e90b-4e23-8f49-781ab988915a": 2
+              },
+              "scope": null
+            },
+            {
+              "id": "workspace-audit-recheck",
+              "verdict": "PASS",
+              "passed": 3,
+              "total": 3,
+              "model_revisions": {
+                "3e672b12-e90b-4e23-8f49-781ab988915a": 2
+              },
+              "scope": {
+                "scope_id": "v5-workspace-final-consistency",
+                "base_freeze_id": "v5-followup-public-20261030-v1"
+              }
+            },
+            {
+              "id": "workspace-final-audit",
+              "verdict": "REVISE",
+              "passed": 2,
+              "total": 3,
+              "model_revisions": {
+                "3e672b12-e90b-4e23-8f49-781ab988915a": 2
+              },
+              "scope": {
+                "scope_id": "v5-workspace-final-consistency",
+                "base_freeze_id": "v5-followup-public-20261030-v1"
+              }
+            }
+          ],
+          "objective_excerpt": "Model the complete bounded approved scenario and its representation decision. Review the original material; maintain necessary semantic workspace records for material review, complete propositions, decisions, expression coverage, explicit unknowns and summary. Preserve the whole completion condition, rare emergency exception, permission modality and unallocated scope. Use supported Class/relation_type definitions and actual references. No delegat",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/followup-20261030-improved-isolated/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "2f682a53-fd61-4e5a-8eaf-44322fdb1ffd",
+      "project_name": "R2.3 team v5-followup-20261030-target-c",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 3,
+      "ui_edges": 0,
+      "api_resource_count": 5,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "5d96ea4f-896e-420b-bf23-bcd24f401c59",
+          "revision": 2,
+          "rdf_triples": 37,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 2,
+            "http://www.w3.org/2002/07/owl#Class": 3
+          },
+          "api_resource_count": 5,
+          "ui_unfiltered_node_count": 3,
+          "api_relation_count": 4,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "5d96ea4f-896e-420b-bf23-bcd24f401c59",
+            "model_revision": 2,
+            "sha256": "99f420b6196572bbd4ee03581a304736e7ec950958fa9679f593c4fa659e368b",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/followup-20261030-target-c",
+          "run_id": "v5-followup-20261030-target-c",
+          "independent_reports": [
+            {
+              "id": "evidence-control-c",
+              "verdict": "PARTIAL",
+              "passed": 5,
+              "total": 6,
+              "model_revisions": {
+                "5d96ea4f-896e-420b-bf23-bcd24f401c59": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Evaluate the complete approved engineering model against the original sources; preserve unknowns and verify actual governed model evidence.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/followup-20261030-target-c/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "53fa7968-adc3-4b36-8e59-a73ce95d6281",
+      "project_name": "R2.3 team v5-partial-application-20261030-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 2,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "b83f53d6-22c3-495d-9d94-bd58e21f086d",
+          "revision": 2,
+          "rdf_triples": 10,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 2
+          },
+          "api_resource_count": 2,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "b83f53d6-22c3-495d-9d94-bd58e21f086d",
+            "model_revision": 2,
+            "sha256": "45eea3bad8e443a4850daf50911eeb04d6300eee50457834540b92212f374f44",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/partial-application-20261030-start1",
+          "run_id": "v5-partial-application-20261030-start1",
+          "independent_reports": [
+            {
+              "id": "partial-delivery-check",
+              "verdict": "PASS",
+              "passed": 4,
+              "total": 4,
+              "model_revisions": {
+                "b83f53d6-22c3-495d-9d94-bd58e21f086d": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Integrate the two declared independent units faithfully. Apply the safe A Class as soon as its source-grounded proposal is available while B awaits its required formal name. Do not wait for B before safe A application, do not invent a B name, and never claim the whole task complete while B remains unfinished. Reuse the applied A identity when B later continues. Only two Class definitions, no relations or instances. Use supplied work units, not du",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/partial-application-20261030-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "31279902-eb91-4db1-b3bf-ed6bd90ca687",
+      "project_name": "R2.3 team v5-local-rework-20261030-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 2,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "9e9ceefa-90d6-4ccf-ba9e-b3a037390872",
+          "revision": 3,
+          "rdf_triples": 10,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 2
+          },
+          "api_resource_count": 2,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "9e9ceefa-90d6-4ccf-ba9e-b3a037390872",
+            "model_revision": 3,
+            "sha256": "549fbc4aabb662519e8ef333523e7addbd48554161497c823ba0c8a7c309d52b",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/local-rework-20261030-start1",
+          "run_id": "v5-local-rework-20261030-start1",
+          "independent_reports": [
+            {
+              "id": "local-rework-check",
+              "verdict": "PASS",
+              "passed": 4,
+              "total": 4,
+              "model_revisions": {
+                "9e9ceefa-90d6-4ccf-ba9e-b3a037390872": 3
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Faithfully model the two independent Class meanings in the approved engineering source, retain unknowns, no instances/relations. Use the two declared work units, no duplicate delegation. Parent integrates safe results and handles Host application. Later local rework must reuse original identities and unaffected sibling work.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/local-rework-20261030-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "fccc5c3e-bdcb-44f5-8666-9e7ec0310deb",
+      "project_name": "R2.3 team v5-workspace-closure-20261030-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 2,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "4f93b7cb-5750-41d9-9fa6-6669cd877329",
+          "revision": 3,
+          "rdf_triples": 10,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 2
+          },
+          "api_resource_count": 2,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "4f93b7cb-5750-41d9-9fa6-6669cd877329",
+            "model_revision": 3,
+            "sha256": "d018c1c3c224f153b72faf7cc066f7f7eca4779cdf99a9c8881a54f76057cad2",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/workspace-closure-20261030-start1",
+          "run_id": "v5-workspace-closure-20261030-start1",
+          "independent_reports": [
+            {
+              "id": "default-workspace-closure-check",
+              "verdict": "PASS",
+              "passed": 6,
+              "total": 6,
+              "model_revisions": {
+                "4f93b7cb-5750-41d9-9fa6-6669cd877329": 3
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Faithfully model the approved two independent Class meanings and maintain accurate persistent understanding through application, actual read-back and later bounded local rework. Retain true unknowns and unexpressed scope. Use declared units and original identities, preserve unaffected work; parent owns whole-scope integration. Workspace records must remain usable for a fresh context, not just a completed model.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/workspace-closure-20261030-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "d7be9ee9-4378-420f-9dcc-775d6b8b5ad8",
+      "project_name": "R2.3 team v5-composite-contracts-20261030-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 7,
+      "ui_edges": 0,
+      "api_resource_count": 10,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "150e6fc3-25c5-4580-a82c-accc0a931194",
+          "revision": 5,
+          "rdf_triples": 68,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 7,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 3
+          },
+          "api_resource_count": 10,
+          "ui_unfiltered_node_count": 7,
+          "api_relation_count": 6,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "150e6fc3-25c5-4580-a82c-accc0a931194",
+            "model_revision": 5,
+            "sha256": "3c5f26c380b9e176aa4478dd51befefa721279579b9ac958f8066b7677ab524f",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/composite-contracts-20261030-start1",
+          "run_id": "v5-composite-contracts-20261030-start1",
+          "independent_reports": [
+            {
+              "id": "composite-final-twelve-check",
+              "verdict": "PASS",
+              "passed": 12,
+              "total": 12,
+              "model_revisions": {
+                "150e6fc3-25c5-4580-a82c-accc0a931194": 5
+              },
+              "scope": null
+            },
+            {
+              "id": "composite-overview-check",
+              "verdict": "PASS",
+              "passed": 3,
+              "total": 3,
+              "model_revisions": {
+                "150e6fc3-25c5-4580-a82c-accc0a931194": 5
+              },
+              "scope": {
+                "scope_id": "composite-current-overview-consumption",
+                "base_freeze_id": "v5-composite-contracts-twelve-public-20261030"
+              }
+            },
+            {
+              "id": "composite-v1-check",
+              "verdict": "PASS",
+              "passed": 9,
+              "total": 9,
+              "model_revisions": {
+                "150e6fc3-25c5-4580-a82c-accc0a931194": 3
+              },
+              "scope": {
+                "scope_id": "composite-contracts-initial-v1",
+                "base_freeze_id": "v5-composite-contracts-twelve-public-20261030"
+              }
+            }
+          ],
+          "objective_excerpt": "Model the complete approved composite-contract reference scenario faithfully: shared quota and combination of three expense meanings, parent-unassigned conditions/rare permission, scoped shared annual clarification, accurate persistent understanding and later explicit source changes. Do not equate local completion with whole-scope completion. Use the declared responsibilities and actual resources, no duplicate delegation. Final handoff for the fi",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/composite-contracts-20261030-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "8640de4c-3170-4d32-87bb-0c91e34971f8",
+      "project_name": "R2.3 team v5-composite-contracts-20261030-parent-omission",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 1,
+      "ui_edges": 0,
+      "api_resource_count": 1,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "8b012da9-e1a7-48b4-97b8-1e1a610b254d",
+          "revision": 1,
+          "rdf_triples": 5,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 1
+          },
+          "api_resource_count": 1,
+          "ui_unfiltered_node_count": 1,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "8b012da9-e1a7-48b4-97b8-1e1a610b254d",
+            "model_revision": 1,
+            "sha256": "52e3d26446d20d297bdc28e293592d893a618e0cc2233304e655dd27ab8d478d",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/composite-contracts-20261030-parent-omission",
+          "run_id": "v5-composite-contracts-20261030-parent-omission",
+          "independent_reports": [
+            {
+              "id": "parent-omission-check",
+              "verdict": "REVISE",
+              "passed": 0,
+              "total": 1,
+              "model_revisions": {
+                "8b012da9-e1a7-48b4-97b8-1e1a610b254d": 1
+              },
+              "scope": {
+                "scope_id": "parent-condition-omission-control",
+                "base_freeze_id": "v5-composite-contracts-twelve-public-20261030"
+              }
+            }
+          ],
+          "objective_excerpt": "Independent bounded parent-condition omission fixture, not production modeling or whole-scenario completion.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/composite-contracts-20261030-parent-omission/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "101a8933-e01b-4828-9a50-534342809d82",
+      "project_name": "R2.3 team v5-local-owner-closure-20261030-start1",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 8,
+      "ui_edges": 0,
+      "api_resource_count": 11,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "cc3db436-8837-4d23-9113-06e04063ebd7",
+          "revision": 8,
+          "rdf_triples": 73,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 8,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 3
+          },
+          "api_resource_count": 11,
+          "ui_unfiltered_node_count": 8,
+          "api_relation_count": 6,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "cc3db436-8837-4d23-9113-06e04063ebd7",
+            "model_revision": 8,
+            "sha256": "8b6006e1071f42aaf3192b67a6decc5090599e5a74899fccbf5034993692ad19",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/local-owner-closure-20261030-start1",
+          "run_id": "v5-local-owner-closure-20261030-start1",
+          "independent_reports": [
+            {
+              "id": "hierarchical-overview-current-three-check",
+              "verdict": "PASS",
+              "passed": 3,
+              "total": 3,
+              "model_revisions": {
+                "cc3db436-8837-4d23-9113-06e04063ebd7": 8
+              },
+              "scope": {
+                "scope_id": "local-owner-hierarchical-overview-current-after-repair",
+                "base_freeze_id": "v5-original-owner-closure-six-public-20261030"
+              }
+            },
+            {
+              "id": "hierarchical-overview-three-check",
+              "verdict": "PASS",
+              "passed": 3,
+              "total": 3,
+              "model_revisions": {
+                "cc3db436-8837-4d23-9113-06e04063ebd7": 6
+              },
+              "scope": {
+                "scope_id": "local-owner-hierarchical-overview-consumption",
+                "base_freeze_id": "v5-original-owner-closure-six-public-20261030"
+              }
+            },
+            {
+              "id": "original-owner-method-repaired-six-check",
+              "verdict": "PASS",
+              "passed": 6,
+              "total": 6,
+              "model_revisions": {
+                "cc3db436-8837-4d23-9113-06e04063ebd7": 8
+              },
+              "scope": null
+            },
+            {
+              "id": "original-owner-six-check",
+              "verdict": "PASS",
+              "passed": 6,
+              "total": 6,
+              "model_revisions": {
+                "cc3db436-8837-4d23-9113-06e04063ebd7": 6
+              },
+              "scope": null
+            },
+            {
+              "id": "original-owner-six-evidence-recheck",
+              "verdict": "PASS",
+              "passed": 6,
+              "total": 6,
+              "model_revisions": {
+                "cc3db436-8837-4d23-9113-06e04063ebd7": 6
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Faithfully model the complete approved reference scope through original-owner local read-back and bounded parent integration. Preserve aggregate quota, parent-owned formal/temporary conditions and the source-confirmed two annual meanings. Use declared responsibility tree; responsibilities are not business entities. Later controlled external model contradiction requires original-owner correction and unchanged sibling reuse, no duplicate resources.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/local-owner-closure-20261030-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "396a6166-7723-4a39-ba24-1b904252d91a",
+      "project_name": "R2.3 team v5-fork-continuation-20261030-source",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 2,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "6a9e4c4f-cff6-4091-b8cf-116f68f1733a",
+          "revision": 1,
+          "rdf_triples": 10,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 2
+          },
+          "api_resource_count": 2,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "6a9e4c4f-cff6-4091-b8cf-116f68f1733a",
+            "model_revision": 1,
+            "sha256": "f9f617bb051e358ec1c18c98923f30594e71b240abf67fcc389b4bf7919baae0",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/fork-continuation-20261030-source",
+          "run_id": "v5-fork-continuation-20261030-source",
+          "independent_reports": [],
+          "objective_excerpt": "Faithfully model the current approved public fixture; preserve distinctions, negation and unknowns. Later explicit source revisions are handled on their own current scope. Reuse valid actual resources; no duplicate Classes or instances.",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/fork-continuation-20261030-source/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "99ceda58-191d-4d39-914e-0e83b9bf21a7",
+      "project_name": "v5-fork-continuation-20261030-target",
+      "category": "engineering-probe-or-counterexample",
+      "ui_nodes": 2,
+      "ui_edges": 0,
+      "api_resource_count": 3,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "30155d24-e6ae-56b2-97e2-dad4b16d68df",
+          "revision": 2,
+          "rdf_triples": 21,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 2,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 1
+          },
+          "api_resource_count": 3,
+          "ui_unfiltered_node_count": 2,
+          "api_relation_count": 2,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "30155d24-e6ae-56b2-97e2-dad4b16d68df",
+            "model_revision": 2,
+            "sha256": "f8e0f560f3540cd1973da3eea6b434fd3d1160dd7eca2ee08268d01837e74491",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/fork-continuation-20261030-target",
+          "run_id": "v5-fork-continuation-20261030-target",
+          "independent_reports": [
+            {
+              "id": "fork-continuation-five",
+              "verdict": "PASS",
+              "passed": 5,
+              "total": 5,
+              "model_revisions": {
+                "30155d24-e6ae-56b2-97e2-dad4b16d68df": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "Continue from captured actual model and attributed business records. Reuse valid existing definitions; return no_change if the actual model already satisfies the sources. Historical workflow states and acceptance are not inherited proof. Faithfully model the current approved public fixture; preserve distinctions, negation and unknowns. Later explicit source revisions are handled on their own current scope. Reuse valid actual resources; no duplica",
+          "objective_excerpt_truncated": true,
+          "objective_source": "workspaces/v5-runs/fork-continuation-20261030-target/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "e76c90d3-e0a6-4d80-a586-3fda3a850462",
+      "project_name": "R2.3 team v5-two-slice-service-20261031-start1",
+      "category": "business-scenario-run",
+      "ui_nodes": 18,
+      "ui_edges": 0,
+      "api_resource_count": 28,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "bda73724-14fa-4c90-96c3-64a05c973856",
+          "revision": 3,
+          "rdf_triples": 200,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 10,
+            "http://www.w3.org/2002/07/owl#Class": 18
+          },
+          "api_resource_count": 28,
+          "ui_unfiltered_node_count": 18,
+          "api_relation_count": 20,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "bda73724-14fa-4c90-96c3-64a05c973856",
+            "model_revision": 3,
+            "sha256": "271cd75836466fc16242c0fe19137417baf54564002c0e463964e7346e069553",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/two-slice-service-20261031-start1",
+          "run_id": "v5-two-slice-service-20261031-start1",
+          "independent_reports": [
+            {
+              "id": "v1-complete-18",
+              "verdict": "PASS",
+              "passed": 18,
+              "total": 18,
+              "model_revisions": {
+                "bda73724-14fa-4c90-96c3-64a05c973856": 2
+              },
+              "scope": null
+            },
+            {
+              "id": "v1-partial-18",
+              "verdict": "PARTIAL",
+              "passed": 5,
+              "total": 18,
+              "model_revisions": {
+                "bda73724-14fa-4c90-96c3-64a05c973856": 1
+              },
+              "scope": null
+            },
+            {
+              "id": "v2-source-change-18",
+              "verdict": "PASS",
+              "passed": 18,
+              "total": 18,
+              "model_revisions": {
+                "bda73724-14fa-4c90-96c3-64a05c973856": 3
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "完整建模获准售后安装验收与返修履约两个业务切片；保持共享身份、跨切片约束、指标口径、例外、范围及真实未知。维护可接续业务理解，实际应用后检查完整表达，独立验收另行进行。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/two-slice-service-20261031-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "ba94277d-180b-4535-b906-f9326e6a48bc",
+      "project_name": "R2.3 team v5-two-slice-service-20261031-start2",
+      "category": "business-scenario-run",
+      "ui_nodes": 18,
+      "ui_edges": 10,
+      "api_resource_count": 40,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "c42dcd00-b666-4447-99e7-3b11f9c02841",
+          "revision": 2,
+          "rdf_triples": 208,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 10,
+            "http://www.w3.org/2002/07/owl#DatatypeProperty": 12,
+            "http://www.w3.org/2002/07/owl#NamedIndividual": 14,
+            "http://www.w3.org/2002/07/owl#Class": 4
+          },
+          "api_resource_count": 40,
+          "ui_unfiltered_node_count": 18,
+          "api_relation_count": 10,
+          "ui_relation_count": 10,
+          "content_hash_check": {
+            "ontology_id": "c42dcd00-b666-4447-99e7-3b11f9c02841",
+            "model_revision": 2,
+            "sha256": "ae0f7c6e50b59b238683da5e713eefb02535e951547cb3aa6f16b41ac096f843",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/two-slice-service-20261031-start2",
+          "run_id": "v5-two-slice-service-20261031-start2",
+          "independent_reports": [],
+          "objective_excerpt": "完整建模获准售后安装验收与返修履约两个业务切片；保持共享身份、跨切片约束、指标口径、例外、范围及真实未知。维护可接续业务理解，实际应用后检查完整表达，独立验收另行进行。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/two-slice-service-20261031-start2/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "1ca99659-d874-4223-aec0-414a88e65a0e",
+      "project_name": "R2.3 team v5-two-slice-service-20261031-start3",
+      "category": "business-scenario-run",
+      "ui_nodes": 17,
+      "ui_edges": 0,
+      "api_resource_count": 27,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "c63bc6ce-4fde-46e1-8dc8-8f748b0a592b",
+          "revision": 2,
+          "rdf_triples": 195,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 17,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 10
+          },
+          "api_resource_count": 27,
+          "ui_unfiltered_node_count": 17,
+          "api_relation_count": 20,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "c63bc6ce-4fde-46e1-8dc8-8f748b0a592b",
+            "model_revision": 2,
+            "sha256": "6ad3ac360122483fb778cf7f62d6456ce6f37313487e0c34ce962e585d9c2411",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/two-slice-service-20261031-start3",
+          "run_id": "v5-two-slice-service-20261031-start3",
+          "independent_reports": [
+            {
+              "id": "cold3-v1-18",
+              "verdict": "PASS",
+              "passed": 18,
+              "total": 18,
+              "model_revisions": {
+                "c63bc6ce-4fde-46e1-8dc8-8f748b0a592b": 2
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "完整建模获准售后安装验收与返修履约两个业务切片；保持共享身份、跨切片约束、指标口径、例外、范围及真实未知。维护可接续业务理解，实际应用后检查完整表达，独立验收另行进行。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/two-slice-service-20261031-start3/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "aa57198c-ffee-4396-824d-15c54b7e0d0f",
+      "project_name": "R2.3 team v5-llm-access-lab-20261031-start1",
+      "category": "business-scenario-run",
+      "ui_nodes": 13,
+      "ui_edges": 4,
+      "api_resource_count": 19,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "51a06c92-f0ac-4638-8e88-b2d1971437e1",
+          "revision": 3,
+          "rdf_triples": 183,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 5,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 6,
+            "http://ontology-platform.local/semantic/vocab/JoinMapping": 4,
+            "http://ontology-platform.local/semantic/vocab/TableMapping": 4
+          },
+          "api_resource_count": 19,
+          "ui_unfiltered_node_count": 13,
+          "api_relation_count": 20,
+          "ui_relation_count": 4,
+          "content_hash_check": {
+            "ontology_id": "51a06c92-f0ac-4638-8e88-b2d1971437e1",
+            "model_revision": 3,
+            "sha256": "73500d8ca39640a9a0566617d7e962adcaf58408b883df6a535c4c9c9cf48933",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/llm-access-lab-20261031-start1",
+          "run_id": "v5-llm-access-lab-20261031-start1",
+          "independent_reports": [
+            {
+              "id": "v1-full-20",
+              "verdict": "PASS",
+              "passed": 20,
+              "total": 20,
+              "model_revisions": {
+                "51a06c92-f0ac-4638-8e88-b2d1971437e1": 3
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "完整建模模型访问与次数额度管理两个关联业务切片，忠实表达获准材料的概念、关系、条件、例外、范围与必要的外部数据映射；业务行保留外部，实际应用后读回检查。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/llm-access-lab-20261031-start1/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "5a3aaa52-13a1-4035-81fe-419db2f027d6",
+      "project_name": "R2.3 team v5-llm-access-lab-20261031-start2",
+      "category": "business-scenario-run",
+      "ui_nodes": 5,
+      "ui_edges": 0,
+      "api_resource_count": 5,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "9ca35272-d3b1-41a6-869e-a024ad00deb4",
+          "revision": 1,
+          "rdf_triples": 25,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#Class": 5
+          },
+          "api_resource_count": 5,
+          "ui_unfiltered_node_count": 5,
+          "api_relation_count": 0,
+          "ui_relation_count": 0,
+          "content_hash_check": {
+            "ontology_id": "9ca35272-d3b1-41a6-869e-a024ad00deb4",
+            "model_revision": 1,
+            "sha256": "63a84e7bc8861d0277962465b15b0c572966ac62413cbf07c3200ab764a542e5",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/llm-access-lab-20261031-start2",
+          "run_id": "v5-llm-access-lab-20261031-start2",
+          "independent_reports": [],
+          "objective_excerpt": "完整建模模型访问与次数额度管理两个关联业务切片，忠实表达获准材料的概念、关系、条件、例外、范围与必要的外部数据映射；业务行保留外部，实际应用后读回检查。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/llm-access-lab-20261031-start2/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "40841ac8-1c93-4cb1-85ba-1a9e8fb7928b",
+      "project_name": "R2.3 team v5-llm-access-lab-20261031-start3",
+      "category": "business-scenario-run",
+      "ui_nodes": 11,
+      "ui_edges": 4,
+      "api_resource_count": 14,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "755f1e0e-cf5d-47f2-a2a3-95220f4cba96",
+          "revision": 4,
+          "rdf_triples": 126,
+          "rdf_types": {
+            "http://ontology-platform.local/semantic/vocab/TableMapping": 4,
+            "http://ontology-platform.local/semantic/vocab/JoinMapping": 3,
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 3,
+            "http://www.w3.org/2002/07/owl#Class": 4
+          },
+          "api_resource_count": 14,
+          "ui_unfiltered_node_count": 11,
+          "api_relation_count": 13,
+          "ui_relation_count": 4,
+          "content_hash_check": {
+            "ontology_id": "755f1e0e-cf5d-47f2-a2a3-95220f4cba96",
+            "model_revision": 4,
+            "sha256": "84f8c969ae75542c4f722eba1ecbb6ea72145451f52c61969b64ec3d7f587c42",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/demo-cq-live-20261101",
+          "run_id": "v5-demo-cq-live-20261101",
+          "independent_reports": [
+            {
+              "id": "demo-nine-cq-20261101",
+              "verdict": "PARTIAL",
+              "passed": 0,
+              "total": 9,
+              "model_revisions": {
+                "755f1e0e-cf5d-47f2-a2a3-95220f4cba96": 4
+              },
+              "scope": {
+                "scope_id": "demo-nine-cq-20261101",
+                "base_freeze_id": "v5-llm-access-v2-incremental-30-20261101"
+              }
+            }
+          ],
+          "objective_excerpt": "在 Demo 既有实际模型上消费当前选用的项目 CQ，按获准 v2 原文核对每题的语义与映射覆盖，按需修订，保持全业务范围及资源身份；记录 CQ 覆盖、依据及未知，不把题干或 draft 标准当已确认事实。新 CQ 分批到达时沿来源变化与同一检查点接续。模型已忠实覆盖时可 no_change，仍执行真实治理读回。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/demo-cq-live-20261101/binding.json:objective"
+        },
+        {
+          "root": "workspaces/v5-runs/llm-access-lab-20261031-start3",
+          "run_id": "v5-llm-access-lab-20261031-start3",
+          "independent_reports": [
+            {
+              "id": "cold3-full-20",
+              "verdict": "PASS",
+              "passed": 20,
+              "total": 20,
+              "model_revisions": {
+                "755f1e0e-cf5d-47f2-a2a3-95220f4cba96": 3
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "完整建模模型访问与次数额度管理两个关联业务切片，忠实表达获准材料的概念、关系、条件、例外、范围与必要的外部数据映射；业务行保留外部，实际应用后读回检查。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/llm-access-lab-20261031-start3/binding.json:objective"
+        },
+        {
+          "root": "workspaces/v5-runs/llm-access-v2-20261101-existing",
+          "run_id": "v5-llm-access-v2-20261101-existing",
+          "independent_reports": [
+            {
+              "id": "existing-v2-full-30",
+              "verdict": "PASS",
+              "passed": 30,
+              "total": 30,
+              "model_revisions": {
+                "755f1e0e-cf5d-47f2-a2a3-95220f4cba96": 4
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "在原项目与原本体的实际既有模型上，根据 v2 业务来源完成每模型可配置扣额单位的增量建模；忠实更新受影响语义与必要字段映射、保留原有身份及未变规则，实际应用后治理读回检查完整两个切片。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/llm-access-v2-20261101-existing/binding.json:objective"
+        }
+      ]
+    },
+    {
+      "project_id": "596fa5ee-7b05-4e21-9cb6-a1296408d03c",
+      "project_name": "R2.3 team v5-llm-access-v2-20261101-fresh",
+      "category": "business-scenario-run",
+      "ui_nodes": 10,
+      "ui_edges": 3,
+      "api_resource_count": 13,
+      "ui_nodes_and_edges_are_projected": true,
+      "ontologies": [
+        {
+          "ontology_id": "16eb3be0-e002-4756-a93c-8e298ee08992",
+          "revision": 3,
+          "rdf_triples": 118,
+          "rdf_types": {
+            "http://www.w3.org/2002/07/owl#ObjectProperty": 3,
+            "http://ontology-platform.local/semantic/vocab/JoinMapping": 3,
+            "http://www.w3.org/2002/07/owl#Class": 3,
+            "http://ontology-platform.local/semantic/vocab/TableMapping": 4
+          },
+          "api_resource_count": 13,
+          "ui_unfiltered_node_count": 10,
+          "api_relation_count": 13,
+          "ui_relation_count": 3,
+          "content_hash_check": {
+            "ontology_id": "16eb3be0-e002-4756-a93c-8e298ee08992",
+            "model_revision": 3,
+            "sha256": "33611f14d01b68eabcb86c96651aedf02b85c0b4159fdca44741411760b80e80",
+            "matches_before_legacy_cleanup": true
+          }
+        }
+      ],
+      "task_scopes": [
+        {
+          "root": "workspaces/v5-runs/llm-access-v2-20261101-fresh",
+          "run_id": "v5-llm-access-v2-20261101-fresh",
+          "independent_reports": [
+            {
+              "id": "fresh-v2-full-29",
+              "verdict": "PASS",
+              "passed": 29,
+              "total": 29,
+              "model_revisions": {
+                "16eb3be0-e002-4756-a93c-8e298ee08992": 3
+              },
+              "scope": null
+            }
+          ],
+          "objective_excerpt": "从获准 v2 来源完整建模模型访问与调用单位额度两个关联切片，含每模型可配置扣额单位、当前／历史扣额和回放例外及完整外部表／连接映射；在新项目空本体中按实际业务含义建模，业务行留在外部，应用后治理读回检查。",
+          "objective_excerpt_truncated": false,
+          "objective_source": "workspaces/v5-runs/llm-access-v2-20261101-fresh/binding.json:objective"
+        }
+      ]
+    }
+  ]
+}
