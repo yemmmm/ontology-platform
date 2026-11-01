@@ -1,0 +1,167 @@
+{
+  "generated_at": "2026-11-01T01:48:43.903831+00:00",
+  "model_revision": 4,
+  "model_details_sha256": "b6be99310976e6d787116170eb2a2afc62bfc4dbbd7ed8f869966436611f2811",
+  "host_background_known": true,
+  "grounding": "Actual governed model only for SQL construction; SQL frozen before physical database/API inspection. Host must separately bind the approved Demo SQLite source; no DSN inferred from source_key.",
+  "evidence_refs": {
+    "C_MODEL": "http://ontology-platform.local/semantic/class/4e87c5be-62fd-5e00-a216-c62e37da2052",
+    "C_KEY": "http://ontology-platform.local/semantic/class/e79de195-67f4-5ca1-b9de-cbace0be32ee",
+    "C_CALL": "http://ontology-platform.local/semantic/class/af455fda-2113-5d45-a76a-6d7b1dfc4c1d",
+    "T_MODELS": "http://ontology-platform.local/semantic/table-mapping/5a018a19-db77-53de-ba24-2e24cb223b7e",
+    "T_KEYS": "http://ontology-platform.local/semantic/table-mapping/630547bc-5971-58dd-8776-444c57a1d923",
+    "T_GRANTS": "http://ontology-platform.local/semantic/table-mapping/ac069ce4-7c62-5fcc-ab2d-2bc0a19a2158",
+    "T_CALLS": "http://ontology-platform.local/semantic/table-mapping/9fe8ad21-2c25-5194-8af3-99875b48681b",
+    "J_GRANTS": "http://ontology-platform.local/semantic/join-mapping/26637a4e-842a-5888-bdf1-186611c82229",
+    "J_KEY_CALLS": "http://ontology-platform.local/semantic/join-mapping/95a93da0-cf35-5a26-a3c3-caf0c51add97",
+    "J_CALL_MODELS": "http://ontology-platform.local/semantic/join-mapping/d9875eff-c963-5730-b706-2afb1bd49ba4"
+  },
+  "questions": [
+    {
+      "id": "Q1",
+      "question": "各模型成功新调用次数、历史实际扣额总量和平均扣额是多少？包含暂无调用的模型。",
+      "model_information_status": "SUPPORTED",
+      "finding": "支持：calls 的成功记录粒度、历史 charged_units 和模型关联足以定义计数／求和／算术平均；零调用的平均值为 NULL。",
+      "evidence_refs": [
+        "C_CALL",
+        "T_MODELS",
+        "T_CALLS",
+        "J_CALL_MODELS"
+      ],
+      "sql": "SELECT m.id AS model_id, m.name AS model_name,\n       COUNT(c.id) AS successful_new_calls,\n       COALESCE(SUM(c.charged_units), 0) AS historical_charged_units,\n       AVG(c.charged_units) AS average_charged_units\nFROM models AS m\nLEFT JOIN calls AS c ON c.model_id = m.id\nGROUP BY m.id, m.name\nORDER BY m.id;",
+      "parameters": {}
+    },
+    {
+      "id": "Q2",
+      "question": "每个凭证授权了多少个模型、成功调用多少次、实际扣额多少、当前余额多少？包含零调用凭证。",
+      "model_information_status": "SUPPORTED",
+      "finding": "支持：分别按 key_id 预聚合 model_grants 与 calls，再与 api_keys 左连接，避免两条一对多关系相乘。remaining_quota 只显示余额，不当作可调用次数。",
+      "evidence_refs": [
+        "C_KEY",
+        "C_CALL",
+        "T_KEYS",
+        "T_GRANTS",
+        "T_CALLS",
+        "J_GRANTS",
+        "J_KEY_CALLS"
+      ],
+      "sql": "WITH grant_totals AS (\n    SELECT key_id, COUNT(*) AS authorized_models\n    FROM model_grants\n    GROUP BY key_id\n), call_totals AS (\n    SELECT key_id, COUNT(*) AS successful_new_calls,\n           SUM(charged_units) AS historical_charged_units\n    FROM calls\n    GROUP BY key_id\n)\nSELECT k.id AS key_id, k.name AS key_name,\n       COALESCE(g.authorized_models, 0) AS authorized_models,\n       COALESCE(c.successful_new_calls, 0) AS successful_new_calls,\n       COALESCE(c.historical_charged_units, 0) AS historical_charged_units,\n       k.remaining_quota\nFROM api_keys AS k\nLEFT JOIN grant_totals AS g ON g.key_id = k.id\nLEFT JOIN call_totals AS c ON c.key_id = k.id\nORDER BY k.id;",
+      "parameters": {}
+    },
+    {
+      "id": "Q3",
+      "question": "按凭证状态、授权、模型状态和额度条件，哪些凭证—模型组合满足一次新调用的准入条件？",
+      "model_information_status": "CONDITIONAL",
+      "finding": "条件支持：模型给出了完整准入业务条件、列与连接；models.enabled 明确 1=启用，但 api_keys.enabled 未声明启用编码，保留 key_enabled_value 参数，不能从另一列复制编码。",
+      "evidence_refs": [
+        "C_MODEL",
+        "C_KEY",
+        "C_CALL",
+        "T_MODELS",
+        "T_KEYS",
+        "T_GRANTS",
+        "J_GRANTS"
+      ],
+      "sql": "SELECT k.id AS key_id, k.name AS key_name,\n       m.id AS model_id, m.name AS model_name,\n       k.remaining_quota, m.quota_cost,\n       k.remaining_quota - m.quota_cost AS quota_after_one_new_call\nFROM api_keys AS k\nJOIN model_grants AS g ON g.key_id = k.id\nJOIN models AS m ON m.id = g.model_id\nWHERE k.enabled = :key_enabled_value\n  AND m.enabled = 1\n  AND k.remaining_quota >= m.quota_cost\nORDER BY k.id, m.id;",
+      "parameters": {
+        "key_enabled_value": {
+          "status": "requires_external_encoding_confirmation",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "Q4",
+      "question": "哪些启用凭证还有正余额，却不足以调用其已授权且启用的模型？",
+      "model_information_status": "CONDITIONAL",
+      "finding": "条件支持：当前 cost 与正余额不足判据明确；同 Q3，凭证启用编码需额外确认。",
+      "evidence_refs": [
+        "C_MODEL",
+        "C_KEY",
+        "C_CALL",
+        "T_MODELS",
+        "T_KEYS",
+        "T_GRANTS",
+        "J_GRANTS"
+      ],
+      "sql": "SELECT k.id AS key_id, k.name AS key_name,\n       m.id AS model_id, m.name AS model_name,\n       k.remaining_quota, m.quota_cost,\n       m.quota_cost - k.remaining_quota AS missing_units\nFROM api_keys AS k\nJOIN model_grants AS g ON g.key_id = k.id\nJOIN models AS m ON m.id = g.model_id\nWHERE k.enabled = :key_enabled_value\n  AND m.enabled = 1\n  AND k.remaining_quota > 0\n  AND k.remaining_quota < m.quota_cost\nORDER BY k.id, m.id;",
+      "parameters": {
+        "key_enabled_value": {
+          "status": "requires_external_encoding_confirmation",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "Q5",
+      "question": "哪些模型存在历史实际扣额与当前扣额配置不同的成功调用？有多少次、实际扣额合计多少？",
+      "model_information_status": "SUPPORTED",
+      "finding": "支持：比较历史 calls.charged_units 与 models.quota_cost，不按当前费用重算历史；差异不等于可推算调价事件时间。",
+      "evidence_refs": [
+        "C_MODEL",
+        "C_CALL",
+        "T_MODELS",
+        "T_CALLS",
+        "J_CALL_MODELS"
+      ],
+      "sql": "SELECT m.id AS model_id, m.name AS model_name,\n       m.quota_cost AS current_quota_cost,\n       COUNT(c.id) AS calls_with_different_historical_charge,\n       SUM(c.charged_units) AS historical_charged_units\nFROM models AS m\nJOIN calls AS c ON c.model_id = m.id\nWHERE c.charged_units <> m.quota_cost\nGROUP BY m.id, m.name, m.quota_cost\nORDER BY m.id;",
+      "parameters": {}
+    },
+    {
+      "id": "Q6",
+      "question": "哪些请求标识曾被两个或更多不同凭证成功使用？",
+      "model_information_status": "SUPPORTED",
+      "finding": "支持：请求标识只在单凭证内去重，按 request_id 分组并 count(distinct key_id)，不把 request_id 当全局主键。",
+      "evidence_refs": [
+        "C_CALL",
+        "T_CALLS"
+      ],
+      "sql": "SELECT request_id, COUNT(DISTINCT key_id) AS credential_count,\n       COUNT(*) AS successful_records\nFROM calls\nGROUP BY request_id\nHAVING COUNT(DISTINCT key_id) >= 2\nORDER BY request_id;",
+      "parameters": {}
+    },
+    {
+      "id": "Q7",
+      "question": "2026-10-31 UTC 当天各模型成功新调用次数与实际扣额总量是多少？",
+      "model_information_status": "CONDITIONAL",
+      "finding": "条件支持：有 created_at 字段和成功记录粒度，但模型明确时区／格式未知，不能确定 UTC 日边界与转换；不输出可执行 SQL。",
+      "evidence_refs": [
+        "T_CALLS",
+        "C_CALL",
+        "T_MODELS",
+        "J_CALL_MODELS"
+      ],
+      "sql": null,
+      "parameters": {}
+    },
+    {
+      "id": "Q8",
+      "question": "各模型今天被拒绝和历史回放的次数分别是多少？",
+      "model_information_status": "UNSUPPORTED",
+      "finding": "不支持：模型只映射成功记录，拒绝不产生成功行，回放返回旧记录；没有可统计拒绝／回放事件次数的映射，不能以缺行推断事件次数为零。",
+      "evidence_refs": [
+        "C_CALL",
+        "T_CALLS"
+      ],
+      "sql": null,
+      "parameters": {}
+    },
+    {
+      "id": "Q9",
+      "question": "各模型最近一次调整扣额单位的时间、调整前后数值和操作人是什么？",
+      "model_information_status": "UNSUPPORTED",
+      "finding": "不支持：只有当前 quota_cost 和调用时实际扣额，没有调价事件的时间／前后值／操作人映射；不能用调用时间代替调价时间。",
+      "evidence_refs": [
+        "C_MODEL",
+        "T_MODELS",
+        "T_CALLS"
+      ],
+      "sql": null,
+      "parameters": {}
+    }
+  ],
+  "additional_findings": [
+    "api_keys.remaining_quota retains the older source_unit 次（调用次数） although CallRecord and Model describe variable debit units. Use the explicit per-new-call cost rule; do not interpret balance as remaining invocation count.",
+    "source_key is separately models/api_keys/model_grants/calls, schema_version is null, and schema_source still names @2112c3e although quota_cost was added later. This audit uses an explicit approved single-SQLite binding; automatic source/version resolution is not demonstrated.",
+    "Some prose unknowns say cardinality is undeclared while JoinMapping.step_semantics gives one_to_many/many_to_one. This inconsistency should be reviewed; this SQL uses mapped keys, exact join pairs and preaggregation rather than inventing business multiplicities."
+  ]
+}

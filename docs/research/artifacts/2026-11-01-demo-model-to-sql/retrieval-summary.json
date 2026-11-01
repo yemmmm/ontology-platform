@@ -1,0 +1,200 @@
+{
+  "observed_at": "2026-11-01T01:56:59.207279+00:00",
+  "model_revision": 4,
+  "query_profile": {
+    "search_mode": "lexical",
+    "expansion_strategy": "fixed",
+    "context_order": "graph_distance",
+    "depth": 2,
+    "context_detail": "full"
+  },
+  "metadata_boundary": "complete means requested-depth/authorized retrieval completeness, not business or SQL answerability. Primary plus related resource.data are checked; do not mistake absent literal-fact duplicates for absent structured resource fields.",
+  "questions": [
+    {
+      "id": "Q1",
+      "result_status": "matched",
+      "primary_matches": 10,
+      "related_context": 69,
+      "truncated": false,
+      "match_cursor": null,
+      "context_cursor": null,
+      "missing_initial_resource_details": [],
+      "expansion_status": "complete",
+      "completeness_scope": "requested_depth",
+      "primary_ranking_status": "applied",
+      "source_file": "retrieval/Q1-natural-fixed.json"
+    },
+    {
+      "id": "Q2",
+      "result_status": "matched",
+      "primary_matches": 24,
+      "related_context": 67,
+      "truncated": false,
+      "match_cursor": null,
+      "context_cursor": null,
+      "missing_initial_resource_details": [],
+      "expansion_status": "complete",
+      "completeness_scope": "requested_depth",
+      "primary_ranking_status": "applied",
+      "source_file": "retrieval/Q2-natural-fixed.json"
+    },
+    {
+      "id": "Q3",
+      "result_status": "matched",
+      "primary_matches": 4,
+      "related_context": 35,
+      "truncated": false,
+      "match_cursor": null,
+      "context_cursor": null,
+      "missing_initial_resource_details": [
+        "C_KEY",
+        "T_KEYS",
+        "T_GRANTS"
+      ],
+      "expansion_status": "complete",
+      "completeness_scope": "requested_depth",
+      "primary_ranking_status": "applied",
+      "source_file": "retrieval/Q3-natural-fixed.json"
+    },
+    {
+      "id": "Q4",
+      "result_status": "matched",
+      "primary_matches": 8,
+      "related_context": 61,
+      "truncated": false,
+      "match_cursor": null,
+      "context_cursor": null,
+      "missing_initial_resource_details": [],
+      "expansion_status": "complete",
+      "completeness_scope": "requested_depth",
+      "primary_ranking_status": "applied",
+      "source_file": "retrieval/Q4-natural-fixed.json"
+    },
+    {
+      "id": "Q5",
+      "result_status": "matched",
+      "primary_matches": 5,
+      "related_context": 58,
+      "truncated": false,
+      "match_cursor": null,
+      "context_cursor": null,
+      "missing_initial_resource_details": [],
+      "expansion_status": "complete",
+      "completeness_scope": "requested_depth",
+      "primary_ranking_status": "applied",
+      "source_file": "retrieval/Q5-natural-fixed.json"
+    },
+    {
+      "id": "Q6",
+      "result_status": "matched",
+      "primary_matches": 8,
+      "related_context": 53,
+      "truncated": false,
+      "match_cursor": null,
+      "context_cursor": null,
+      "missing_initial_resource_details": [],
+      "expansion_status": "complete",
+      "completeness_scope": "requested_depth",
+      "primary_ranking_status": "applied",
+      "source_file": "retrieval/Q6-natural-fixed.json"
+    },
+    {
+      "id": "Q7",
+      "result_status": "matched",
+      "primary_matches": 6,
+      "related_context": 64,
+      "truncated": false,
+      "match_cursor": null,
+      "context_cursor": null,
+      "missing_initial_resource_details": [],
+      "expansion_status": "complete",
+      "completeness_scope": "requested_depth",
+      "primary_ranking_status": "applied",
+      "source_file": "retrieval/Q7-natural-fixed.json"
+    },
+    {
+      "id": "Q8",
+      "result_status": "matched",
+      "primary_matches": 5,
+      "related_context": 58,
+      "truncated": false,
+      "match_cursor": null,
+      "context_cursor": null,
+      "missing_initial_resource_details": [],
+      "expansion_status": "complete",
+      "completeness_scope": "requested_depth",
+      "primary_ranking_status": "applied",
+      "source_file": "retrieval/Q8-natural-fixed.json"
+    },
+    {
+      "id": "Q9",
+      "result_status": "matched",
+      "primary_matches": 8,
+      "related_context": 55,
+      "truncated": false,
+      "match_cursor": null,
+      "context_cursor": null,
+      "missing_initial_resource_details": [],
+      "expansion_status": "complete",
+      "completeness_scope": "requested_depth",
+      "primary_ranking_status": "applied",
+      "source_file": "retrieval/Q9-natural-fixed.json"
+    }
+  ],
+  "initial_default_adaptive_observations": [
+    {
+      "name": "Q1-keywords",
+      "expansion_status": "partial",
+      "stop_reasons": [
+        "scoring_unavailable"
+      ],
+      "elapsed_seconds": 25.92605,
+      "context_ranking_status": "degraded"
+    },
+    {
+      "name": "Q1-natural",
+      "expansion_status": "partial",
+      "stop_reasons": [
+        "scoring_unavailable"
+      ],
+      "elapsed_seconds": 23.816659,
+      "context_ranking_status": "degraded"
+    },
+    {
+      "name": "Q2-keywords",
+      "expansion_status": "partial",
+      "stop_reasons": [
+        "scoring_unavailable"
+      ],
+      "elapsed_seconds": 25.553694,
+      "context_ranking_status": "degraded"
+    },
+    {
+      "name": "Q2-natural",
+      "expansion_status": "partial",
+      "stop_reasons": [
+        "scoring_unavailable"
+      ],
+      "elapsed_seconds": 24.82978,
+      "context_ranking_status": "degraded"
+    },
+    {
+      "name": "Q3-keywords",
+      "expansion_status": "partial",
+      "stop_reasons": [
+        "scoring_unavailable"
+      ],
+      "elapsed_seconds": 25.675902,
+      "context_ranking_status": "degraded"
+    },
+    {
+      "name": "Q3-natural",
+      "expansion_status": "partial",
+      "stop_reasons": [
+        "scoring_unavailable"
+      ],
+      "elapsed_seconds": 24.104182,
+      "context_ranking_status": "degraded"
+    }
+  ]
+}

@@ -1,0 +1,167 @@
+{
+  "observed_at": "2026-11-01T01:51:12.628846+00:00",
+  "fixture_kind": "Copy of the existing Demo v2 oracle plus explicit API-created edge cases; original read-only and unchanged.",
+  "original_source_sha256": "be3628e92ec8fd229532f2c28c15fbcd444af4c698d70106cc2e5c9823611473",
+  "model_revision": 4,
+  "business_data_counts": {
+    "models": 4,
+    "keys": 9,
+    "calls": 8
+  },
+  "physical_encoding_validation": {
+    "api_keys.enabled": {
+      "disabled": 0,
+      "enabled": 1
+    },
+    "scope": "Extra actual Demo API and SQLite observation after SQL freeze; not supplied by the model."
+  },
+  "actual_admission_probes": [
+    {
+      "key_name": "SQL-unspent",
+      "model_id": "fast-lab",
+      "http_status": 200,
+      "sql_predicted_eligible": true,
+      "matches_actual_call_admission": true
+    },
+    {
+      "key_name": "SQL-unspent",
+      "model_id": "deep-lab",
+      "http_status": 200,
+      "sql_predicted_eligible": true,
+      "matches_actual_call_admission": true
+    },
+    {
+      "key_name": "SQL-unspent",
+      "model_id": "cost-lab",
+      "http_status": 409,
+      "sql_predicted_eligible": false,
+      "matches_actual_call_admission": true
+    },
+    {
+      "key_name": "SQL-low",
+      "model_id": "fast-lab",
+      "http_status": 200,
+      "sql_predicted_eligible": true,
+      "matches_actual_call_admission": true
+    },
+    {
+      "key_name": "SQL-low",
+      "model_id": "deep-lab",
+      "http_status": 429,
+      "sql_predicted_eligible": false,
+      "matches_actual_call_admission": true
+    },
+    {
+      "key_name": "SQL-zero",
+      "model_id": "fast-lab",
+      "http_status": 429,
+      "sql_predicted_eligible": false,
+      "matches_actual_call_admission": true
+    },
+    {
+      "key_name": "SQL-disabled",
+      "model_id": "fast-lab",
+      "http_status": 403,
+      "sql_predicted_eligible": false,
+      "matches_actual_call_admission": true
+    }
+  ],
+  "all_executable_sql_match_api": true,
+  "no_model_write": true,
+  "parameterized_queries_remain_conditional_in_model_assessment": true,
+  "queries": [
+    {
+      "id": "Q1",
+      "model_information_status": "SUPPORTED",
+      "parameters_from_extra_physical_validation": {},
+      "row_count": 4,
+      "matches_api_observation": true
+    },
+    {
+      "id": "Q2",
+      "model_information_status": "SUPPORTED",
+      "parameters_from_extra_physical_validation": {},
+      "row_count": 9,
+      "matches_api_observation": true
+    },
+    {
+      "id": "Q3",
+      "model_information_status": "CONDITIONAL",
+      "parameters_from_extra_physical_validation": {
+        "key_enabled_value": 1
+      },
+      "row_count": 3,
+      "matches_api_observation": true
+    },
+    {
+      "id": "Q4",
+      "model_information_status": "CONDITIONAL",
+      "parameters_from_extra_physical_validation": {
+        "key_enabled_value": 1
+      },
+      "row_count": 2,
+      "matches_api_observation": true
+    },
+    {
+      "id": "Q5",
+      "model_information_status": "SUPPORTED",
+      "parameters_from_extra_physical_validation": {},
+      "row_count": 2,
+      "matches_api_observation": true
+    },
+    {
+      "id": "Q6",
+      "model_information_status": "SUPPORTED",
+      "parameters_from_extra_physical_validation": {},
+      "row_count": 1,
+      "matches_api_observation": true
+    }
+  ],
+  "naive_join_wrong_credentials": [
+    {
+      "key_name": "application-C",
+      "naive_authorized_models": 4,
+      "naive_successful_calls": 4,
+      "correct": {
+        "authorized_models": 2,
+        "successful_calls": 2,
+        "charged_units": 4
+      }
+    },
+    {
+      "key_name": "application-A",
+      "naive_authorized_models": 4,
+      "naive_successful_calls": 4,
+      "correct": {
+        "authorized_models": 2,
+        "successful_calls": 2,
+        "charged_units": 2
+      }
+    },
+    {
+      "key_name": "application-D",
+      "naive_authorized_models": 2,
+      "naive_successful_calls": 2,
+      "correct": {
+        "authorized_models": 1,
+        "successful_calls": 2,
+        "charged_units": 4
+      }
+    }
+  ],
+  "negative_observations": {
+    "Q8": {
+      "observed_replay_count": 1,
+      "observed_rejection_count": 1,
+      "success_rows_after_each_event": [
+        8,
+        8,
+        8
+      ],
+      "naive_zero_charge_rows": 0
+    },
+    "Q9": {
+      "two_config_operations_same_final_business_state": true
+    }
+  }
+}
