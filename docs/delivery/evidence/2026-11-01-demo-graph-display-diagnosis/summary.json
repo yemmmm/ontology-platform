@@ -1,0 +1,124 @@
+{
+  "date": "2026-11-01",
+  "mode": "read-only diagnosis; deterministic frontend projection, not authenticated browser rendering test",
+  "current_model_revision": 4,
+  "model_hash_unchanged_verified_after_cleanup": "84f8c969ae75542c4f722eba1ecbb6ea72145451f52c61969b64ec3d7f587c42",
+  "actual_resource_count": 14,
+  "hidden_predicate_definitions": [
+    "issued call",
+    "call of model",
+    "granted access to"
+  ],
+  "projected_node_count": 11,
+  "api_relation_count": 13,
+  "projected_edge_count": 4,
+  "filtered_record_count": 9,
+  "filtered_predicate_counts": {
+    "http://ontology-platform.local/semantic/vocab/mappedRelationType": 3,
+    "http://www.w3.org/2000/01/rdf-schema#domain": 3,
+    "http://www.w3.org/2000/01/rdf-schema#range": 3
+  },
+  "components": [
+    [
+      "ApiKey",
+      "调用凭证表映射（api_keys → ApiKey）"
+    ],
+    [
+      "CallRecord",
+      "成功调用记录表映射（calls → CallRecord）"
+    ],
+    [
+      "Model",
+      "模型目录表映射（models → Model）"
+    ],
+    [
+      "ModelGrant",
+      "模型授权表映射（model_grants → ModelGrant）"
+    ],
+    [
+      "凭证到其成功调用记录（api_keys ↔ calls）"
+    ],
+    [
+      "凭证经授权到模型（api_keys ↔ model_grants ↔ models）"
+    ],
+    [
+      "调用记录到其当时调用的模型（calls ↔ models）"
+    ]
+  ],
+  "filtered_records": [
+    {
+      "source": "凭证经授权到模型（api_keys ↔ model_grants ↔ models）",
+      "predicate": "http://ontology-platform.local/semantic/vocab/mappedRelationType",
+      "target": "granted access to"
+    },
+    {
+      "source": "凭证到其成功调用记录（api_keys ↔ calls）",
+      "predicate": "http://ontology-platform.local/semantic/vocab/mappedRelationType",
+      "target": "issued call"
+    },
+    {
+      "source": "调用记录到其当时调用的模型（calls ↔ models）",
+      "predicate": "http://ontology-platform.local/semantic/vocab/mappedRelationType",
+      "target": "call of model"
+    },
+    {
+      "source": "issued call",
+      "predicate": "http://www.w3.org/2000/01/rdf-schema#domain",
+      "target": "ApiKey"
+    },
+    {
+      "source": "issued call",
+      "predicate": "http://www.w3.org/2000/01/rdf-schema#range",
+      "target": "CallRecord"
+    },
+    {
+      "source": "call of model",
+      "predicate": "http://www.w3.org/2000/01/rdf-schema#domain",
+      "target": "CallRecord"
+    },
+    {
+      "source": "call of model",
+      "predicate": "http://www.w3.org/2000/01/rdf-schema#range",
+      "target": "Model"
+    },
+    {
+      "source": "granted access to",
+      "predicate": "http://www.w3.org/2000/01/rdf-schema#domain",
+      "target": "ApiKey"
+    },
+    {
+      "source": "granted access to",
+      "predicate": "http://www.w3.org/2000/01/rdf-schema#range",
+      "target": "Model"
+    }
+  ],
+  "visible_edges": [
+    {
+      "source": "模型目录表映射（models → Model）",
+      "predicate": "http://ontology-platform.local/semantic/vocab/mappedClass",
+      "target": "Model"
+    },
+    {
+      "source": "调用凭证表映射（api_keys → ApiKey）",
+      "predicate": "http://ontology-platform.local/semantic/vocab/mappedClass",
+      "target": "ApiKey"
+    },
+    {
+      "source": "成功调用记录表映射（calls → CallRecord）",
+      "predicate": "http://ontology-platform.local/semantic/vocab/mappedClass",
+      "target": "CallRecord"
+    },
+    {
+      "source": "模型授权表映射（model_grants → ModelGrant）",
+      "predicate": "http://ontology-platform.local/semantic/vocab/mappedClass",
+      "target": "ModelGrant"
+    }
+  ],
+  "deployed_bundle_check": {
+    "url": "http://127.0.0.1:5173/assets/index-jZmx5MR0.js",
+    "http_status": 200,
+    "predicate_node_filter_present": true,
+    "authenticated_model_rendering_verified": false,
+    "browser_login_gate_visible": true
+  }
+}
