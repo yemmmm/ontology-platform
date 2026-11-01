@@ -1,0 +1,176 @@
+{
+  "date": "2026-11-01",
+  "scope": "Read-only diagnosis of default v5 method assembly and actual Demo frozen inputs; no code repair or semantic modeling start.",
+  "design": "2026-10-26 methodology design section 2 explicitly retains the multiview unified semantic graph and ontology-modeling method as baseline.",
+  "v4_method_path": {
+    "package": "modeling_team/agent-packages/modeling/package.yaml",
+    "required_skill": "modeling_team/skills/ontology-modeling/SKILL.md",
+    "multiview_section": "Coordinate viewpoints and shared changes",
+    "coordinator_instructions": "modeling_team/agent-packages/coordinator/instructions.md:488",
+    "runtime_skill_staging": "modeling_team/runtimes/codex.py:_initialize and start_task"
+  },
+  "v5_method_path": {
+    "assembly": "modeling_team/v5/src/ontoweave_modeling/contracts.py:modeling_instructions",
+    "semantic_contract_selection": "contract.semantic_definition = semantics.multiview_semantic_definition",
+    "method": "modeling_team/v5/instructions/modeling.md",
+    "native_execution": "modeling_team/v5/src/ontoweave_modeling/codex_agent.py:CodexAgent.start",
+    "approved_method_skill_supplied": false,
+    "ambient_skills_disabled": true,
+    "runtime_input_guard_should_be_removed": false
+  },
+  "actual_runs": [
+    {
+      "run_id": "v5-llm-access-lab-20261031-start3",
+      "binding_path": "workspaces/v5-runs/llm-access-lab-20261031-start3/binding.json",
+      "instruction_sha256": "3945d03da59d9b94061114866d7b29a8226cccb41bf4bf6a7090dd02efff96b6",
+      "frozen_technical_contract_keys": [
+        "change",
+        "candidate",
+        "request_example",
+        "relation_request_example",
+        "semantic_level",
+        "metric_definition_payload",
+        "metric_filter",
+        "semantic_definition",
+        "table_mapping_payload",
+        "join_mapping_payload",
+        "relational_mapping_structures",
+        "relational_request_example"
+      ],
+      "omitted_detailed_semantic_sections": [
+        "reusable_action_semantics",
+        "process_binding_semantics",
+        "business_rule_semantics",
+        "interface_mapping"
+      ],
+      "common_role_labels_present": true,
+      "v4_active_multiview_instructions_present": false,
+      "ontology_modeling_skill_reference_present": false,
+      "native_skill_inventory": [
+        {
+          "name": "imagegen",
+          "enabled": false
+        },
+        {
+          "name": "openai-docs",
+          "enabled": false
+        },
+        {
+          "name": "review-agent",
+          "enabled": false
+        },
+        {
+          "name": "skill-creator",
+          "enabled": false
+        },
+        {
+          "name": "skill-installer",
+          "enabled": false
+        }
+      ],
+      "ontology_modeling_skill_mounted": false
+    },
+    {
+      "run_id": "v5-llm-access-v2-20261101-existing",
+      "binding_path": "workspaces/v5-runs/llm-access-v2-20261101-existing/binding.json",
+      "instruction_sha256": "3945d03da59d9b94061114866d7b29a8226cccb41bf4bf6a7090dd02efff96b6",
+      "frozen_technical_contract_keys": [
+        "change",
+        "candidate",
+        "request_example",
+        "relation_request_example",
+        "semantic_level",
+        "metric_definition_payload",
+        "metric_filter",
+        "semantic_definition",
+        "table_mapping_payload",
+        "join_mapping_payload",
+        "relational_mapping_structures",
+        "relational_request_example"
+      ],
+      "omitted_detailed_semantic_sections": [
+        "reusable_action_semantics",
+        "process_binding_semantics",
+        "business_rule_semantics",
+        "interface_mapping"
+      ],
+      "common_role_labels_present": true,
+      "v4_active_multiview_instructions_present": false,
+      "ontology_modeling_skill_reference_present": false,
+      "native_skill_inventory": [
+        {
+          "name": "imagegen",
+          "enabled": false
+        },
+        {
+          "name": "openai-docs",
+          "enabled": false
+        },
+        {
+          "name": "review-agent",
+          "enabled": false
+        },
+        {
+          "name": "skill-creator",
+          "enabled": false
+        },
+        {
+          "name": "skill-installer",
+          "enabled": false
+        }
+      ],
+      "ontology_modeling_skill_mounted": false
+    }
+  ],
+  "actual_demo_semantic_role_counts": {
+    "object": 2,
+    "process": 1,
+    "rule": 4,
+    "data_mapping": 7
+  },
+  "facts": [
+    "The v5 method includes generic S0-S9 and semantic-record responsibilities; it is not devoid of semantic guidance.",
+    "Role declarations and generic resource kinds still support multiple perspectives.",
+    "Detailed v4 action/process/rule/interface sections and equivalent active multiview method are absent from the actual Demo frozen input.",
+    "The v5 namespace does not stage ontology-modeling; actual native inventories show all five ambient Skills disabled.",
+    "Generic source-to-model self-check and independent evaluator instructions exist; prior factual omissions show these checks did not reliably detect gaps."
+  ],
+  "diagnosis": {
+    "first_layer": "platform-contract",
+    "change_surface": "prompt-contract and approved frozen method assembly",
+    "result_layer": "modeling-quality and independent acceptance missed defects",
+    "contribution": "Incomplete method supply allowed reliance on role labels, a small set of Class/mapping definitions and long prose without demonstrating complete multiview analysis and coverage.",
+    "causal_limit": "This identifies a concrete missing-input path and observed outcome; it does not prove one clause, GLM, low effort or quota alone caused the outcome, and does not establish any repaired-runtime PASS."
+  },
+  "history": {
+    "semantic_definition_only_selection_introduced": "c9f7171",
+    "rule_prose_fallback_added": "55851dd",
+    "qualification": "Commit locations identify history, not intent or an independently measured quality effect."
+  },
+  "repair_targets": [
+    "Supply a current-version approved method carrying multiview analysis, identity/granularity and shared-meaning responsibilities.",
+    "Supply the corresponding existing action/process/rule/interface semantic guidance.",
+    "Use existing semantic records for grounded perspective assessment and source-to-expression coverage.",
+    "Verify actual frozen/native method inputs, then independently evaluate actual model expressions.",
+    "Check exact governed read support for selected representations; the backend Operation detail family already exists."
+  ],
+  "boundaries": [
+    "Do not enable arbitrary ambient Skills or load the whole legacy Runner.",
+    "Do not require seven Agents, seven outputs or a minimum node count.",
+    "Editing current method files does not retroactively alter frozen tasks/checkpoints.",
+    "No current model, CQ, budget, hidden evaluation or platform code was modified."
+  ],
+  "native_read_model_gap": {
+    "source": "modeling_team/v5/src/ontoweave_modeling/material_tools.py:read_model_resource",
+    "allowed_families": [
+      "class-detail",
+      "entity-detail",
+      "property-list",
+      "relation-type-list",
+      "table-mapping-detail",
+      "join-mapping-detail"
+    ],
+    "existing_backend_operation_detail_exposed_by_native_tool": false,
+    "qualification": "Static allowlist gap. Context Query may still return Operation data; no new Operation or live Operation-read experiment performed."
+  }
+}
