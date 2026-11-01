@@ -194,10 +194,12 @@ def material_server(
                 "operation-detail",
                 "table-mapping-detail",
                 "join-mapping-detail",
+                "resource-relations",
             ],
         ) -> dict:
             """Expand an exact known model resource through its governed read projection.
             Use actual IRIs from recall or the frozen target; a search miss is not proof of absence.
+            resource-relations returns the authorized ontology's relation graph, not an anchor filter.
             """
             if ontology_id not in platform["ontology_ids"]:
                 raise ToolError(

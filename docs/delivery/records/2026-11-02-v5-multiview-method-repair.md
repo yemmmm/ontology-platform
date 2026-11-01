@@ -81,3 +81,32 @@ shared-contract-regression.log。开发测试不替代独立语义验收。
 在当前 R4.3-025 的 semantic_level 补明此既有边界，避免把极简概念链的 Class 示例泛化
 为所有语义定义的唯一载体。没有强制新节点数、每接口一个节点或特定 Ontology 拓扑。
 该提示澄清的冻结输入检查 17 passed，共享基线合同 9 passed；实际采用仍待后续运行验证。
+
+## 首次独立报告的证据复核
+
+独立 GLM 首次返回 35/35 PASS（multiview-full-35，revision 3）。原报告保持不变，
+但 Host 不接受它作为此次完整性结论：第 33 项用对象间关系和连接映射证明规则关联；
+实际授权 resource-relations 读取完整返回 27 条关系，六个规则定义没有入／出向边。
+第 34 项未检查全部属性，属性“凭证剩余额度”的定义仍出现旧“剩余次数额度”说法。
+这是独立报告的漏检，不能以增加题目数量证明验收更可靠。
+
+窄修复是在通用独立提示要求检查 target.resource_bindings 中相关属性与嵌套映射，
+关联判定给出实际 source／predicate／target；native 精确读取工具直接复用现有
+resource-relations 投影，保留获准范围、版本检查和完整性边界，不增加语义代码裁判。
+新的作用域／版本用例及评价流程回归 34 passed、1 条既有 warning；实际只读凭据读取
+返回 revision 3／27 关系／complete=true。原 35 项冻结标准不变，独立新上下文复查已启动。
+
+复查 native turn 正常结束，但报告 JSON 括号错位，返回可恢复
+evaluation_report_needs_correction／result_json_missing_or_ambiguous；没有发布第二份有效
+语义裁决，也没有写入生产。其原输出仍存在模糊关联的推断，不能作为首次 PASS 的复证。
+工程完整回归 **246 passed、1 条既有 warning、211.78 秒**，实际 PostgreSQL 用例无 skip。
+随后向原生产任务交接署名 host-method-contract 的原方法／表示边界澄清，复用当前
+R4.0-012 与 R4.3-025 原文，不含独立题目、私有报告或业务答案，继续原完整目标。
+本次属于同 run 的质量修订，金额账本和原失败／原 PASS 报告均保留。
+
+直接向 handoff_ready 输入被 human_input_task_closed 正常拒绝；未删除该关闭边界。
+先保存带平台数据的快照 bdae501618d749599ae2db6952639927，再调用已有
+WorkPlan.reopen("modeling")／MultiUnitFlow.initialize 重开根代次 1，原检查点进入
+round 5，随后原消息成功交接并 resume。root-quality-reentry.json 记录前后状态与
+稳定 budget_ref，没有伪造来源修订、直接改写工作状态或 fresh start。
+最后一处独立提示措辞更新由评价流程 17 项测试覆盖；完整 246 项结果适用于其余最终代码。

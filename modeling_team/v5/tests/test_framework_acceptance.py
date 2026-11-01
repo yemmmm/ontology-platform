@@ -274,6 +274,8 @@ def test_evaluation_format_retry_preserves_freeze_and_does_not_advance_productio
             assert "distinct resource IRIs" in kwargs["instructions"]
             assert "same incident" in kwargs["instructions"]
             assert "relation IRI" in kwargs["instructions"]
+            assert "source, predicate and target" in kwargs["instructions"]
+            assert "all relevant actual resources" in kwargs["instructions"]
             self.materials = kwargs["materials"]
 
         def __call__(self, root, purpose, prompt, inputs):

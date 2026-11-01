@@ -21,6 +21,8 @@
 已有 Operation 的精确读取使用 `operation-detail`；映射精确读取使用
 `table-mapping-detail`／`join-mapping-detail`，普通
 `entity-detail` 不覆盖这些资源。`model-read:<family>:<ontology_id>` 引用使用该真实 family。
+实际关系核对可使用 `resource-relations`，返回整个获准 Ontology 的关系图；它不按传入
+anchor 过滤。按返回端点核对所需关联，并保留 paging／completeness 限制。
 若读取只返回 IRI，更新还须有已核实的原生身份；可由 Host 将同 revision 平台快照中的
 显式 `v:id`／资源类型与实际应用回执交叉核对，交接到原有 `applied-bindings.json`。
 保留快照、核对及交接回执，不猜 IRI 后缀、不改候选，也不把一次人工技术交接称作
