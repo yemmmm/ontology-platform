@@ -1,0 +1,140 @@
+{
+  "schema_version": "ontoweave-custom-cq-seed/design-v1",
+  "seed_id": "llm-access.analytics",
+  "revision": 1,
+  "status": "design_only_not_imported",
+  "description": "九条公开问数回归问题及待核对标准；这是拟议导入格式，当前产品与 v5 未直接识别。",
+  "default_use": "modeling_and_regression",
+  "visibility": "public",
+  "criteria_status": "draft",
+  "source_refs": ["business.md", "../../docs/research/2026-11-01-demo-model-to-sql-readiness.md"],
+  "questions": [
+    {
+      "external_id": "llm-access.analytics.Q1",
+      "original_id": "Q1",
+      "question": "各模型成功新调用次数、历史实际扣额总量和平均扣额是多少？包含暂无调用的模型。",
+      "business_topic": "调用与额度统计",
+      "reference_answer": null,
+      "acceptance_criteria": [
+        "以成功新调用为统计粒度，区分调用尝试、历史回放与成功记录。",
+        "累计与平均使用调用发生时的实际扣额，不能使用当前费用重算历史。",
+        "保留零调用模型；明确次数与总扣额的零值、平均值无定义时的空值口径。"
+      ],
+      "required_context": ["成功记录粒度", "历史实际扣额映射", "模型与成功记录的连接关系"],
+      "validation_dimensions": ["model_answerability", "sql_readiness"]
+    },
+    {
+      "external_id": "llm-access.analytics.Q2",
+      "original_id": "Q2",
+      "question": "每个凭证授权了多少个模型、成功调用多少次、实际扣额多少、当前余额多少？包含零调用凭证。",
+      "business_topic": "凭证、授权与调用统计",
+      "reference_answer": null,
+      "acceptance_criteria": [
+        "凭证是最终结果粒度，包含零调用凭证。",
+        "分别确定授权与成功调用的粒度、唯一性和连接基数，避免两组明细连接后相互放大。",
+        "历史实际扣额与当前余额分别有依据，不能混为同一个指标。"
+      ],
+      "required_context": ["授权唯一性", "两条一对多连接", "历史扣额与当前余额的含义"],
+      "validation_dimensions": ["model_answerability", "sql_readiness"]
+    },
+    {
+      "external_id": "llm-access.analytics.Q3",
+      "original_id": "Q3",
+      "question": "按凭证状态、授权、模型状态和额度条件，哪些凭证—模型组合满足一次新调用的准入条件？",
+      "business_topic": "新调用准入",
+      "reference_answer": null,
+      "acceptance_criteria": [
+        "完整检查凭证启用、已有授权、模型启用和余额不低于当前单次费用四项条件。",
+        "所需状态编码必须有模型或明确获准的绑定依据，不能从另一个字段的编码推断。",
+        "查询表达当前快照的准入资格；实际调用仍需要原子校验。"
+      ],
+      "required_context": ["四项准入条件", "各状态字段编码", "当前费用与余额单位", "授权连接"],
+      "validation_dimensions": ["model_answerability", "sql_readiness"]
+    },
+    {
+      "external_id": "llm-access.analytics.Q4",
+      "original_id": "Q4",
+      "question": "哪些启用凭证还有正余额，却不足以调用其已授权且启用的模型？",
+      "business_topic": "额度不足",
+      "reference_answer": null,
+      "acceptance_criteria": [
+        "完整保留凭证启用、授权和模型启用条件。",
+        "同时比较余额大于零且小于该模型当前单次费用，单位一致。",
+        "状态编码不足时报告条件缺口，不猜测可执行过滤值。"
+      ],
+      "required_context": ["状态编码", "授权连接", "余额与当前费用的单位及比较规则"],
+      "validation_dimensions": ["model_answerability", "sql_readiness"]
+    },
+    {
+      "external_id": "llm-access.analytics.Q5",
+      "original_id": "Q5",
+      "question": "哪些模型存在历史实际扣额与当前扣额配置不同的成功调用？有多少次、实际扣额合计多少？",
+      "business_topic": "历史扣额与当前配置",
+      "reference_answer": null,
+      "acceptance_criteria": [
+        "比较每次成功调用的历史实际扣额与模型当前配置，统计不相同的成功记录。",
+        "按模型统计次数及历史实际扣额合计，不用当前费用重算。",
+        "数值差异不能被直接解释为最近一次调价时间、调价次数或操作人。"
+      ],
+      "required_context": ["历史扣额", "当前扣额配置", "成功调用与模型的连接"],
+      "validation_dimensions": ["model_answerability", "sql_readiness"]
+    },
+    {
+      "external_id": "llm-access.analytics.Q6",
+      "original_id": "Q6",
+      "question": "哪些请求标识曾被两个或更多不同凭证成功使用？",
+      "business_topic": "请求去重范围",
+      "reference_answer": null,
+      "acceptance_criteria": [
+        "确认成功请求按凭证和请求标识组合去重，请求标识不是全局唯一。",
+        "按请求标识检查不同凭证数至少为二，不能把同凭证回放计为新的凭证或成功记录。"
+      ],
+      "required_context": ["成功请求唯一键", "凭证与请求标识映射"],
+      "validation_dimensions": ["model_answerability", "sql_readiness"]
+    },
+    {
+      "external_id": "llm-access.analytics.Q7",
+      "original_id": "Q7",
+      "question": "2026-10-31 UTC 当天各模型成功新调用次数与实际扣额总量是多少？",
+      "business_topic": "按日调用统计",
+      "reference_answer": null,
+      "acceptance_criteria": [
+        "明确对应成功记录的时间字段、时区、物理格式及所用方言的解析依据。",
+        "按 UTC 日区间处理边界，不能按服务器本地日期或未经确认的字符串比较替代。",
+        "时间语义不足时列出缺失条件，不编造 SQL 或样例结果。"
+      ],
+      "required_context": ["时间字段及含义", "时区和物理时间格式", "UTC 日期边界", "数据库方言"],
+      "validation_dimensions": ["model_answerability", "sql_readiness"]
+    },
+    {
+      "external_id": "llm-access.analytics.Q8",
+      "original_id": "Q8",
+      "question": "各模型今天被拒绝和历史回放的次数分别是多少？",
+      "business_topic": "拒绝与回放统计",
+      "reference_answer": null,
+      "acceptance_criteria": [
+        "为拒绝和回放分别取得对应事件来源、事件粒度、模型归属和时间映射。",
+        "执行前明确今天对应的日期与时区。",
+        "成功表没有新增行不能推出没有拒绝或回放；来源不足时明确能力缺口，不能返回零。",
+        "识别缺口可以证明忠实性，但不能被汇总为统计能力已经实现。"
+      ],
+      "required_context": ["拒绝事件来源", "回放事件来源", "事件与模型关系", "执行日期和时区"],
+      "validation_dimensions": ["model_answerability", "sql_readiness"]
+    },
+    {
+      "external_id": "llm-access.analytics.Q9",
+      "original_id": "Q9",
+      "question": "各模型最近一次调整扣额单位的时间、调整前后数值和操作人是什么？",
+      "business_topic": "扣额配置变更历史",
+      "reference_answer": null,
+      "acceptance_criteria": [
+        "有对应模型的配置变更事件来源，包含事件排序依据、前后值、业务操作时间和操作者。",
+        "明确最近一次的排序及同一时点多个事件的处理口径。",
+        "不能以成功调用时间、模型当前值或语义模型更新时间代替业务调价事件。",
+        "缺少可查询事件时保留未满足状态；未来补充来源后按相同目标重新判断。"
+      ],
+      "required_context": ["配置变更历史来源", "前后值", "操作时间和排序", "操作人及模型归属"],
+      "validation_dimensions": ["model_answerability", "sql_readiness"]
+    }
+  ]
+}

@@ -82,3 +82,11 @@ tests/、VERIFICATION.md 及后续隐藏验收题不作为生产输入，避免�
 业务行保留在本系统，不复制进 RDF 来凑问答答案。
 
 本示例不接入或替代 OntoWeave 生产功能；不新增平台专用业务接口。开源候选比较见[调研记录](../../docs/research/2026-10-31-v5-llm-project-benchmark-selection.md)。
+
+## 自定义 CQ 设计种子
+
+[competency-questions.json](competency-questions.json)固定保存已有 Q1—Q9 问数问题、稳定外部
+标识和待核对的判定要点。题目均为公开回归问题，没有预填数值答案；历史模型缺口不是
+永久预期结果。该文件目前是拟议导入格式，尚未接入平台题库或 v5 自动选题。
+添加阶段、可选答案、内部工作单元覆盖与冻结规则见
+[R5.0-010 设计](../../docs/delivery/designs/2026-11-01-v5-custom-cq-design.md)。
