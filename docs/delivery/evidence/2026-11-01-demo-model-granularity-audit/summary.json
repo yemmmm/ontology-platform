@@ -1,0 +1,208 @@
+{
+  "date": "2026-11-01",
+  "scope": "Read-only Host audit; not a new independent acceptance or modeling run.",
+  "target": {
+    "project_id": "40841ac8-1c93-4cb1-85ba-1a9e8fb7928b",
+    "ontology_id": "755f1e0e-cf5d-47f2-a2a3-95220f4cba96",
+    "model_revision": 4,
+    "actual_rdf_content_hash": "84f8c969ae75542c4f722eba1ecbb6ea72145451f52c61969b64ec3d7f587c42",
+    "resources": 14,
+    "triples": 126
+  },
+  "resource_type_counts": {
+    "http://ontology-platform.local/semantic/vocab/TableMapping": 4,
+    "http://ontology-platform.local/semantic/vocab/JoinMapping": 3,
+    "http://www.w3.org/2002/07/owl#ObjectProperty": 3,
+    "http://www.w3.org/2002/07/owl#Class": 4
+  },
+  "column_mapping_count": 19,
+  "property_iri_bindings_in_column_mappings": 0,
+  "column_mapping_roles": {
+    "value": 19
+  },
+  "business_meaning_char_counts_by_class": {
+    "ApiKey": 141,
+    "CallRecord": 546,
+    "Model": 221,
+    "ModelGrant": 78
+  },
+  "openapi_operations": [
+    {
+      "method": "GET",
+      "path": "/health"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/models"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/models"
+    },
+    {
+      "method": "PATCH",
+      "path": "/admin/models/{model_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/keys"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/keys"
+    },
+    {
+      "method": "PATCH",
+      "path": "/admin/models/{model_id}/quota-cost"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/keys/{key_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/admin/keys/{key_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/calls"
+    },
+    {
+      "method": "POST",
+      "path": "/calls"
+    }
+  ],
+  "operation_resource_count": 0,
+  "interface_mapping_resource_count": 0,
+  "absence_probe": {
+    "terms": [
+      "非空",
+      "non-empty",
+      "nonempty",
+      "minItems",
+      "allowed_models"
+    ],
+    "literal_matches": {
+      "非空": 0,
+      "non-empty": 0,
+      "nonempty": 0,
+      "minItems": 0,
+      "allowed_models": 0
+    },
+    "limitation": "Text probe alone does not prove a semantic gap; all 14 resource definitions and mapping payloads were also reviewed, with no creation minimum-cardinality rule."
+  },
+  "confirmed_findings": [
+    {
+      "id": "missing-key-creation-nonempty-grant-set",
+      "stage": "source capture / model expression and self-check",
+      "source": "business.md explicitly requires a nonempty model set when creating a credential; frozen OpenAPI KeyInput.allowed_models minItems=1.",
+      "model": "No corresponding creation constraint in the actual model; allowing one-to-many joins does not express minimum creation-set size.",
+      "historical_acceptance": "Reported as expressed and passed, but the cited model resources do not supply the nonempty requirement.",
+      "classification": "modeling-quality; independent acceptance missed it"
+    },
+    {
+      "id": "stale-quota-unit-after-v2",
+      "stage": "incremental semantic impact review and self-check",
+      "source": "v2 defines integer call units, no longer equivalent to number of invocations.",
+      "model_field": {
+        "column": "remaining_quota",
+        "conversion_rule_iri": null,
+        "null_meaning": null,
+        "source_meaning": "剩余次数额度：非负整数，可为零；额度属于凭证本身，多凭证独立，同一凭证访问多模型共享；非 token 数量、人民币余额或上游费用",
+        "source_unit": "次（调用次数）",
+        "target_unit": null,
+        "time_semantics": null
+      },
+      "incremental_update_targets": [
+        "Model",
+        "models table mapping",
+        "CallRecord",
+        "calls table mapping"
+      ],
+      "omitted_affected_targets": [
+        "ApiKey",
+        "api_keys table mapping"
+      ],
+      "classification": "modeling-quality; incremental dependent meaning not fully revised"
+    },
+    {
+      "id": "stored-charge-vs-replay-response-local-ambiguity",
+      "stage": "model field definition",
+      "model_field": {
+        "column": "charged_units",
+        "conversion_rule_iri": null,
+        "null_meaning": null,
+        "source_meaning": "本次调用实际扣减的额度单位：新成功调用按该模型当前扣额单位（正整数、默认 1、可因模型不同或管理员修改而不同）扣除，成功/扣额/写记录原子完成；余额不足达到该单位时拒绝且无记录（即使余额大于零）；回放调用为 0 且不按当前扣额单位重新计价；历史成功记录的 charged_units 不改写",
+        "source_unit": "次（额度单位）",
+        "target_unit": null,
+        "time_semantics": null
+      },
+      "impact": "Full process definition distinguishes stored historical charge and replay response; the isolated stored-field description also says replay is zero. A consumer reading only this field can misinterpret the historical table."
+    },
+    {
+      "id": "coarse-model-expression",
+      "stage": "semantic design",
+      "observation": "No independent Operation/property/interface-mapping resources; invocation admission, conflict, replay, debit and concurrency logic are primarily prose in CallRecord business_meaning.",
+      "qualification": "Not every rule needs a node and the original scope did not require one Operation per endpoint. Coarse structure is distinct from source facts entirely missing."
+    },
+    {
+      "id": "proposition-coverage-not-durable",
+      "stage": "S2-S5 method adoption",
+      "current_task_semantic_record_counts": {
+        "llm-access-lab-20261031-start3": {
+          "coverage": 2
+        },
+        "llm-access-v2-20261101-existing": {
+          "coverage": 1
+        }
+      },
+      "history": {
+        "llm-access-lab-20261031-start3": {
+          "version_kinds": [
+            {
+              "semantic_kind": "coverage",
+              "versions": 7
+            }
+          ],
+          "nonempty_mentions": 0
+        },
+        "llm-access-v2-20261101-existing": {
+          "version_kinds": [
+            {
+              "semantic_kind": "coverage",
+              "versions": 2
+            }
+          ],
+          "nonempty_mentions": 0
+        }
+      },
+      "project_record_origin_counts": {
+        "v5-demo-cq-live-20261101": 14
+      },
+      "qualification": "No material_review/proposition/interpretation/definition records for these original and incremental runs in retained task/project semantic records; only aggregate coverage notes. This does not prove the agent never reasoned about those facts."
+    }
+  ],
+  "source_evidence_limits": [
+    "Frozen sources leave calls.created_at timezone/format and credential enabled integer encoding insufficiently bound for some SQL questions.",
+    "Rejected/replayed attempts and quota-cost change events have no corresponding persistent event sources in the current four-table Demo; ontology rebuilding cannot create those historical rows."
+  ],
+  "fresh_v2_comparison": {
+    "project_id": "596fa5ee-7b05-4e21-9cb6-a1296408d03c",
+    "model_resources": 13,
+    "source": "Preserved pre-deletion platform snapshot.",
+    "nonempty_constraint_present": true,
+    "old_remaining_quota_call_count_unit_present": false,
+    "conclusion": "A previous fresh build also produced a small model; a new start is not itself a cure for representation granularity or acceptance gaps."
+  },
+  "recommendation": "Perform a complete source-to-expression inventory, repair the existing model and re-evaluate with exact model evidence plus contradiction checks. Define independently needed behavior/rule/operation identities before an optional fresh comparison; preserve current baseline. No modeling start is authorized by this audit.",
+  "historical_reports_preserved": true,
+  "artifact_inputs": [
+    "examples/llm-access-lab/business.md",
+    "workspaces/v5-runs/llm-access-v2-20261101-inputs/materials/scope.md",
+    "workspaces/v5-runs/llm-access-v2-20261101-inputs/materials/openapi.json",
+    "workspaces/v5-runs/llm-access-v2-20261101-inputs/independent-v2/questions.md",
+    "workspaces/v5-runs/llm-access-v2-20261101-existing/evaluations/existing-v2-full-30/private-report.json",
+    "workspaces/demo-model-granularity-audit-20261101/semantic-records-readonly.json",
+    "workspaces/demo-model-granularity-audit-20261101/semantic-history-kind-counts.json"
+  ]
+}
