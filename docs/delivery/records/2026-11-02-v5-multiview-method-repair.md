@@ -110,3 +110,31 @@ WorkPlan.reopen("modeling")／MultiUnitFlow.initialize 重开根代次 1，原�
 round 5，随后原消息成功交接并 resume。root-quality-reentry.json 记录前后状态与
 稳定 budget_ref，没有伪造来源修订、直接改写工作状态或 fresh start。
 最后一处独立提示措辞更新由评价流程 17 项测试覆盖；完整 246 项结果适用于其余最终代码。
+
+## 质量修订中的实际表达与端点限制
+
+原 Agent 在重开后识别行为／流程／参数缺乏独立定义，成功新增 17 个普通语义定义实体、
+4 个关系谓词、14 条关系。实际 revision 4 共 55 个资源／41 条关系记录。原 Demo 的
+hash／revision 4／全部九条 CQ 仍不变。新增是定义节点，不是 SQLite 业务行或已发生事件。
+本轮自查准确返回 revise，保留行为定义与原对象／六规则之间的关联为已知未表达范围。
+
+同时发现 R4.3-025 编译器 _endpoint 只接受 entity，无法表达 R4.0-003 F2 已确认的
+Action→Class 以及对属性／Operation／映射定义的普通关联；底层 relation 编译及治理图
+原已支持这些 IRI 端点。GitNexus 未索引该函数，实际调用点只有 _relation_build 的两端，
+影响复用此编译器的 v5 Host／旧统一图提交路径；不宣称图索引已覆盖其影响。
+
+防御复核：
+
+1. 真实、获准资源端点及谓词仍必要；端点只能是 NamedIndividual 并非既有不变量。
+2. 原拒绝是可重试的，但表达同一获准 Class 关联将持续被拒，提示不能消除这个平台限制。
+3. 改为已有资源种类集合（排除 relation／fact 记录），不会放开裸 IRI、未知种类或未选中引用。
+4. 业务关联含义仍由 Modeling 和独立语义验收判断，程序不推断边的业务意义。
+5. 回执绑定、授权／作用域、依赖编译、原子应用及实际读回继续保护写入完整性。
+
+只修 _endpoint 的已验证资源种类选择，保留其余校验。新增 Class／property／Operation／
+table_mapping 端点和本候选属性定义端点用例复现原拒绝；relation／fact 仍拒绝。
+最终编译／应用／关系读取／底层命令组件回归 **161 passed**；v5 桥接／合同 **34 passed**。
+编译器 Ruff 的 7 条既有诊断与 HEAD 对比完全一致，新增诊断为 0；未顺带修改旧代码。
+
+另针对前次评价输出把可选 CQ／SQL 键写到 case 括号外，普通冻结评价提示沿原 schema
+只要求必要 case 字段，不生成无绑定的 CQ ID／SQL 状态；custom CQ 路径保持原合同。

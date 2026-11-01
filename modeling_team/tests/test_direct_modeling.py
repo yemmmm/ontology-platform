@@ -163,6 +163,51 @@ def test_relation_type_uses_receipt_resource_ids_for_class_endpoints():
     assert "%3A" not in payload["source_class_id"] + payload["target_class_id"]
 
 
+@pytest.mark.parametrize("target_kind", ["class", "property", "operation", "table_mapping", "relation", "fact"])
+def test_definition_links_use_verified_resource_endpoints(target_kind):
+    candidate = _candidate([
+        _item("action", "entity", {"label": "Action definition"}),
+        _item("predicate", "property", {"name": "applies to", "predicate_kind": "relation"}),
+        _item("link", "relation", {"predicate": {"definition_ref": "predicate"}},
+              endpoints={"from_item_id": "action", "to_item_id": {"existing_resource_ref": {
+                  "artifact_ref": "receipts/definitions.json", "path": "/resources/0"}}}),
+    ])
+    request = _request([_change("create-" + item["item_id"], "create", item["item_kind"], item["item_id"])
+                        for item in candidate["items"]])
+    binding = {"resource_kind": target_kind, "ontology_id": "ontology-1",
+               "resource_id": "actual-target", "resource_iri": "https://example.test/target"}
+    arguments = {"candidate": candidate,
+                 "ontology_by_item": {item["item_id"]: "ontology-1" for item in candidate["items"]},
+                 "resolve_binding": lambda ref: binding}
+    if target_kind in {"relation", "fact"}:
+        with pytest.raises(ModelChangeCompilationError) as caught:
+            compile_model_changes(request, **arguments)
+        assert any(error["code"] == "binding_kind_mismatch" for error in caught.value.errors)
+    else:
+        batches, _ = compile_model_changes(request, **arguments)
+        link = batches[0]["items"][-1]
+        assert link["command_kind"] == "create_relation"
+        assert link["payload"]["target_entity_iri"] == binding["resource_iri"]
+
+
+def test_definition_link_can_target_selected_property_definition():
+    candidate = _candidate([
+        _item("action", "entity", {"label": "Action definition"}),
+        _item("predicate", "property", {"name": "uses field", "predicate_kind": "relation"}),
+        _item("field", "property", {"name": "Business value", "predicate_kind": "fact", "datatype": "string"}),
+        _item("link", "relation", {"predicate": {"definition_ref": "predicate"}},
+              endpoints={"from_item_id": "action", "to_item_id": {"definition_ref": "field"}}),
+    ])
+    batches, _ = compile_model_changes(
+        _request([_change("create-" + item["item_id"], "create", item["item_kind"], item["item_id"])
+                  for item in candidate["items"]]),
+        candidate=candidate,
+        ontology_by_item={item["item_id"]: "ontology-1" for item in candidate["items"]},
+        resolve_binding=lambda ref: None,
+    )
+    assert batches[0]["items"][-1]["payload"]["target_entity_iri"].get("item_ref")
+
+
 def test_compiles_current_candidate_in_stable_dependency_order_and_maps_sources():
     candidate = _candidate(
         [

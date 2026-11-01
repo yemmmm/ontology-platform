@@ -1803,9 +1803,12 @@ def _property_build(
 def _endpoint(
     value: Any, ctx: _Context, change: Mapping[str, Any], path: str
 ) -> tuple[Any, set[str]]:
+    # R4.0 definition links can target Class/property/Operation/mapping resources,
+    # not only NamedIndividuals. Statements themselves are not resource endpoints.
+    resource_kinds = set(_RESOURCE_KINDS) - {"relation", "fact"}
     if isinstance(value, str) and value in ctx.items:
         return _resolve_definition(
-            value, ctx, change, path, expected_kinds={"entity"}, output="resource_iri"
+            value, ctx, change, path, expected_kinds=resource_kinds, output="resource_iri"
         )
     if isinstance(value, Mapping) and set(value) in ({"definition_ref"}, {"existing_resource_ref"}):
         return _resolve_ref_value(
@@ -1813,7 +1816,7 @@ def _endpoint(
             ctx,
             change,
             path,
-            expected_kinds={"entity"},
+            expected_kinds=resource_kinds,
             output="resource_iri",
         )
     ctx.error("relation_endpoint_reference_required", "relation endpoint must name a candidate item or existing_resource_ref", change=change, field=path)

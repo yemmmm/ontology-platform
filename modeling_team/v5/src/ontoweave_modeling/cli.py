@@ -171,7 +171,9 @@ def evaluate(
         "preserve missing evidence as a gap and decide each case from its frozen criterion. "
         "Count distinct resource IRIs; several change IDs may reference the same actual resource. "
         "Keep questions, answers and private reasons private. Return exactly one valid JSON object "
-        "matching result_schema, without Markdown or narration. Escape quotation marks inside strings.",
+        "matching result_schema, without Markdown or narration. When custom_cq_cases is null, use "
+        "only the required per-case fields and omit optional CQ/SQL keys. "
+        "Escape quotation marks inside strings.",
     )
     prompt = json.dumps(
         {
