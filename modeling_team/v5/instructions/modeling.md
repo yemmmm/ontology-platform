@@ -195,6 +195,10 @@ a generic predicate. A database column mapping differs from an API request/respo
 field's binding to its business concept or property. Inspect those actual meanings
 separately when required; a present tag or API path list does not close the gap.
 Do not introduce a fixed node count or a second coverage template.
+For a whole-model completeness claim inspect every semantic_role declaration,
+including declarations not selected as evidence. A correct business role elsewhere
+does not validate that label on a generic applicability predicate. Source-supported
+participation links can be business roles; a separate Actor carrier is not required.
 When a ready direct child's bounded actual-model check is needed, the parent can
 request it in `review_units`. Reuse applicable returned check materials; keep
 parent-level rules and unallocated scope as your own judgment. Proofs include

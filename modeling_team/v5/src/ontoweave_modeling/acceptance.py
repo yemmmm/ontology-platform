@@ -60,6 +60,28 @@ def report_schema(evaluation: dict) -> dict:
     return schema
 
 
+def independent_target(target: dict, *, whole_model: bool = False) -> dict:
+    """Keep the frozen read scope; an evaluator does not use mutation-receipt references."""
+    view = {
+        key: value
+        for key, value in target.items()
+        if key not in {"resource_refs", "resource_bindings"}
+    }
+    if not whole_model and "resource_bindings" in target:
+        execution_fields = {
+            "resource_id",
+            "item_id",
+            "change_id",
+            "receipt_item_path",
+            "existing_resource_ref",
+        }
+        view["resource_bindings"] = {
+            key: {field: value for field, value in binding.items() if field not in execution_fields}
+            for key, binding in target["resource_bindings"].items()
+        }
+    return view
+
+
 def successful_reads(events_path: Path | list[Path]) -> list[tuple[str, dict, dict]]:
     if isinstance(events_path, list):
         return [read for path in dict.fromkeys(events_path) for read in successful_reads(path)]

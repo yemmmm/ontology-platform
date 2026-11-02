@@ -34,7 +34,7 @@ def material_server(
             openWorldHint=False,
         )
     )
-    def read_material(material_id: str, offset: int = 0, limit: int = 12000) -> dict:
+    def read_material(material_id: str, offset: int = 0, limit: int = 16000) -> dict:
         """Read authorized text by ID/character offset; follow next_offset until null.
 
         SHA256 identifies the whole material, not completeness of this page. Unknown IDs

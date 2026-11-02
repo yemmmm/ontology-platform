@@ -9,6 +9,58 @@ from ontoweave_modeling.acceptance import validate_report
 from ontoweave_modeling.contracts import FrameworkError
 
 
+@pytest.mark.parametrize("whole_model", [False, True])
+def test_independent_target_keeps_read_scope_without_writer_bindings(whole_model):
+    from ontoweave_modeling.acceptance import independent_target
+
+    target = {
+        "project_id": "project",
+        "ontology_ids": ["ontology"],
+        "model_revisions": {"ontology": 3},
+        "scope_id": "frozen-scope",
+        "resource_refs": {"resource": {"artifact_ref": "write-receipt", "path": "/item"}},
+        "resource_bindings": {
+            "resource": {
+                "resource_kind": "class",
+                "resource_iri": "urn:actual:class",
+                "ontology_id": "ontology",
+                "resource_id": "native-id",
+                "item_id": "candidate-id",
+                "change_id": "change-id",
+                "receipt_item_path": "/receipt/items/0",
+            },
+            "statement": {
+                "resource_kind": "relation",
+                "source_entity_iri": "urn:actual:source",
+                "relation_type_iri": "urn:actual:predicate",
+                "target_entity_iri": "urn:actual:target",
+                "ontology_id": "ontology",
+            },
+        },
+    }
+    original = json.dumps(target, sort_keys=True)
+    view = independent_target(target, whole_model=whole_model)
+    assert {
+        key: view[key] for key in ("project_id", "ontology_ids", "model_revisions", "scope_id")
+    } == {
+        "project_id": "project",
+        "ontology_ids": ["ontology"],
+        "model_revisions": {"ontology": 3},
+        "scope_id": "frozen-scope",
+    }
+    assert "resource_refs" not in view
+    if whole_model:
+        assert "resource_bindings" not in view  # Actual complete inventory is a required read.
+    else:
+        assert view["resource_bindings"]["resource"] == {
+            "resource_kind": "class",
+            "resource_iri": "urn:actual:class",
+            "ontology_id": "ontology",
+        }
+        assert view["resource_bindings"]["statement"] == target["resource_bindings"]["statement"]
+    assert json.dumps(target, sort_keys=True) == original
+
+
 @pytest.fixture
 def frozen_report(tmp_path):
     handoff = {

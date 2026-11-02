@@ -9,7 +9,7 @@ import json
 import uuid
 from pathlib import Path
 
-from .acceptance import read_coverage, report_schema, validate_report
+from .acceptance import independent_target, read_coverage, report_schema, validate_report
 from .budget import synchronize_budget
 from .contracts import FrameworkError, TaskBinding, _check_sources, digest, safe_id, write_json
 from .control import TaskControl
@@ -78,6 +78,10 @@ def evaluate(
             **handoff,
             "required_artifacts": {key: manifest[key]["sha256"] for key in required_artifacts},
         }
+    read_target = independent_target(
+        handoff["target"],
+        whole_model=handoff["evaluation"].get("model_read_scope") == "whole_model",
+    )
     root = binding.root / "evaluations" / evaluation_id
     if not root.exists():
         root.mkdir(parents=True, mode=0o700)
@@ -106,7 +110,7 @@ def evaluate(
                 "source_ref": "approved-attributed-human-inputs",
                 "sha256": hashlib.sha256(human_bytes).hexdigest(),
             }
-        target_bytes = json.dumps(handoff["target"]).encode()
+        target_bytes = json.dumps(read_target).encode()
         (root / "materials" / "target.json").write_bytes(target_bytes)
         manifest["target"] = {
             "path": "target.json",
@@ -164,10 +168,11 @@ def evaluate(
         "self-check is not model evidence. When recall leaves a known resource unverified, use "
         "read_model_resource with its actual ontology_id/IRI and class-detail, property-list, "
         "relation-type-list, entity-detail, operation-detail, table-mapping-detail or join-mapping-detail family. "
-        "For a consistency or completeness claim, inspect all relevant actual resources in "
-        "target.resource_bindings, including properties and nested mappings, rather than only "
+        "For a consistency or completeness claim, inspect all relevant actual resources, "
+        "including properties and nested mappings, rather than only "
         "the top search hits or selected summary definitions. Record the inspected scope and "
         "preserve unread relevant definitions as an evidence gap. "
+        "target.resource_bindings, when supplied, is only a locator index, not model evidence. "
         "For model_read_scope=whole_model, read resource-list without resource_iri for each "
         "Ontology, inspect every returned definition body and nested mapping, and read the "
         "complete resource-relations graph. A resource_iri filters resource-list; paging.complete "
@@ -188,6 +193,10 @@ def evaluate(
         "participation. A database column mapping does not establish an API request/response "
         "field's binding to a business concept or property. Locate the actual expressions or "
         "retain the specific missing part; do not infer coverage from tags or related prose. "
+        "For whole_model completeness, inspect every returned semantic_role declaration, "
+        "including declarations not selected as case evidence. A correct role elsewhere does "
+        "not validate business_role on a generic applicability predicate. Source-supported "
+        "business participation links may legitimately be roles; do not require an Actor carrier. "
         "Check contradictions across related definitions and nested mapping units, state/time scope "
         "and stored facts versus response values. A rule may use natural language, but verify its "
         "scope and relevant object/action/process relationships when the criterion requires them. "
@@ -253,7 +262,7 @@ def evaluate(
                 *handoff["source_revisions"],
                 *(["human-inputs"] if "human-inputs" in manifest else []),
             ],
-            "target": handoff["target"],
+            "target": read_target,
             "evaluation": handoff["evaluation"],
             "model_read_scope": handoff["evaluation"].get(
                 "model_read_scope", "referenced_resources"

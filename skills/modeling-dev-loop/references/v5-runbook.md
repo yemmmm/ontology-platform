@@ -27,6 +27,8 @@ anchor 过滤。按返回端点核对所需关联，并保留 paging／completen
 该请求范围。结果 read_scope 标明这一差别。声明全模型完整的 Task 应显式设置
 `evaluation.model_read_scope=whole_model`，根自查及独立 PASS 核对全量清单、实际正文和
 完整关系；普通有界任务默认 referenced_resources，不强迫每个单元全量读取。
+材料默认每页 16000 字符，仍须检查 next_offset。独立读取目标省略写入回执字段；
+whole_model 通过实际清单取得资源，不把生产绑定目录当模型正文。完整冻结目标仍用于授权和修订核对。
 若读取只返回 IRI，更新还须有已核实的原生身份；可由 Host 将同 revision 平台快照中的
 显式 `v:id`／资源类型与实际应用回执交叉核对，交接到原有 `applied-bindings.json`。
 保留快照、核对及交接回执，不猜 IRI 后缀、不改候选，也不把一次人工技术交接称作
