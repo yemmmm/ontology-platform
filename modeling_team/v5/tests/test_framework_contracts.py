@@ -64,6 +64,24 @@ def test_unsupported_authorization_never_creates_run(task_file, tmp_path):
     assert not (tmp_path / "run").exists()
 
 
+def test_unknown_model_read_scope_cannot_silently_weaken_the_frozen_check(task_file, tmp_path):
+    task = json.loads(task_file.read_text())
+    task["evaluation"]["model_read_scope"] = "misspelled-scope"
+    task_file.write_text(json.dumps(task))
+    with pytest.raises(FrameworkError, match="model_read_scope_invalid"):
+        TaskBinding.prepare(task_file, tmp_path / "run")
+
+
+def test_invalid_json_diagnostics_locate_the_non_json_expression_without_repair():
+    from ontoweave_modeling.results import ResultContractError, decode_json_result
+
+    text = '{\n  "answer": "value".trim()\n}'
+    with pytest.raises(ResultContractError, match="result_json_missing_or_ambiguous") as caught:
+        decode_json_result(text, {"type": "object", "required": ["answer"]})
+    assert caught.value.details["json_error"]["line"] == 2
+    assert caught.value.details["json_error"]["position"] == text.index(".trim()")
+
+
 def test_changed_snapshot_is_not_silently_resumed(task_file, tmp_path):
     root = tmp_path / "run"
     TaskBinding.prepare(task_file, root)
@@ -225,6 +243,10 @@ def test_mapping_input_reference_shapes_and_example_are_executable(task_file, tm
             assert field["compiled_format"] == "absolute-rdf-iri"
             assert field["exactly_one_required"] == ["definition_ref", "existing_resource_ref"]
     example = contract["relational_request_example"]
+    table = example["candidate"]["items"][0]["value"]
+    physical = [column for column in table["column_mappings"] if not column.get("property_iri")]
+    assert physical, "The example must show a physical column without an invented semantic property"
+    assert table["mapping_definition"]["field_meanings"][0]["column"] == physical[0]["column"]
     column = example["candidate"]["items"][0]["value"]["column_mappings"][0]
     assert "existing_resource_ref" in column["property_iri"]
     assert {x["item_id"] for x in example["candidate"]["items"]} == {

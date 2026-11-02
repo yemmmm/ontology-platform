@@ -22,6 +22,10 @@ MATERIAL_RESULT_SCHEMA = {
 class ResultContractError(ValueError):
     """A recoverable result-format error; the original response remains evidence."""
 
+    def __init__(self, message: str, **details):
+        super().__init__(message)
+        self.details = details
+
 
 def decode_json_result(message: str, schema: dict) -> dict:
     """Read the unique schema-matching JSON value, retaining Agent text unchanged."""
@@ -29,11 +33,19 @@ def decode_json_result(message: str, schema: dict) -> dict:
         result = json.loads(message)
     except json.JSONDecodeError:
         decoder, position, matches, parsed = json.JSONDecoder(), 0, [], []
+        first_error = None
         while start := re.search(r"[\{\[]", message[position:]):
             position += start.start()
             try:
                 candidate, end = decoder.raw_decode(message, position)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as error:
+                if first_error is None:
+                    first_error = {
+                        "message": error.msg,
+                        "line": error.lineno,
+                        "column": error.colno,
+                        "position": error.pos,
+                    }
                 position += 1
                 continue
             position = end
@@ -47,7 +59,10 @@ def decode_json_result(message: str, schema: dict) -> dict:
         if not matches and len(parsed) == 1:
             result = parsed[0]
         elif len(matches) != 1:
-            raise ResultContractError("result_json_missing_or_ambiguous") from None
+            details = (
+                {"json_error": first_error} if first_error else {"matching_objects": len(matches)}
+            )
+            raise ResultContractError("result_json_missing_or_ambiguous", **details) from None
         else:
             result = matches[0]
     try:

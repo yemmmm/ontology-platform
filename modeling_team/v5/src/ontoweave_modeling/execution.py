@@ -207,12 +207,14 @@ class CodexInvocation:
         instructions: str | None = None,
         model_revisions: dict | None = None,
         read_only: bool = False,
+        resume_from: Path | None = None,
     ):
         self.binding, self.bridge = binding, bridge
         self.materials = materials or binding.materials
         self.instructions = instructions or binding.data["instructions"]
         self.model_revisions = model_revisions
         self.read_only = read_only
+        self.resume_from = resume_from
 
     def __call__(self, root: Path, purpose: str, prompt: str, inputs: list) -> dict:
         from .codex_agent import CodexAgent
@@ -363,6 +365,22 @@ class CodexInvocation:
             if self.model_revisions is not None:
                 read_payload["model_revisions"] = self.model_revisions
             read_config = self.bridge.call("read_config", read_payload)["config_ref"]
+            if self.resume_from is not None:
+                usage_path = self.resume_from.parent / "usage.jsonl"
+                samples = usage_path.read_text().splitlines() if usage_path.exists() else []
+                if samples:
+                    sample = json.loads(samples[-1])["params"]
+                    write_json(
+                        root / "native-usage-baseline.json",
+                        {
+                            "thread_id": sample["threadId"],
+                            "total": sample["tokenUsage"]["total"],
+                            "source_execution": self.resume_from.parent.name,
+                            "evidence_ref": str(usage_path),
+                        },
+                    )
+                elif self.binding.data["authorization"]["mode"] == "amount":
+                    raise FrameworkError("resume_usage_baseline_missing")
             if self.binding.data["authorization"]["mode"] == "amount":
                 (root / "budget-native-usage.jsonl").touch(exist_ok=True)
             with self.bridge.provider(root.name, role, tools) as url:
@@ -387,6 +405,7 @@ class CodexInvocation:
                                     + "\n"
                                 )
 
+                resume_options = {"resume_from": self.resume_from} if self.resume_from else {}
                 agent = CodexAgent(
                     root / "agent",
                     self.binding.model(role),
@@ -397,9 +416,13 @@ class CodexInvocation:
                     instructions=instructions,
                     on_event=observe,
                     allowed_tools=tools,
+                    **resume_options,
                 )
                 try:
-                    agent.start()
+                    if self.resume_from:
+                        agent.start(resume=True)
+                    else:
+                        agent.start()
                     native_requested = True
                     return agent.run_turn(prompt + "\nQueued inputs: " + json.dumps(inputs))
                 finally:

@@ -7,10 +7,51 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from openai_codex.generated.v2_all import McpServerToolCallResponse
 
 from ontoweave_modeling.codex_agent import CodexAgent, outbound_tool_names
 from ontoweave_modeling.preflight import ModelBinding
+
+
+def test_later_corrections_keep_the_original_native_home_and_separate_evidence(
+    tmp_path, monkeypatch
+):
+    from ontoweave_modeling import codex_agent
+
+    original = tmp_path / "first-agent"
+    (original / "home").mkdir(parents=True)
+    (original / "work").mkdir()
+    retained = original / "events.jsonl"
+    retained.write_text("original immutable events\n")
+    prior = tmp_path / "second-agent"
+    prior.mkdir()
+    prior_binding = json.dumps({"thread_id": "same-reader", "session_root": str(original)})
+    (prior / "thread-binding.json").write_text(prior_binding)
+    materials = tmp_path / "materials"
+    materials.mkdir()
+    (materials / "manifest.json").write_text("{}")
+    captured = []
+
+    def stop_before_process(home, work, **kwargs):
+        captured.append((home, work))
+        raise RuntimeError("inspected namespace before launch")
+
+    monkeypatch.setattr(codex_agent, "namespace_command", stop_before_process)
+    agent = CodexAgent(
+        tmp_path / "third-agent",
+        ModelBinding("glm-direct", "glm-5.3-flash", "low"),
+        provider_base_url="http://127.0.0.1:9",
+        materials=materials,
+        instructions="Only inspect the resume boundary.",
+        on_event=lambda *_: None,
+        resume_from=prior,
+    )
+    with pytest.raises(RuntimeError, match="before launch"):
+        agent.start(resume=True)
+    assert captured == [(original / "home", original / "work")]
+    assert retained.read_text() == "original immutable events\n"
+    assert (prior / "thread-binding.json").read_text() == prior_binding
 
 
 def test_isolated_mcp_reads_real_workspace_without_host_dns_files(tmp_path, workspace):

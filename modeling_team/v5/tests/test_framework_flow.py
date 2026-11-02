@@ -139,6 +139,31 @@ def test_root_self_check_locates_old_coverage_without_program_semantic_completio
     assert space.read("existing-root-coverage")["states"]["expression"] == "partial"
 
 
+def test_whole_model_ready_returns_missing_reads_before_handoff(binding, workspace, saver):
+    binding.data["evaluation"]["model_read_scope"] = "whole_model"
+    control = TaskControl(workspace)
+    platform = Platform()
+    actor = Actor(
+        binding,
+        platform,
+        lambda purpose: (
+            control.enqueue("pause-after-check", "pause") if purpose == "self_check" else None
+        ),
+    )
+
+    def inspect(root, purpose, prompt, inputs):
+        if purpose == "self_check":
+            assert json.loads(prompt)["model_read_scope"] == "whole_model"
+        return actor(root, purpose, prompt, inputs)
+
+    state = WorkUnitFlow(binding, workspace, platform, inspect).advance(saver)
+    assert state["status"] == "paused"
+    assert state["issue"]["code"] == "self_check_needs_correction"
+    assert state["issue"]["coverage"]["materials"][0]["material_id"] == "source"
+    assert state["issue"]["coverage"]["models"][0]["missing_inventory"] is True
+    assert workspace.get(binding.identity + ":work")["content"].get("handoff_ref") is None
+
+
 def test_actual_provider_429_pauses_before_next_turn_and_preserves_terminal_receipt(
     binding, workspace
 ):

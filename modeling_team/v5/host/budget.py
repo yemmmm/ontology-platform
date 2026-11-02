@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime
 
 from modeling_team.task_budget import BudgetError, TaskBudget
+from modeling_team.usage_capture import numeric_usage
 
 from ontoweave_modeling.contracts import FrameworkError, digest
 
@@ -43,7 +44,7 @@ def _amount_state(binding, addition, role) -> dict:
             )
         }
         context["actual_model"] = first["requested_model"]
-        # Each v5 execution starts a new Codex thread; its first counter has a proven zero baseline.
+        # Fresh executions have a zero baseline; a resumed reader retains its real prior counter.
         context["cumulative_segment"] = {
             "id": root.name,
             "start": first["start"],
@@ -52,6 +53,15 @@ def _amount_state(binding, addition, role) -> dict:
             "end": datetime.now(UTC).isoformat(),
             "evidence_ref": str(root / "agent/events.jsonl") + "#thread/start",
         }
+        baseline_path = root / "native-usage-baseline.json"
+        if baseline_path.exists():
+            baseline = json.loads(baseline_path.read_text())
+            usage, invalid = numeric_usage(baseline["total"])
+            if invalid or usage.get("input_tokens") is None or usage.get("output_tokens") is None:
+                raise FrameworkError("resume_usage_baseline_invalid")
+            context["cumulative_segment"].update(
+                baseline=usage, fresh_zero_baseline=False, evidence_ref=str(baseline_path)
+            )
         capture = first["proxy_session_id"]
         source_prefix = "v5-" + digest(str(root))[:24]
         sources = [

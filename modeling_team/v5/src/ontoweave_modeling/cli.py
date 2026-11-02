@@ -9,7 +9,7 @@ import json
 import uuid
 from pathlib import Path
 
-from .acceptance import REPORT_SCHEMA, validate_report
+from .acceptance import read_coverage, report_schema, validate_report
 from .budget import synchronize_budget
 from .contracts import FrameworkError, TaskBinding, _check_sources, digest, safe_id, write_json
 from .control import TaskControl
@@ -73,6 +73,11 @@ def evaluate(
     for material_id, sha256 in handoff["source_revisions"].items():
         if manifest.get(material_id, {}).get("sha256") != sha256:
             raise FrameworkError("evaluation_source_mismatch", material_id=material_id)
+    if required_artifacts:
+        handoff = {
+            **handoff,
+            "required_artifacts": {key: manifest[key]["sha256"] for key in required_artifacts},
+        }
     root = binding.root / "evaluations" / evaluation_id
     if not root.exists():
         root.mkdir(parents=True, mode=0o700)
@@ -116,6 +121,23 @@ def evaluate(
     attempt_path = root / "report-attempt.json"
     attempt = json.loads(attempt_path.read_text()) if attempt_path.exists() else {"index": 0}
     execution_id = f"evaluation-{digest(evaluation_id)[:20]}-{attempt['index']:03d}"
+    schema = report_schema(handoff["evaluation"])
+    read_refs = attempt.get("read_execution_refs", [])
+    previous = None
+    resume_from = None
+    if previous_ref := attempt.get("previous_execution_ref"):
+        previous = repo.read_reference(previous_ref)
+        prior_id = previous["intent"]["execution_id"]
+        if previous["intent"]["purpose"] != "acceptance" or not prior_id.startswith(
+            f"evaluation-{digest(evaluation_id)[:20]}-"
+        ):
+            raise FrameworkError("evaluation_correction_scope_mismatch")
+        if previous["result"].get("thread_id"):
+            resume_from = binding.root / "executions" / prior_id / "agent"
+            if previous_ref not in read_refs:
+                read_refs = [*read_refs, previous_ref]
+        else:
+            read_refs = []
     # Host task controls count all in-flight roles; the evaluator gets no production inputs.
     control = TaskControl(repo)
     invocation = CodexInvocation(
@@ -123,14 +145,18 @@ def evaluate(
         bridge,
         materials=root / "materials",
         model_revisions=handoff["target"]["model_revisions"],
+        resume_from=resume_from,
         instructions="You are an independent read-only semantic evaluator. Read the original sources, "
         "every frozen case, target and any human-inputs using read_material; query the actual "
         "governed model. Explicitly read_material with material_id=frozen-questions before "
         "interpreting case indices. Preserve each original case's numbering and scope; do not "
         "replace workflow/evidence questions with your own model-content checklist. "
-        "Read each source_ids entry directly in this turn even if artifacts "
+        "Read each source_ids entry directly in this independent context even if artifacts "
         "quote it; copied excerpts do not replace the original-source read. "
-        "Before reporting, directly read every required_artifacts entry in this turn, including "
+        "Follow read_material.next_offset until the required source range is complete; "
+        "one page with the correct SHA256 is not a complete read. On a correction in your "
+        "same native context, reuse unchanged prior actual reads and finish the listed gaps. "
+        "Before reporting, directly read every required_artifacts entry in this context, including "
         "each workspace/history chunk; other artifacts quoting it do not replace that read. "
         "Attributed human replies are additional approved sources; preserve "
         "their partial status and scope rather than assuming every question was resolved. "
@@ -142,6 +168,12 @@ def evaluate(
         "target.resource_bindings, including properties and nested mappings, rather than only "
         "the top search hits or selected summary definitions. Record the inspected scope and "
         "preserve unread relevant definitions as an evidence gap. "
+        "For model_read_scope=whole_model, read resource-list without resource_iri for each "
+        "Ontology, inspect every returned definition body and nested mapping, and read the "
+        "complete resource-relations graph. A resource_iri filters resource-list; paging.complete "
+        "only describes that request scope. Prefer exact known IRIs over repeating broad queries "
+        "when search is truncated or degraded. Read coverage qualifies evidence availability, "
+        "not whether its business meaning satisfies the criterion. "
         "Preserve retrieval gaps separately from "
         "confirmed model omissions; sources cannot fill missing model facts. "
         "For each criterion, locate every operative condition in actual model fields, definitions "
@@ -214,7 +246,10 @@ def evaluate(
             ],
             "target": handoff["target"],
             "evaluation": handoff["evaluation"],
-            "result_schema": REPORT_SCHEMA,
+            "model_read_scope": handoff["evaluation"].get(
+                "model_read_scope", "referenced_resources"
+            ),
+            "result_schema": schema,
             "contract_feedback": attempt.get("error"),
         }
     )
@@ -229,12 +264,21 @@ def evaluate(
                 "index": attempt["index"] + 1,
                 "error": "evaluation_turn_failed",
                 "previous_execution_ref": ref,
+                "read_execution_refs": [*read_refs, ref] if native.get("thread_id") else [],
             },
         )
         raise FrameworkError("evaluation_turn_failed", layer="runtime/infrastructure")
-    events = binding.root / "executions" / execution_id / "agent/events.jsonl"
+    if resume_from and native.get("thread_id") != previous["result"]["thread_id"]:
+        raise FrameworkError("evaluation_correction_context_changed")
+    events = [
+        binding.root
+        / "executions"
+        / repo.read_reference(old)["intent"]["execution_id"]
+        / "agent/events.jsonl"
+        for old in read_refs
+    ] + [binding.root / "executions" / execution_id / "agent/events.jsonl"]
     try:
-        report = decode_json_result(native["final_response"], REPORT_SCHEMA)
+        report = decode_json_result(native["final_response"], schema)
         public = validate_report(
             report,
             handoff,
@@ -249,12 +293,29 @@ def evaluate(
         )
     except (ResultContractError, FrameworkError) as error:
         # Correct only report structure/reads; the independent frozen standard stays intact.
+        coverage = read_coverage(
+            events,
+            {
+                "frozen-questions": manifest["frozen-questions"]["sha256"],
+                **handoff["source_revisions"],
+                **handoff.get("required_artifacts", {}),
+            },
+            handoff["target"],
+            model_read_scope=handoff["evaluation"].get("model_read_scope", "referenced_resources"),
+        )
+        feedback = (
+            error.as_dict()
+            if isinstance(error, FrameworkError)
+            else {"code": "result_contract_error", "detail": str(error), **error.details}
+        )
+        feedback["coverage"] = coverage
         write_json(
             attempt_path,
             {
                 "index": attempt["index"] + 1,
-                "error": error.as_dict() if isinstance(error, FrameworkError) else str(error),
+                "error": feedback,
                 "previous_execution_ref": ref,
+                "read_execution_refs": [*read_refs, ref],
             },
         )
         raise FrameworkError("evaluation_report_needs_correction", detail=str(error)) from error

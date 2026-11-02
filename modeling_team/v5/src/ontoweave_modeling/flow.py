@@ -9,7 +9,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
-from .acceptance import require_governed_read, successful_reads
+from .acceptance import read_coverage, require_governed_read, successful_reads
 from .budget import synchronize_budget
 from .contracts import (
     SELF_CHECK_SCHEMA,
@@ -730,6 +730,9 @@ class WorkUnitFlow:
                 "objective": self.binding.data["objective"],
                 "actual_target": target,
                 "source_manifest": self.binding.data["source_manifest"],
+                "model_read_scope": self.binding.data["evaluation"].get(
+                    "model_read_scope", "referenced_resources"
+                ),
                 "pending_child_units": self._pending_children(),
                 "workspace_context": SemanticWorkspace(
                     self.repository, self.binding.data, self.binding.actor
@@ -767,10 +770,19 @@ class WorkUnitFlow:
                 "are logged for later. Missing executable references are a modeling follow-up, not "
                 "unknown business meaning or permission to finish early. Keep the source-grounded "
                 "meaning and choose a supported representation; do not invent data to satisfy a carrier. "
-                "Check actual resource semantic level too: entity/create_entity denotes an individual, "
-                "while Class/relation_type definitions express concept-level kinds and relationships. "
-                "Do not accept named individuals as replacements for general business concepts when "
-                "the approved scope supplies no instances. "
+                "Check the declared semantic level, source meaning and actual carrier together. "
+                "Do not confuse a business instance with its general definition. Ordinary definition "
+                "nodes can describe roles, actions, rules, processes and interface bindings without "
+                "asserting business-row instances. Do not force Class-only or node-count rules. "
+                "For each relevant viewpoint and operative condition, verify its actual definition "
+                "field or directed association; a matching label or a connected graph is not enough. "
+                "Check responsibilities/participation and interface-field-to-business bindings, "
+                "not just role tags or a list of API paths. Preserve source-supported independent "
+                "definitions and genuine unknowns with their concrete scope. "
+                "For whole_model root completion, read every required original material through "
+                "next_offset, resource-list without resource_iri, every returned definition body "
+                "and nested mapping, and the complete resource-relations graph. Reuse known IRIs "
+                "for exact reads when search is incomplete or degraded. "
                 "When semantic workspace is enabled, revisit your relevant coverage/open records "
                 "after the actual read: update the same record IDs with actual expression destinations "
                 "and remaining gaps. Repair invalid references using returned versioned refs, "
@@ -813,6 +825,26 @@ class WorkUnitFlow:
                 / "agent/events.jsonl",
                 target["model_revisions"],
             )
+            if (
+                result["status"] == "ready"
+                and not self.binding.is_child
+                and not self._pending_children()
+                and self.binding.data["evaluation"].get("model_read_scope") == "whole_model"
+            ):
+                coverage = read_coverage(
+                    self.binding.root
+                    / "executions"
+                    / self.binding.execution_id(execution_id)
+                    / "agent/events.jsonl",
+                    {
+                        key: value["sha256"]
+                        for key, value in self.binding.data["source_manifest"].items()
+                    },
+                    target,
+                    model_read_scope="whole_model",
+                )
+                if not coverage["complete"]:
+                    raise FrameworkError("self_check_read_coverage_incomplete", coverage=coverage)
             self._confirm_inputs(ref, result)
             if set(result.get("review_units", [])) - {
                 u["unit_id"] for u in self.binding.direct_units
@@ -823,7 +855,11 @@ class WorkUnitFlow:
                 {
                     **state,
                     "check_round": state.get("check_round", 0) + 1,
-                    "issue": {"code": "self_check_needs_correction", "detail": str(error)},
+                    "issue": {
+                        "code": "self_check_needs_correction",
+                        "detail": str(error),
+                        **(error.detail if isinstance(error, FrameworkError) else error.details),
+                    },
                 }
             )
         check_ref = self.repository.put_reference(

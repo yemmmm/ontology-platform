@@ -34,6 +34,7 @@ class CodexAgent:
         platform_config: Path | None = None,
         team_config: Path | None = None,
         config_overrides: dict | None = None,
+        resume_from: Path | None = None,
     ):
         self.root = root.resolve()
         self.binding = binding
@@ -46,6 +47,7 @@ class CodexAgent:
         self.platform_config = platform_config
         self.team_config = team_config
         self.config_overrides = config_overrides or {}
+        self.resume_from = resume_from
         self.thread_id: str | None = None
         self.active_turn: str | None = None
         self.client: CodexClient | None = None
@@ -59,7 +61,13 @@ class CodexAgent:
 
     def start(self, *, resume: bool = False) -> dict:
         self.root.mkdir(parents=True, exist_ok=resume, mode=0o700)
-        home, work = self.root / "home", self.root / "work"
+        prior = None
+        session_root = self.root
+        if resume:
+            source = self.resume_from or self.root
+            prior = json.loads((source / "thread-binding.json").read_text())
+            session_root = Path(prior.get("session_root", str(source)))
+        home, work = session_root / "home", session_root / "work"
         home.mkdir(mode=0o700, exist_ok=resume)
         work.mkdir(mode=0o700, exist_ok=resume)
         config_text = candidate_config(self.binding, provider_base_url=self.provider_base_url)
@@ -146,7 +154,6 @@ class CodexAgent:
             "sandbox": "read-only",
         }
         if resume:
-            prior = json.loads((self.root / "thread-binding.json").read_text())
             thread = self.client.thread_resume(prior["thread_id"], params)
         else:
             thread = self.client.thread_start(params)
@@ -160,6 +167,7 @@ class CodexAgent:
                     "provider": self.binding.provider,
                     "model": self.binding.model,
                     "effort": self.binding.effort,
+                    "session_root": str(session_root),
                 }
             )
             + "\n"

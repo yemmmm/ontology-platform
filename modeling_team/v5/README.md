@@ -13,11 +13,16 @@
 ### 精确模型读取与当前后续验证
 
 生产、自查和独立评价在 `read_material`／`query_semantic_context` 外，可使用只读工具
-`read_model_resource(ontology_id, resource_iri, family)`。`family` 为 `class-detail`、
+`read_model_resource(ontology_id, family, resource_iri=None)`。`family` 为 `class-detail`、
 `property-list`、`relation-type-list`、`entity-detail`、`table-mapping-detail` 或
 `join-mapping-detail`；它沿既有受治理 read-model
 接口展开真实 IRI，保留 Host 绑定的本体范围、只读凭据和冻结 revision 检查。
 先召回定位、再按需精确展开；召回无命中不证明模型不存在相应事实。
+
+`operation-detail` 同样按真实 IRI 精确读取。读取整个 `resource-list` 时省略
+`resource_iri`；提供 IRI 会过滤清单。`resource-relations` 返回整个获准本体关系图，
+不按 IRI 过滤。结果中的 `read_scope` 标明请求范围，`paging.complete` 只针对该范围；
+单个资源过滤后的 complete 不证明全本体完整。查询截断／退化时优先展开已知 IRI。
 
 新 Task 冻结的方法合同包含完整 Class／relation_type 请求示例，
 以及 table_mapping／join_mapping 的完整载荷、列／连接步骤和按类型限定的 mapping_definition
@@ -181,6 +186,7 @@ evaluation:
   freeze_id: 独立冻结题集身份
   sha256: 替换为64位十六进制原始字节摘要
   case_count: 真实题目数量
+  model_read_scope: whole_model  # 全模型验收；有界相关资源读取可用 referenced_resources
 ```
 
 `approved-materials/manifest.json` 使用已有材料合同，按材料 ID 列出相对 `path`、
@@ -188,6 +194,11 @@ evaluation:
 变化不静默改变原绑定，快照篡改会返回准确错误。当前 Host 路由只接入 `glm-direct`，按
 Profile 精确保留模型／effort；新任务使用下述金额模式或明确授权的 usage_only，
 不自动降级。历史次数任务沿旧绑定继续，不通过新 run 重置原授权。
+
+`model_read_scope` 默认 `referenced_resources`，核对冻结实际引用中被报告引用的正文。
+显式 `whole_model` 用于全模型完整性主张：要求获准本体的无 IRI 过滤资源清单、全部清单
+正文／必要映射以及完整关系图；全目标 root 的 ready 自查也采用该范围，局部／待子级
+自查保持原有边界。程序只核对证据可用性，语义适用与通过判断仍由 Agent 承担。
 
 ### 金额累计与自然回合控制
 
@@ -208,6 +219,8 @@ v5 将实际 Codex 累计通知和传输尝试登记到已有账本。新原生�
 刷新金额并在下一活动前暂停。余额可以因该回合尾差变负，实际金额及未知尾差上界照实显示。
 重复累计通知、读取及原执行结果复用不会重复扣费。独立评价沿同一预算计量；
 Host 用量单列，不扣任务金额。CLI 的 `status`／`budget` 按需刷新，没有新增常驻监视服务。
+独立报告纠错延续本人的 native thread，使用前一回合真实累计 counter 作为既有账本的
+`cumulative_segment.baseline`，只计新增用量；缺少金额模式基线时返回可恢复错误，不按零估价。
 
 ```bash
 python -m ontoweave_modeling budget --run-dir /absolute/path/run
@@ -250,6 +263,18 @@ Host 从已应用 payload 和真实同批输出保留在绑定元数据；不要
 Host 统一统计所有在途角色供暂停／停止判断。私有题目、答案和理由只保存于评价原件，公开反馈
 仅投影 verdict、范围及目标身份。格式或必需读取错误可沿同一评价身份重试，保持原冻结标准；
 未知在途执行不会借新报告尝试重启。当前工程 fixture 的 PASS 不代表真实语义 PASS。
+
+普通冻结题报告只使用五个逐题字段：index、passed、actual_answer、reason、evidence_iris；
+项目自定义 CQ 才使用 CQ 版本及分层能力字段。程序保留严格 JSON 校验并返回解析位置，
+不执行报告中的表达式。格式／补读纠错恢复该评价自己的原生上下文，原回合事件单独保留；
+题集、来源、目标或必需工件变化不沿用该证明。只有实际 thread 身份相同时才合并自身读取，
+累计 token 从前回合真实计数取差，不重复计费。
+
+完整读取按同 ID＋SHA256 的返回字符区间合并。必须检查的额外独立工件用
+`--required-artifact material-id` 显式冻结；仅把文件放入包中不会自动增加读取义务。
+PASS 需要本范围来源及实际定义读取完整；缺口可补读或报告 PARTIAL，正文已返回仍由
+独立 Agent 判断语义。`whole_model` 需整本体清单、所有正文和完整关系，默认
+`referenced_resources` 只核对报告引用的已绑定资源，不能宣称全模型完整。
 
 ## 项目自定义 CQ
 

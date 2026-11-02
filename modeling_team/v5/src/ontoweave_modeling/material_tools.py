@@ -35,7 +35,11 @@ def material_server(
         )
     )
     def read_material(material_id: str, offset: int = 0, limit: int = 12000) -> dict:
-        """Read authorized source text by ID and character offset. Unknown IDs are recoverable."""
+        """Read authorized text by ID/character offset; follow next_offset until null.
+
+        SHA256 identifies the whole material, not completeness of this page. Unknown IDs
+        are recoverable.
+        """
         if material_id not in manifest:
             raise ToolError(
                 json.dumps(
@@ -185,7 +189,6 @@ def material_server(
         )
         def read_model_resource(
             ontology_id: str,
-            resource_iri: str,
             family: Literal[
                 "class-detail",
                 "property-list",
@@ -197,25 +200,38 @@ def material_server(
                 "resource-list",
                 "resource-relations",
             ],
+            resource_iri: str | None = None,
         ) -> dict:
-            """Expand an exact known model resource through its governed read projection.
-            Use actual IRIs from recall or the frozen target; a search miss is not proof of absence.
-            resource-list and resource-relations return bounded authorized ontology inventories,
-            not anchor-filtered results. Check paging and warnings before concluding completeness.
+            """Read authorized model resources and preserve the frozen revision.
+            Exact families require an actual IRI from recall or the frozen target.
+            For the whole resource-list omit resource_iri; supplying it filters that list.
+            resource-relations always returns the whole authorized Ontology graph and ignores
+            resource_iri. read_scope describes the request; paging.complete applies to that scope.
+            A search miss or a complete filtered result is not proof of whole-model coverage.
             """
             if ontology_id not in platform["ontology_ids"]:
                 raise ToolError(
                     json.dumps({"code": "resource_scope_forbidden", "recoverable": True})
                 )
+            inventory = family in {"resource-list", "resource-relations"}
+            if not inventory and not resource_iri:
+                raise ToolError(
+                    json.dumps(
+                        {"code": "resource_iri_required", "recoverable": True, "family": family}
+                    )
+                )
+            selector = resource_iri if family != "resource-relations" else None
+            parameters = {"entity": selector} if selector else {}
+            parameters["field_set"] = "detail"
+            if inventory:
+                parameters["limit"] = "1000"
             path = (
                 "/api/semantic/ontologies/"
                 + urllib.parse.quote(ontology_id, safe="")
                 + "/read-models/"
                 + family
-                + "?entity="
-                + urllib.parse.quote(resource_iri, safe="")
-                + "&field_set=detail"
-                + ("&limit=1000" if family in {"resource-list", "resource-relations"} else "")
+                + "?"
+                + urllib.parse.urlencode(parameters)
             )
             request = urllib.request.Request(
                 platform["base_url"] + path,
@@ -250,6 +266,10 @@ def material_server(
                 )
             if semantic_workspace is not None:
                 semantic_workspace.observe_models(actual)
+            result["read_scope"] = {
+                "mode": "resource" if selector else "ontology",
+                "resource_iri": selector,
+            }
             return result
 
     if team_config is not None:

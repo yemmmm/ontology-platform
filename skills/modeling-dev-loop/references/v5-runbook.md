@@ -23,6 +23,10 @@
 `entity-detail` 不覆盖这些资源。`model-read:<family>:<ontology_id>` 引用使用该真实 family。
 实际关系核对可使用 `resource-relations`，返回整个获准 Ontology 的关系图；它不按传入
 anchor 过滤。按返回端点核对所需关联，并保留 paging／completeness 限制。
+`resource-list` 省略 resource_iri 才是整本体清单；传入 IRI 会过滤，complete 只对应
+该请求范围。结果 read_scope 标明这一差别。声明全模型完整的 Task 应显式设置
+`evaluation.model_read_scope=whole_model`，根自查及独立 PASS 核对全量清单、实际正文和
+完整关系；普通有界任务默认 referenced_resources，不强迫每个单元全量读取。
 若读取只返回 IRI，更新还须有已核实的原生身份；可由 Host 将同 revision 平台快照中的
 显式 `v:id`／资源类型与实际应用回执交叉核对，交接到原有 `applied-bindings.json`。
 保留快照、核对及交接回执，不猜 IRI 后缀、不改候选，也不把一次人工技术交接称作
@@ -77,6 +81,11 @@ required-artifact 的记忆／摘要为待验对象，不能补成模型本身�
 独立提示的 source_ids 同时列入自动产生的 human-inputs；必须直接读冻结题和每项来源，
 不能以别的工件引用代替。历史读取明确标观察者，原单元检查按确切执行／代次／模型版本
 核对；旧证明、预期动作或 Host 观察不能冒充后继实际检查。
+材料必须沿 next_offset 读完当前义务范围，哈希匹配不代表全文已读；额外必验工件通过
+`--required-artifact material-id` 显式冻结。读取缺口返回字符区间及资源 IRI，可补读或
+保留 PARTIAL。格式／补读失败复用同 evaluation-id 时，只恢复该独立评价自己的原生
+上下文；冻结目标、来源与题集保持，事件原件按回合保留，累计用量按真实基线取差。
+语义改变需新的实际验收目标，不能借格式重试复用旧 PASS。
 
 父级整合子级后，可在建模提案的可选 review_units 声明需要实际读回的已就绪直接子级；
 程序在应用或 no_change 后、父级整体自查前调用原单元。中间单元可在自身提案声明直接子级，

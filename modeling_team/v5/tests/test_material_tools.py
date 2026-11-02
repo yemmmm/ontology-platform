@@ -3,6 +3,7 @@ import hashlib
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from mcp.server.fastmcp.exceptions import ToolError
@@ -176,7 +177,12 @@ def test_exact_resource_read_uses_scoped_key_and_checks_revision(tmp_path, actua
         }
         if actual_revision == 2:
             response = asyncio.run(server.call_tool("read_model_resource", arguments))
-            assert json.loads(response[0].text)["items"][0]["iri"] == "urn:test"
+            actual = json.loads(response[0].text)
+            assert actual["items"][0]["iri"] == "urn:test"
+            assert actual["read_scope"] == {
+                "mode": "ontology" if family == "resource-relations" else "resource",
+                "resource_iri": None if family == "resource-relations" else "urn:test",
+            }
         else:
             with pytest.raises(ToolError, match="frozen_target_changed"):
                 asyncio.run(server.call_tool("read_model_resource", arguments))
@@ -186,12 +192,94 @@ def test_exact_resource_read_uses_scoped_key_and_checks_revision(tmp_path, actua
             )
         assert len(received) == 1
         inventory_limit = "&limit=1000" if family in {"resource-list", "resource-relations"} else ""
+        selector = "" if family == "resource-relations" else "entity=urn%3Atest&"
         assert received[0] == (
-            (f"/api/semantic/ontologies/ontology/read-models/{family}"
-             f"?entity=urn%3Atest&field_set=detail{inventory_limit}"),
+            (
+                f"/api/semantic/ontologies/ontology/read-models/{family}"
+                f"?{selector}field_set=detail{inventory_limit}"
+            ),
             "Bearer scoped-read-key",
         )
     finally:
         endpoint.shutdown()
         endpoint.server_close()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize("family", ["resource-list", "resource-relations"])
+def test_ontology_inventory_can_omit_the_resource_selector(tmp_path, family):
+    requests = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            query = parse_qs(urlsplit(self.path).query)
+            requests.append(query)
+            items = [{"iri": "urn:first"}, {"iri": "urn:second"}]
+            if query.get("entity"):
+                items = [item for item in items if item["iri"] == query["entity"][0]]
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "model_revision": 2,
+                        "items": items,
+                        "paging": {"complete": True, "visible_count": len(items)},
+                    }
+                ).encode()
+            )
+
+        def log_message(self, *_):
+            pass
+
+    endpoint = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=endpoint.serve_forever, daemon=True)
+    thread.start()
+    try:
+        (tmp_path / "manifest.json").write_text("{}")
+        config = tmp_path / "platform.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "base_url": f"http://127.0.0.1:{endpoint.server_port}",
+                    "read_key": "scoped-key",
+                    "project_id": "project",
+                    "ontology_ids": ["ontology"],
+                    "model_revisions": {"ontology": 2},
+                }
+            )
+        )
+        server = material_server(tmp_path, platform_config=config)
+        result = asyncio.run(
+            server.call_tool("read_model_resource", {"ontology_id": "ontology", "family": family})
+        )
+        actual = json.loads(result[0].text)
+        assert [item["iri"] for item in actual["items"]] == ["urn:first", "urn:second"]
+        assert actual["read_scope"] == {"mode": "ontology", "resource_iri": None}
+        assert "entity" not in requests[0]
+    finally:
+        endpoint.shutdown()
+        endpoint.server_close()
+        thread.join(timeout=5)
+
+
+def test_exact_projection_without_an_iri_returns_a_recoverable_locator_error(tmp_path):
+    (tmp_path / "manifest.json").write_text("{}")
+    config = tmp_path / "platform.json"
+    config.write_text(
+        json.dumps(
+            {
+                "base_url": "http://127.0.0.1:9",
+                "read_key": "scoped-key",
+                "project_id": "project",
+                "ontology_ids": ["ontology"],
+            }
+        )
+    )
+    server = material_server(tmp_path, platform_config=config)
+    with pytest.raises(ToolError, match="resource_iri_required"):
+        asyncio.run(
+            server.call_tool(
+                "read_model_resource", {"ontology_id": "ontology", "family": "entity-detail"}
+            )
+        )

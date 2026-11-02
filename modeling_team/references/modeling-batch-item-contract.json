@@ -115,7 +115,7 @@
           "column"
         ],
         "field_meaning_rules": [
-          "column matches identifier_pattern; conversion_rule_iri is optional absolute IRI/null; other fields optional nonempty string/null."
+          "column matches identifier_pattern and must also be present in column_mappings. A physical-only column can be declared with role=value and no property_iri; do not invent a semantic property merely to explain that column. conversion_rule_iri is optional absolute IRI/null; other fields optional nonempty string/null."
         ]
       },
       "join_mapping": {

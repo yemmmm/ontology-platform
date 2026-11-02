@@ -198,8 +198,18 @@ def modeling_instructions(task_instructions):
                                     "path": "/actual-property",
                                 }
                             },
-                        }
+                        },
+                        {"column": "physical_only_column", "role": "value"},
                     ],
+                    "mapping_definition": {
+                        "source_key": "approved-source-name",
+                        "field_meanings": [
+                            {
+                                "column": "physical_only_column",
+                                "source_meaning": "Physical column with no semantic property mapping.",
+                            }
+                        ],
+                    },
                 },
                 "relation_endpoints": None,
                 "slice_ids": ["approved-slice"],
@@ -380,6 +390,11 @@ class TaskBinding:
             or evaluation["case_count"] <= 0
         ):
             raise FrameworkError("evaluation_freeze_required")
+        if evaluation.get("model_read_scope", "referenced_resources") not in {
+            "referenced_resources",
+            "whole_model",
+        }:
+            raise FrameworkError("model_read_scope_invalid")
         materials = (task_path.parent / task["materials"]).resolve()
         profile = (task_path.parent / task["model_profile"]).resolve()
         manifest = _check_sources(materials)
@@ -608,7 +623,7 @@ def decode_work_result(message: str, manifest: dict, *, require_changes: bool = 
     try:
         result = decode_json_result(message, WORK_RESULT_SCHEMA)
     except ResultContractError as error:
-        raise FrameworkError("work_result_invalid", detail=str(error)) from error
+        raise FrameworkError("work_result_invalid", detail=str(error), **error.details) from error
     for ref in result["source_refs"]:
         entry = manifest.get(ref["material_id"])
         if entry is None or entry["sha256"] != ref["sha256"]:

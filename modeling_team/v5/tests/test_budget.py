@@ -305,3 +305,33 @@ def test_amount_mode_requires_stable_budget_reference(task_file, tmp_path):
     with pytest.raises(FrameworkError, match="budget_reference_required"):
         TaskBinding.prepare(task_file, tmp_path / "unbound-run")
     assert not (tmp_path / "unbound-run").exists()
+
+
+def test_resumed_reader_prices_only_the_new_turn_delta(task_file, tmp_path, workspace):
+    binding = amount_binding(task_file, tmp_path, amount="1")
+    _, previous = numeric_sources(binding, "reader-first", role="acceptance")
+    control = TaskControl(workspace)
+    assert synchronize_budget(binding, control)["charged_estimate"] == "0.0024"
+    root, current = numeric_sources(
+        binding, "reader-correction", input_tokens=2300, role="acceptance"
+    )
+    current.update(
+        thread_id=previous["thread_id"],
+        runtime_session_id=previous["thread_id"],
+        turn_id="correction",
+    )
+    current["total"]["outputTokens"] = 130
+    (root / "budget-native-usage.jsonl").write_text(json.dumps(current) + "\n")
+    (root / "native-usage-baseline.json").write_text(
+        json.dumps(
+            {
+                "thread_id": previous["thread_id"],
+                "total": previous["total"],
+                "source_execution": "reader-first",
+            }
+        )
+    )
+    state = synchronize_budget(binding, control)
+    assert state["charged_estimate"] == "0.00282"
+    assert state["coverage"]["unknown"] == 0
+    assert synchronize_budget(binding, control)["charged_estimate"] == "0.00282"
