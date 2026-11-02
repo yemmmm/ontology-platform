@@ -32,4 +32,10 @@ GitNexus 同名 `validate_report` 命中旧 `modeling_team/acceptance.py` 并返
 
 新反例先以 relation_type 唯一失败（其他三例通过），修后 compiler／提交／引用相关 **107 passed**，v5 Host 调用链与技术合同 **37 passed**。持久合同补充已有 relation_type 可作谓词，无需重复 property。运行按自然边界暂停，失败与待应用技术替代候选保留；Host 用 source-revise 交接署名的 `platform-contract-update`，由 Agent 重新选择表达。原五项业务来源、题目内容和金额账本保持；后半段属于公开技术修复后继续，不能冒充零介入冷启动。此次继续不新增 fresh start，也不由 Host 改写候选。
 
+该追加修复提交为 `aaa0b62`。随后真实 `apply-00006` 复用既有 relation_type，11 条 relation 成功应用，未应用重复 property 替代候选。原自查再次 raw ready 时，读取覆盖检查准确发现六项来源未读、缺全量 inventory（仅返回 30 个正文），拒绝交接并给出可补读缺口。补读回合 `self-check-00006-001` 沿原目标读取六项来源全文、44/44 资源正文及 51 条完整关系，revision 4 最终 handoff_ready；这仍是生产自查，不是独立语义 PASS。
+
+接续中另保留一次账本 metering_error 暂停（source/upstream offset=0，原事件 seq=588）。本轮不推断缺少轨迹的深层原因。后继 11 个托管执行全部实际数字补齐，unknown/provisional/pending/inflight 均为零、已知估算 0.83328392 CNY，Host 沿既有 continue_authorized 仅清除已恢复的 metering_error，保留事件与 3 CNY 额度。此时发现 CLI resume 没有刷新账本投影，旧 budget_open=false 阻止推进；以新反例复现后，在既有 resume 入口补一次 synchronize_budget。预算、控制、HITL、来源修订 **34 passed**（66.71 秒）；不自动清除真实错误、越额或用户暂停。
+
+原 36 题独立评价 `fixes-full-36` 已启动，额外 runtime-observations 显式必读。原问题哈希保持，独立者不接收生产候选、自查与私有修复答案。
+
 待追加：最终实际采用、独立语义结果、用量／预算与资源收尾。工程通过不代表完整 Demo 语义通过或净降耗。外部评分服务内部故障根因未获证，本次只改精确 IRI 回退与完整性反馈；不能声称外部故障已经修好。未知 Host／内部辅助用量继续保留，不新增计量框架或把未知补零。

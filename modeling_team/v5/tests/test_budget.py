@@ -100,6 +100,32 @@ def numeric_sources(binding, execution_id="turn-one", input_tokens=2000, role="m
     return root, native
 
 
+def test_cli_resume_refreshes_recovered_amount_admission(
+    task_file, tmp_path, workspace, monkeypatch
+):
+    from contextlib import nullcontext
+
+    from ontoweave_modeling import cli
+
+    binding = amount_binding(task_file, tmp_path)
+    control = TaskControl(workspace)
+    control.enqueue("previous-closed-budget", "budget_pause")
+    assert not control.synchronize()["budget_open"]
+
+    class ResumedFlow:
+        def __init__(self, *args):
+            pass
+
+        def advance(self, saver):
+            return {"budget_open": control.view()["budget_open"]}
+
+    monkeypatch.setattr(cli, "repository", lambda _: (workspace, {"checkpoint_schema": "unused"}))
+    monkeypatch.setattr(cli, "WorkUnitFlow", ResumedFlow)
+    monkeypatch.setattr(workspace, "checkpointer", lambda _: nullcontext(None))
+    args = cli.parser().parse_args(["resume", "--run-dir", str(binding.root)])
+    assert cli.dispatch(args)["budget_open"]
+
+
 def test_amount_pause_natural_end_and_addition_survives_restart(task_file, tmp_path, workspace):
     binding = amount_binding(task_file, tmp_path)
     control = TaskControl(workspace)

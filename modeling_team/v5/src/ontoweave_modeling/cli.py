@@ -653,6 +653,7 @@ def dispatch(args) -> dict:
     if args.command == "start" and args.prepare_only:
         return {"status": "prepared", "work": create_flow(binding).initialize()}
     if args.command == "resume":
+        synchronize_budget(binding, control)
         control.enqueue(uuid.uuid4().hex, "resume")
         if control.synchronize()["mode"] == "stopped":
             raise FrameworkError("task_stopped")
