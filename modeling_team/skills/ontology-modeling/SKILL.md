@@ -196,6 +196,15 @@ automatic clones or same-identity version pinning. Stable IRI/version/dry-run is
 Refresh affected review on candidate/resource drift. Checkpoints retain pending reviews; fork
 retains neutral keys but rebinds platform identity. Collaboration records are work, not lineage.
 
+Before final handoff, review association candidates across the complete authorized applied
+resource inventory, not just the latest changes or the visible canvas. Check incoming and
+outgoing relations, definitions used as predicates, and explicit references in formal mapping
+and semantic fields. Retain read completeness and actual identities; incomplete windows cannot
+prove absence. A definition's existence must agree with mappings that claim no corresponding
+definition exists. Record each candidate's source-grounded disposition: a missing association,
+an erroneous definition, a justified independent definition, or an unresolved/read gap. Several
+complete business subgraphs are allowed; do not add relationships merely to make a connected graph.
+
 ### Report current progress (R4.0-014)
 
 At candidate handoff and content-affecting revision, send Coordinator through the existing message

@@ -5,7 +5,7 @@ import { useT } from "../i18n";
 import { connectionColor, type NodeColorFamily } from "./nodeColors";
 cytoscape.use(fcose);
 export type ForceGraphNode = { id: string; label: string; colorFamily: NodeColorFamily; group?: string };
-export type ForceGraphEdge = { id: string; source: string; target: string; label?: string; edgeKind?: string };
+export type ForceGraphEdge = { id: string; source: string; target: string; label?: string; edgeKind?: string; fieldPath?: string; viaResourceIri?: string };
 type Props = {
   nodes: ForceGraphNode[]; edges: ForceGraphEdge[]; selectedNodeId: string | null;
   onSelectNode: (id: string | null) => void; highlightedNodeIds: string[]; searchActive: boolean;

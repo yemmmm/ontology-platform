@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { ForceGraphCanvas, type ForceGraphEdge } from "../components/ForceGraphCanvas";
 import { assignNodeColorFamilies, UNCLASSIFIED_COLORS, VIEWPOINT_COLORS } from "../components/nodeColors";
 import { useT } from "../i18n";
+import { withMappingEndpointReferences, type ModelRelation } from "../modelRelationReferences";
 import { workspaceApi } from "../workspaceApi";
-import { semanticViews, type JsonObject, type Project, type Relation, type Resource } from "../workspaceTypes";
+import { semanticViews, type JsonObject, type Project, type Resource } from "../workspaceTypes";
 type Position = { ontologyId: string; ontologyName: string; modelRevision: number; resource: Resource };
 type Node = { iri: string; label: string; positions: Position[] };
 function definition(resource: Resource): JsonObject {
@@ -39,7 +40,7 @@ export function ModelBrowserPage({ project }: { project: Project }) {
         const results = await Promise.all(ontologies.map(async ontology => {
           const warnings: { name: string; code: string; detail?: string }[] = [];
           let items: Position[] = [];
-          let relations: Relation[] = [];
+          let relations: ModelRelation[] = [];
           const ontologyId = ontology.id;
           try {
             const workspace = await workspaceApi.workspace(ontology.id);
@@ -58,7 +59,7 @@ export function ModelBrowserPage({ project }: { project: Project }) {
             else {
               const relationEnvelope = relationResult.value;
               if (!resources.model_revision || resources.model_revision !== relationEnvelope.model_revision) warnings.push({ name: ontology.name, code: "Model revisions differ; refresh before combining relations" });
-              else relations = relationEnvelope.items;
+              else relations = withMappingEndpointReferences(resources.items, relationEnvelope.items);
               if (relationEnvelope.paging?.complete === false) warnings.push({ name: ontology.name, code: "Relation window is incomplete" });
               for (const warning of relationEnvelope.warnings ?? []) warnings.push({ name: ontology.name, code: "Partial loading", detail: warning.message || warning.code });
             }
@@ -77,10 +78,10 @@ export function ModelBrowserPage({ project }: { project: Project }) {
           const localIds = new Set(result.items.map(item => item.resource.iri));
           for (const relation of result.relations) {
             if (!localIds.has(relation.source) || !localIds.has(relation.target)) continue;
-            const id = JSON.stringify([relation.source, relation.relation, relation.target, relation.field_path ?? ""]);
+            const id = JSON.stringify([relation.source, relation.relation, relation.target, relation.field_path ?? "", relation.via_resource_iri ?? ""]);
             const existing = uniqueEdges.get(id);
             if (existing) existing.positions.push(result.ontologyId);
-            else uniqueEdges.set(id, { id, source: relation.source, target: relation.target, label: relation.label || relation.relation, edgeKind: relation.edge_kind, positions: [result.ontologyId] });
+            else uniqueEdges.set(id, { id, source: relation.source, target: relation.target, label: relation.label || relation.relation, edgeKind: relation.edge_kind, fieldPath: relation.field_path, viaResourceIri: relation.via_resource_iri, positions: [result.ontologyId] });
           }
         }
         setNodes([...uniqueNodes.values()]); setEdges([...uniqueEdges.values()]); setLimits(results.flatMap(result => result.warnings));

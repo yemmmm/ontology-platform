@@ -194,12 +194,14 @@ def material_server(
                 "operation-detail",
                 "table-mapping-detail",
                 "join-mapping-detail",
+                "resource-list",
                 "resource-relations",
             ],
         ) -> dict:
             """Expand an exact known model resource through its governed read projection.
             Use actual IRIs from recall or the frozen target; a search miss is not proof of absence.
-            resource-relations returns the authorized ontology's relation graph, not an anchor filter.
+            resource-list and resource-relations return bounded authorized ontology inventories,
+            not anchor-filtered results. Check paging and warnings before concluding completeness.
             """
             if ontology_id not in platform["ontology_ids"]:
                 raise ToolError(
@@ -213,6 +215,7 @@ def material_server(
                 + "?entity="
                 + urllib.parse.quote(resource_iri, safe="")
                 + "&field_set=detail"
+                + ("&limit=1000" if family in {"resource-list", "resource-relations"} else "")
             )
             request = urllib.request.Request(
                 platform["base_url"] + path,

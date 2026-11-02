@@ -86,7 +86,7 @@
     "legacy_value": "A legal old value that cannot uniquely compile requires an explicit new immutable revision; the program does not guess or rewrite the old artifact."
   },
   "mapping_reference_inputs": {
-    "rule": "For table_mapping and join_mapping authoring, the listed paths inside candidate.value or change.fields require {definition_ref: selected_item_id} or {existing_resource_ref: {artifact_ref, path}}. This also applies to nested fields. Never return literal IRIs in these slots; optional nullable slots may remain null. IRI wording in the reused relational structures describes resolved API output, not authoring input. The compiler resolves only declared slots; ordinary strings, table/column names and business text stay literal.",
+    "rule": "For table_mapping and join_mapping authoring, the listed paths inside candidate.value or change.fields require {definition_ref: selected_item_id} or {existing_resource_ref: {artifact_ref, path}}. This also applies to nested fields. Never return literal IRIs in these slots; optional nullable slots may remain null. IRI wording in the reused relational structures describes resolved API output, not authoring input. When updating a collection copied from governed readback, wrap every preserved reference as well as each changed reference using actual authorized bindings; do not paste resolved read IRIs back as authoring input. Submit only supported mutable fields, not an entire create payload or read response; mapped_class_iri is create-only for table_mapping. The compiler resolves only declared slots; ordinary strings, table/column names and business text stay literal.",
     "paths": [
       "mapped_class_iri",
       "mapped_definition_iri",

@@ -130,6 +130,7 @@ def test_governed_read_preserves_authorized_scope_and_frozen_revision(tmp_path, 
         "table-mapping-detail",
         "join-mapping-detail",
         "operation-detail",
+        "resource-list",
         "resource-relations",
     ],
 )
@@ -184,8 +185,10 @@ def test_exact_resource_read_uses_scoped_key_and_checks_revision(tmp_path, actua
                 server.call_tool("read_model_resource", {**arguments, "ontology_id": "other"})
             )
         assert len(received) == 1
+        inventory_limit = "&limit=1000" if family in {"resource-list", "resource-relations"} else ""
         assert received[0] == (
-            f"/api/semantic/ontologies/ontology/read-models/{family}?entity=urn%3Atest&field_set=detail",
+            (f"/api/semantic/ontologies/ontology/read-models/{family}"
+             f"?entity=urn%3Atest&field_set=detail{inventory_limit}"),
             "Bearer scoped-read-key",
         )
     finally:
