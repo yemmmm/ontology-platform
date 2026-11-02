@@ -1834,7 +1834,7 @@ def _predicate(
         ctx,
         change,
         path,
-        expected_kinds={"property"},
+        expected_kinds={"property", "relation_type"},
         output="resource_iri",
     )
 

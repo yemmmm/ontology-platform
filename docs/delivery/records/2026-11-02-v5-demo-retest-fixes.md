@@ -22,4 +22,14 @@ GitNexus 同名 `validate_report` 命中旧 `modeling_team/acceptance.py` 并返
 
 有界实测：新隔离任务 `demo-glm-fixes-20261102-start1`，原公开五项材料及原冻结 36 题，原题哈希保持；不注入前轮模型、候选、Host 语义反馈或隐藏答案。所有托管角色继续 GLM Flash／low，独立 3 CNY 金额账本；显式 whole_model，独立 runtime-observations 作为 required-artifact。输入／授权／测试日志保存在 `workspaces/v5-runs/demo-glm-fixes-20261102-inputs/`。旧运行与模型保留，不重开已撤销凭据。
 
-待追加：实际采用、原生上下文接续、独立语义结果、用量／预算、资源收尾与最终提交。工程通过不代表完整 Demo 语义通过或净降耗。
+实现提交：`e65b5ed`。GitNexus staged 检查识别 20 个变更文件、零已索引符号／流程；不据其 low 投影声称 v5 调用图覆盖。文档 80 个相对文件链接与 JSON 合同检查通过。只修改 v5 和指令／合同文件，无后端／前端代码变更，不需应用服务重启。
+
+真实 SDK 接续探针：使用已完成的首个生产 thread，只调用 thread/resume，不调用 turn/start、无模型推理。恢复为同一实际 thread；原 events、thread-binding、result、usage 四份文件哈希逐一保持，临时配置恢复原值。原件见输入目录 `native-resume-probe/summary.json`。这证明新执行目录能恢复原 native home；付费报告纠错与累计差分的实际路径是否触发另记，不把无推理探针当语义验收。
+
+生产截至第三批：首次应用 27 项，自查返回 revise；一批 relation_type 缺 source_class_id／target_class_id 被准确拒绝并返回 retryable 字段位置，Agent 沿原运行自行修正；后继 9 项、8 项已实际应用。分批引用依赖不重复计为新的 fresh start。原生 API 读取已实际续读 12000 字符之后部分；物理列 role=value／省略 property_iri 例子已被 Agent 采用。尚未据此判断最终语义完整性。
+
+实测追加窄修：`apply-00004` 的 11 条定义关系因已核实 relation_type 谓词被 `_predicate` 错限为 property 而 not_written。底层 create_relation 接受该 ObjectProperty；这是 platform-contract，不是模型质量失败。T0 复核确认类型约束仍有必要，但合法 relation_type 被误拒；本次只放入该合法种类，继续拒绝 Class／entity 谓词，保留身份、范围、修订、原子性与业务验收。GitNexus 对完整文件限定符仍 UNKNOWN，直接调用点为 legacy Runner 与 v5 Host worker。
+
+新反例先以 relation_type 唯一失败（其他三例通过），修后 compiler／提交／引用相关 **107 passed**，v5 Host 调用链与技术合同 **37 passed**。持久合同补充已有 relation_type 可作谓词，无需重复 property。运行按自然边界暂停，失败与待应用技术替代候选保留；Host 用 source-revise 交接署名的 `platform-contract-update`，由 Agent 重新选择表达。原五项业务来源、题目内容和金额账本保持；后半段属于公开技术修复后继续，不能冒充零介入冷启动。此次继续不新增 fresh start，也不由 Host 改写候选。
+
+待追加：最终实际采用、独立语义结果、用量／预算与资源收尾。工程通过不代表完整 Demo 语义通过或净降耗。外部评分服务内部故障根因未获证，本次只改精确 IRI 回退与完整性反馈；不能声称外部故障已经修好。未知 Host／内部辅助用量继续保留，不新增计量框架或把未知补零。

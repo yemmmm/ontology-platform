@@ -163,6 +163,66 @@ def test_relation_type_uses_receipt_resource_ids_for_class_endpoints():
     assert "%3A" not in payload["source_class_id"] + payload["target_class_id"]
 
 
+@pytest.mark.parametrize(
+    "predicate_kind", ["property", "relation_type", "class", "entity"]
+)
+def test_definition_link_accepts_verified_predicate_resources(predicate_kind):
+    candidate = _candidate(
+        [
+            _item("source", "entity", {"label": "Source definition"}),
+            _item("target", "entity", {"label": "Target definition"}),
+            _item(
+                "link",
+                "relation",
+                {
+                    "predicate": {
+                        "existing_resource_ref": {
+                            "artifact_ref": "receipts/predicate.json",
+                            "path": "/resources/0",
+                        }
+                    }
+                },
+                endpoints={"from_item_id": "source", "to_item_id": "target"},
+            ),
+        ]
+    )
+    request = _request(
+        [
+            _change(
+                "create-" + item["item_id"],
+                "create",
+                item["item_kind"],
+                item["item_id"],
+            )
+            for item in candidate["items"]
+        ]
+    )
+    binding = {
+        "resource_kind": predicate_kind,
+        "ontology_id": "ontology-1",
+        "resource_id": "actual-predicate",
+        "resource_iri": "https://example.test/predicate",
+    }
+    arguments = {
+        "candidate": candidate,
+        "ontology_by_item": {
+            item["item_id"]: "ontology-1" for item in candidate["items"]
+        },
+        "resolve_binding": lambda ref: binding,
+    }
+    if predicate_kind not in {"property", "relation_type"}:
+        with pytest.raises(ModelChangeCompilationError) as caught:
+            compile_model_changes(request, **arguments)
+        assert any(
+            error["code"] == "binding_kind_mismatch" for error in caught.value.errors
+        )
+    else:
+        batches, _ = compile_model_changes(request, **arguments)
+        link = batches[0]["items"][-1]
+        assert link["command_kind"] == "create_relation"
+        assert link["payload"]["relation_type_iri"] == binding["resource_iri"]
+
+
 @pytest.mark.parametrize("target_kind", ["class", "property", "operation", "table_mapping", "relation", "fact"])
 def test_definition_links_use_verified_resource_endpoints(target_kind):
     candidate = _candidate([
