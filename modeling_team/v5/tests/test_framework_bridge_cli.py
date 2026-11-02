@@ -109,8 +109,9 @@ print("configured-tools-only")
     assert process.stdout.strip() == "configured-tools-only"
 
 
+@pytest.mark.parametrize("first_status", ["completed", "not_written"])
 def test_host_closes_prior_apply_session_before_followup_and_preserves_unknown_outcomes(
-    task_file, tmp_path
+    task_file, tmp_path, first_status
 ):
     binding = TaskBinding.prepare(task_file, tmp_path / "run")
     bridge = HostBridge(binding.root)
@@ -129,13 +130,15 @@ worker.snapshot=lambda:{"model_revisions":{"ontology":2}}
 events=[]
 class Executor:
     def __init__(self, root): self.root,self.session_id=root,None
-    def _load_records(self): return ([{"ordinal":1}],[])
+    def _load_records(self): return ([] if self.root.name=="rejected" else [{"ordinal":1}],[])
     def _load_snapshot(self,intent): return {"batch":{"ontology_id":"ontology","session_id":self.root.name}}
     def _adopt_snapshot_context(self,snapshot,ontology):
         assert ontology=="ontology"
         self.session_id=snapshot["batch"]["session_id"]
     def _refresh_session_revision(self): assert self.session_id==self.root.name
     def close_session(self):
+        if self.session_id is None:
+            return {"closed":True,"session_id":None}
         assert self.session_id==self.root.name
         events.append("close:"+self.root.name)
         return {"closed":True,"session_id":self.root.name}
@@ -146,7 +149,7 @@ class Executor:
 worker.executor=lambda scope,root,*args,**kwargs:Executor(root)
 first=worker.root/"operations/first"
 write_json(first/"compiled.json",{})
-write_json(first/"result.json",{"status":"completed","batches":[]})
+write_json(first/"result.json",{"status":sys.argv[2],"batches":[]})
 rejected=worker.root/"operations/rejected"
 write_json(rejected/"compiled.json",{})
 write_json(rejected/"result.json",{"status":"not_written","errors":[{"code":"ontology_lease_conflict"}]})
@@ -158,13 +161,19 @@ assert result["status"]=="completed"
 assert worker.finalize()=={"model_revisions":{"ontology":2}}
 assert events==["close:first","apply:second","close:second"]
 write_json(worker.root/"operations/unknown/compiled.json",{})
+for status in ("unknown", "partial_success"):
+    write_json(worker.root/"operations/unknown/result.json",{"status":status})
+    try: worker.finalize()
+    except FrameworkError as error: assert error.code=="application_incomplete"
+    else: raise AssertionError("an incomplete write must remain unresolved")
+(worker.root/"operations/unknown/result.json").unlink()
 try: worker.finalize()
 except FrameworkError as error: assert error.code=="application_outcome_unknown"
 else: raise AssertionError("an unknown write must remain unresolved")
 print("completed-session-closed-and-unknown-preserved")
 """
     process = subprocess.run(
-        [bridge.command[0], "-c", program, str(binding.root)],
+        [bridge.command[0], "-c", program, str(binding.root), first_status],
         env=bridge.env,
         capture_output=True,
         text=True,

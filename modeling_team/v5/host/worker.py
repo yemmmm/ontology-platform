@@ -511,9 +511,8 @@ class PlatformWorker:
             if not (root / "result.json").exists():
                 raise FrameworkError("application_outcome_unknown")
             result = json.loads((root / "result.json").read_text())
-            if result.get("status") == "not_written":
-                continue
-            if result.get("status") != "completed":
+            # A rejected submission can still own a Build Session and its lease.
+            if result.get("status") not in {"completed", "not_written"}:
                 raise FrameworkError("application_incomplete")
             completion = root / "session-completion.json"
             if completion.exists() and json.loads(completion.read_text())["closed"]:
