@@ -174,6 +174,12 @@ For fields-only changes the path is fields.semantic_definition.semantic_role. Re
 misplaced declaration by moving it to the supported field, retaining its approved meaning.
 Check the actual returned declaration in the existing governed stage self-check.
 
+`business_role` describes a source-supported business responsibility or participation. A generic
+applicability predicate, an RDF property with `predicate_kind=role`, or a resource-kind label is
+not by itself a business role. Keep predicate kind, RDF type and semantic role distinct; do not
+relabel a link or mapping merely to fill a missing viewpoint. Locate the actual responsibility,
+participation or representation binding, or preserve the undelivered view and its concrete gap.
+
 Use the Task-selected scenario-map contract. For R4.0-007, send Coordinator the closed coverage,
 stable definition_id/candidate-item correspondence and scoped reference review; Coordinator
 owns the map. Interleave object, behavior, rule, role, process, data and interface mapping views
