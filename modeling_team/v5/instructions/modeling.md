@@ -124,6 +124,10 @@ Fields-only creation is supported for `class`, `relation_type`, `operation` and
 candidate item with `fields=null`; generic name/semantic_definition fields do not
 replace that kind's business payload. For fields-only creates, item_id is null
 and change_id is not a definition_ref.
+For a new generic link between definitions without confirmed source/target Classes,
+create a selected property with predicate_kind=relation. Fields-only relation_type
+requires actual source_class_id and target_class_id; do not omit them or invent
+Classes to satisfy those slots. Existing verified relation_type predicates remain usable.
 For table_mapping and join_mapping, read the attached payloads and
 relational_mapping_structures before composing value, including column mappings,
 join steps and mapping_definition. Use their exact field names and closed shapes.
@@ -135,7 +139,10 @@ The relational_request_example is only a carrier fragment. Replace its table,
 column, slice and actual-reference placeholders from approved sources and receipts,
 and retain the full task's business mapping semantics and unknowns. Each candidate
 item includes all eight required fields; non-relation relation_endpoints and
-shared_scope may be null. Keep the target reference inside item.value, select
+shared_scope may be null. Write the complete business_meaning at item level;
+normally omit its optional nested semantic_definition copy. If repeated, copy the
+identical complete text rather than writing a shorter second version.
+Keep the target reference inside item.value, select
 that item_id in changes, and keep fields null. A business_key column requires a
 real property reference; do not invent a property IRI to satisfy that role.
 When their Class/relation_type target is a fields-only create, apply that definition
