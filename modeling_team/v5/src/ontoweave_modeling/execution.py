@@ -6,6 +6,7 @@ import json
 import os
 import socket
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -63,6 +64,7 @@ class ExecutionManager:
         invoke: Callable,
         *,
         resume_original: bool = False,
+        admission_guard=None,
     ) -> dict:
         execution_id = self.binding.execution_id(execution_id)
         safe_id(execution_id)
@@ -92,30 +94,33 @@ class ExecutionManager:
             synchronize_budget(
                 self.binding,
                 self.control,
-                role="acceptance" if purpose == "acceptance" else "modeling",
+                role="acceptance"
+                if purpose in {"acceptance", "process_evaluation"}
+                else "modeling",
             )
-            admission = self.control.begin_activity(
-                self.unit_id,
-                execution_id,
-                deliver_inputs=purpose not in {"acceptance", "overview"},
-                input_phase="self_check" if purpose == "self_check" else "model",
-                input_run_id=self.binding.data["run_id"],
-            )
-            if not admission["admitted"]:
-                raise FrameworkError("execution_not_admitted", control=admission)
-            root.mkdir(parents=True, exist_ok=True, mode=0o700)
-            self.repository.put_reference(
-                record_id,
-                "execution",
-                {
-                    "intent": intent,
-                    "prompt": prompt,
-                    "state": "dispatching",
-                    "owner_pid": os.getpid(),
-                    "inputs": admission["inputs"],
-                },
-                0,
-            )
+            with admission_guard() if admission_guard else nullcontext():
+                admission = self.control.begin_activity(
+                    self.unit_id,
+                    execution_id,
+                    deliver_inputs=purpose not in {"acceptance", "overview", "process_evaluation"},
+                    input_phase="self_check" if purpose == "self_check" else "model",
+                    input_run_id=self.binding.data["run_id"],
+                )
+                if not admission["admitted"]:
+                    raise FrameworkError("execution_not_admitted", control=admission)
+                root.mkdir(parents=True, exist_ok=True, mode=0o700)
+                self.repository.put_reference(
+                    record_id,
+                    "execution",
+                    {
+                        "intent": intent,
+                        "prompt": prompt,
+                        "state": "dispatching",
+                        "owner_pid": os.getpid(),
+                        "inputs": admission["inputs"],
+                    },
+                    0,
+                )
             # Once dispatching is durable, an exception preserves active/unknown state.
             result = invoke(root, purpose, prompt, admission["inputs"])
         if result.get("status") not in {"completed", "failed", "interrupted"}:
@@ -207,6 +212,7 @@ class CodexInvocation:
         instructions: str | None = None,
         model_revisions: dict | None = None,
         read_only: bool = False,
+        materials_only: bool = False,
         resume_from: Path | None = None,
     ):
         self.binding, self.bridge = binding, bridge
@@ -214,6 +220,7 @@ class CodexInvocation:
         self.instructions = instructions or binding.data["instructions"]
         self.model_revisions = model_revisions
         self.read_only = read_only
+        self.materials_only = materials_only
         self.resume_from = resume_from
 
     def __call__(self, root: Path, purpose: str, prompt: str, inputs: list) -> dict:
@@ -223,8 +230,10 @@ class CodexInvocation:
         from .team import TEAM_TOOLS
         from .work_plan import WORK_TOOLS
 
-        role = "acceptance" if purpose == "acceptance" else "modeling"
+        role = "acceptance" if purpose in {"acceptance", "process_evaluation"} else "modeling"
         tools = ("read_material", "query_semantic_context", "read_model_resource")
+        if self.materials_only:
+            tools = ("read_material",)
         team_config = None
         instructions = self.instructions
         if (
@@ -364,7 +373,11 @@ class CodexInvocation:
             read_payload = {"role": role}
             if self.model_revisions is not None:
                 read_payload["model_revisions"] = self.model_revisions
-            read_config = self.bridge.call("read_config", read_payload)["config_ref"]
+            read_config = (
+                None
+                if self.materials_only
+                else self.bridge.call("read_config", read_payload)["config_ref"]
+            )
             if self.resume_from is not None:
                 usage_path = self.resume_from.parent / "usage.jsonl"
                 samples = usage_path.read_text().splitlines() if usage_path.exists() else []
@@ -411,7 +424,7 @@ class CodexInvocation:
                     self.binding.model(role),
                     provider_base_url=url,
                     materials=self.materials,
-                    platform_config=Path(read_config),
+                    platform_config=Path(read_config) if read_config else None,
                     team_config=team_config,
                     instructions=instructions,
                     on_event=observe,

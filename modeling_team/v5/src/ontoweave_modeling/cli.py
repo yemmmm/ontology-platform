@@ -450,6 +450,30 @@ def parser() -> argparse.ArgumentParser:
         if name == "reply":
             command.add_argument("--request-id", required=True)
             command.add_argument("--request-revision", type=int)
+    process_switch = sub.add_parser(
+        "process-configure", help="Persist process observation switch; never authorizes calls"
+    )
+    process_switch.add_argument("--enabled", choices=("true", "false"), required=True)
+    process_switch.add_argument(
+        "--point", action="append", choices=("cq", "slicing", "integration")
+    )
+    commands.append(process_switch)
+    process_submit = sub.add_parser(
+        "process-submit", help="Explicitly declare a versioned stage artifact"
+    )
+    process_submit.add_argument("--submission-file", type=Path, required=True)
+    commands.append(process_submit)
+    process_run = sub.add_parser(
+        "process-run", help="Run one queued diagnostic independently of production"
+    )
+    process_run.add_argument("--binding-digest", required=True)
+    process_run.add_argument("--retry", action="store_true")
+    commands.append(process_run)
+    process_report = sub.add_parser(
+        "process-report", help="Write immutable JSON and Markdown summary"
+    )
+    process_report.add_argument("--production-status", default="progress")
+    commands.append(process_report)
     for command in commands:
         command.add_argument("--run-dir", type=Path, required=True)
     return result
@@ -497,6 +521,17 @@ def dispatch(args) -> dict:
         binding = plan.binding(binding)
     control, bridge = TaskControl(repo), HostBridge(binding.root)
     human = HumanInput(binding, repo, control)
+    if args.command.startswith("process-"):
+        from .process_evaluation import ProcessEvaluation
+
+        process = ProcessEvaluation(binding, repo, bridge)
+        if args.command == "process-configure":
+            return process.configure(args.enabled == "true", args.point)
+        if args.command == "process-submit":
+            return process.submit(json.loads(args.submission_file.read_text()))
+        if args.command == "process-run":
+            return process.run(args.binding_digest, retry=args.retry)
+        return process.summary(args.production_status)
     if args.command == "cq-sync":
         from .custom_cq import CustomCQ
 
@@ -644,7 +679,13 @@ def dispatch(args) -> dict:
         )
     if args.command in {"pause", "stop"}:
         control.enqueue(uuid.uuid4().hex, args.command)
-        return {"control": control.synchronize()}
+        status = control.synchronize()
+        from .process_evaluation import ProcessEvaluation
+
+        process = ProcessEvaluation(binding, repo, bridge)
+        if process.settings()["enabled"] or process.records():
+            process.summary("paused" if args.command == "pause" else "stopped")
+        return {"control": status}
     if args.command == "cleanup":
         if control.view()["active"]:
             raise FrameworkError("original_activity_unsettled")
@@ -696,6 +737,11 @@ def dispatch(args) -> dict:
                     result = flow.advance(saver)
             revised = SourceRevisions(binding, repo).activate()
             if revised.data == binding.data:
+                from .process_evaluation import ProcessEvaluation
+
+                process = ProcessEvaluation(binding, repo, bridge)
+                if process.settings()["enabled"] or process.records():
+                    process.summary(result.get("status", "progress"))
                 return result
             binding = revised
 

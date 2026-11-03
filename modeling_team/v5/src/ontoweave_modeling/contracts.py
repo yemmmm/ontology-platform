@@ -333,6 +333,7 @@ class TaskBinding:
                 "workspace_ref",
                 "custom_cq",
                 "cq_question_ids",
+                "process_evaluation",
             }
             != required
         ):
@@ -341,6 +342,10 @@ class TaskBinding:
             raise FrameworkError("task_schema_mismatch")
         for field in ("task_ref", "run_id", "work_unit_id"):
             safe_id(task[field])
+        if "process_evaluation" in task:
+            from .process_evaluation import validate_config
+
+            validate_config(task["process_evaluation"])
         units = task.get("work_units", [])
         unit_ids = [safe_id(unit["unit_id"]) for unit in units]
         if len(set(unit_ids)) != len(unit_ids) or set(unit_ids) & {

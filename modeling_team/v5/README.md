@@ -533,3 +533,53 @@ Host 显式绑定 `project_ref` 或平台实际创建项目并完成运行期关
 多个获准 Ontology 的新建变更使用 WorkResult `ontology_targets: {change_id: ontology_id}`；
 更新通过实际 target_ref 继承目标。未选明的多本体创建返回可修正反馈，不静默写入第一个。
 新任务、历史迁移及收尾的完整操作边界见 [Host runbook](../../skills/modeling-dev-loop/references/v5-runbook.md)。
+
+## 可选过程评价（R5.0-011）
+
+默认关闭，已有 run 不自动启用。新 Task 可设置
+`process_evaluation: {enabled: true, points: [cq, slicing, integration]}`。
+开关不授权收费调用或新增预算；托管评价使用原任务 acceptance 模型及预算，执行用途为
+`process_evaluation`，不计为建模轮次或 semantic start。正式 `evaluate` 的资格保持。
+
+Host 在获准阶段产物提交后，显式提交版本引用，不依据聊天或回合结束猜测阶段：
+
+```bash
+scripts/modeling process-configure --run-dir RUN --enabled true --point cq --point slicing --point integration
+scripts/modeling process-submit --run-dir RUN --submission-file stage.json
+scripts/modeling process-run --run-dir RUN --binding-digest RETURNED_DIGEST
+scripts/modeling process-report --run-dir RUN --production-status closed
+scripts/modeling process-configure --run-dir RUN --enabled false
+```
+
+`stage.json` 示例（引用使用工作空间返回的原值）：
+
+```json
+{
+  "point": "cq",
+  "scope": "整体业务目标及未分派范围",
+  "goal": "核对获准来源中的条件、例外及跨单元问题覆盖",
+  "unit_ids": [],
+  "source_ids": ["approved-source"],
+  "artifact_refs": [{"object_id": "semantic:cq-plan", "revision": 1, "digest": "RETURNED_DIGEST"}]
+}
+```
+
+首期采用 Host 显式提交及独立 worker 命令，不新增常驻调度器。生产推进不等待 worker；
+Host 可并行执行 `process-run`。来源只来自 Task source manifest，产物只允许工作空间的
+生产记录、候选、交接材料和工作树精确版本，不读取正式隐藏题。CQ／切片只需材料；
+整合提交抓取实际修订，执行时须有该修订实际正文及治理读取。默认引用快照不是原子备份，
+旧正文不可得时登记失败／未验证，不用当前模型补历史。报告和读取只保存到独立诊断侧，
+不交给生产或正式验收。
+
+相同绑定重放复用记录；显式复评可提交新的 `reevaluation_id`。失败可用原 digest 加
+`process-run --retry` 修正，保留每次执行证据。未知在途沿原执行身份对账，不重启调用。
+停用取消未开始队列，已开始回合自然收尾；重启／启用不恢复取消项，补评须显式复评。
+Task pause／stop 和金额预算准入仍优先；停用不免除已发生用量或在途收尾。
+
+JSON／Markdown 原件位于 `RUN/process-evaluations/summary-NNNN.*`，工作空间保留版本。
+生产返回、pause／stop 自动生成阶段汇总；失败提前收口亦可用 `process-report` 显式记录。
+未观察阶段保留三类覆盖分母，未知不计零分，晚到结果新增汇总且保留生产终态。
+报告保留逐维结果、关键差距、未评范围、冻结配置、原任务账本计价单元及原始用量引用；
+无计价单元时成本为未知，不补零。跨配置／来源／范围不自动算分差。
+工程合同通过不代表评分校准、真实任务采用或净降耗通过，见
+[独立测试记录](../../docs/delivery/test-docs/2026-11-03-r5-0-011-independent-tests.md)。
