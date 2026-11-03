@@ -38,3 +38,12 @@
 ## 核对方式
 
 阅读当前权威需求、README、CLI 路由及上述源码；只读 PostgreSQL 中本轮 work_plan 和冻结 binding，核对已有交付记录。GitNexus list_repos 显示索引落后当前 HEAD 598 个提交，协作符号查询未获得 v5 有效流程；因此使用当前源码/调用点核对，没有宣称图谱流程覆盖，也未为这一局部问题重建索引。本次没有模型调用、产品代码变更、服务重启或新独立验收，仅做文档链接与格式检查。
+
+## 后续产品目标修正（2026-11-03）
+
+用户随后明确：仅有通用动态委派仍未保留所需的 v4 专职架构，要求补齐正常新任务的真实
+Coordinator/CQ/Modeling 分工。该目标已登记为 [R5.0-012](../requirements/requirements-v5.0.md#r5-0-012)，
+[详细设计](../delivery/designs/2026-11-03-r5-0-012-role-based-modeling-team-design.md)经
+[独立复审](../delivery/records/2026-11-03-r5-0-012-design-review.md) Round 2 PASS。
+本页前述映射只说明既有机制/目标承接，不能据此认定专职角色默认实际运行已交付。
+新需求当前仅设计通过，未实施；本页保留的 Demo 单根事实和旧实测边界不改写。
