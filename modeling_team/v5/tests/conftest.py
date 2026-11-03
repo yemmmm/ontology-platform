@@ -57,6 +57,8 @@ def task_file(tmp_path):
     )
     task = {
         "schema_version": "ontoweave-task/v1",
+        # Historical flow tests exercise their original frozen single-modeler contract.
+        "team_contract": "single-modeler/v1",
         "task_ref": "framework-task",
         "run_id": "framework-run",
         "work_unit_id": "bounded-unit",

@@ -21,27 +21,47 @@ def pending_check_units(checks):
     ]
 
 
-def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
+def check_unit(binding, repository, bridge, unit_id, *, invoke=None, invoke_factory=None):
     current_binding = WorkPlan(binding.data, repository).binding(binding)
     if unit_id not in {u["unit_id"] for u in current_binding.data["work_units"]}:
         raise FrameworkError("work_unit_not_found", unit_id=unit_id)
     selected = current_binding.for_unit(unit_id)
+    if selected.role_team and selected.role == "competency-question":
+        raise FrameworkError("public_cq_review_required", unit_id=unit_id)
     work_id = selected.identity + ":work"
     row = repository.get(work_id)
     if (
         not row
         or row["content"].get("status") != "proposal_ready"
-        or not row["content"].get("candidate_ref")
+        or not (
+            row["content"].get("candidate_ref")
+            or (
+                selected.role_team
+                and selected.role == "coordinator"
+                and row["content"].get("integration_plan_ref")
+            )
+        )
         or row["content"].get("work_generation", 0) != selected.data.get("work_generation", 0)
     ):
         raise FrameworkError("unit_check_not_ready", unit_id=unit_id)
     work = row["content"]
-    proposal = repository.read_reference(work["candidate_ref"])
+    if selected.role_team and selected.role == "coordinator":
+        integration = repository.read_reference(work["integration_plan_ref"])
+        proposal = {
+            "integration_plan": integration,
+            "scope_ref": selected.data.get("scope_ref"),
+            "review_units": integration["check_units"],
+        }
+    else:
+        proposal = repository.read_reference(work["candidate_ref"])
     requested = proposal.get("review_units", [])
     if set(requested) - {unit["unit_id"] for unit in selected.direct_units}:
         raise FrameworkError("unit_check_scope_forbidden", unit_id=unit_id)
     child_checks = [
-        check_unit(current_binding, repository, bridge, child, invoke=invoke) for child in requested
+        check_unit(
+            current_binding, repository, bridge, child, invoke=invoke, invoke_factory=invoke_factory
+        )
+        for child in requested
     ]
     if pending := pending_check_units(child_checks):
         return {
@@ -57,6 +77,14 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
         "work_generation": selected.data.get("work_generation", 0),
         "model_revisions": target["model_revisions"],
     }
+    if selected.role_team:
+        plan = WorkPlan(binding.data, repository).row()["content"]
+        basis.update(
+            role_result_ref=work.get("role_result_ref"),
+            integration_plan_ref=work.get("integration_plan_ref"),
+            scope_ref=selected.data.get("scope_ref"),
+            public_cq_ref=plan.get("public_cq_ref"),
+        )
     if child_checks:
         basis["child_check_refs"] = {
             child: repository.get(current_binding.for_unit(child).identity + ":work")["content"][
@@ -91,6 +119,14 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
             "resource_bindings": target.get("resource_bindings", {}),
         },
         "workspace_context": workspace_context,
+        **(
+            {
+                "public_cq_material_ref": plan.get("public_cq_material_ref"),
+                "professional_role": selected.role,
+            }
+            if selected.role_team
+            else {}
+        ),
         "instruction": "Production self-check for your bounded unit, not independent acceptance. "
         "Read the original sources and actual governed model, expand exact resources as needed. "
         "actual_target.resource_bindings provides actual applied resource locators for exact "
@@ -127,7 +163,12 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None):
         execution_id,
         "self_check",
         json.dumps(prompt),
-        invoke or CodexInvocation(selected, bridge, model_revisions=target["model_revisions"]),
+        invoke
+        or (
+            invoke_factory(selected)
+            if invoke_factory
+            else CodexInvocation(selected, bridge, model_revisions=target["model_revisions"])
+        ),
         resume_original=True,
     )
     native = repository.read_reference(ref)["result"]

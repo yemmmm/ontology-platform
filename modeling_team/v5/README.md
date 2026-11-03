@@ -1,6 +1,7 @@
 # OntoWeave v5 执行入口
 
 归属：[R5.0-001](../../docs/requirements/requirements-v5.0.md#r5-0-001)、
+[R5.0-012](../../docs/requirements/requirements-v5.0.md#r5-0-012)、
 [实施计划 P0](../../docs/delivery/implementation-plans/2026-10-28-v5-langgraph-codex-migration-plan.md#5-p0在全面改造前验证什么)。
 
 新任务默认入口为 `scripts/modeling`：LangGraph＋Codex harness、动态递归工作树、直接 HITL、
@@ -9,6 +10,39 @@
 平台技术合同，Task instructions 只需任务补充。最新验证及限制见
 [持续推进记录](../../docs/delivery/records/2026-10-29-v5-autonomous-progression.md)，
 公开工程用例不代表完整业务盲测或净降耗证明。
+
+## 新任务默认专职团队
+
+正常 `start` 未填团队选择时冻结 `team_contract: role-team/v1`。程序建立 Coordinator、
+公共 CQ 专职和 Modeler；单槽先运行真实来源 intake，再按 Coordinator 的确切范围版本
+接续正式建模，多槽可并行。小任务也保留专业职责，已有题由 CQ 复核复用。
+默认不依赖根 Agent 自愿 delegate，不把过程评分当生产 CQ。
+
+Profile 必须逐项配置 `coordinator`、`competency-question`、`modeling`、`acceptance`；
+可以用同一模型，各自保留独立身份、上下文、提示、工具和实际用量。prepare 冻结专业包与
+工具列表及摘要，缺配置在创建 run 前给可修正错误，不沿用 modeling 冒充其他角色。
+新模式用 semantic workspace 保存带作者的判断；`shared_memory` 旧工具不挂给新团队。
+
+Coordinator 提交 `scope-plan/v1`，Modeler 提交可执行候选／显式变更，CQ 提交
+`public-cq-set/v1`。生产 CQ 不读私有题、答案或评分；draft 不自动变成确认事实。
+Coordinator 的 `integration-plan/v1` 只选择固定版本原贡献，程序限定 item/change ID、
+保留业务字段和作者，再由 Host 单写应用。中间 Coordinator 用 `coordination_refs`
+交接原计划，保留叶作者，并按原树安排叶子／中间父级／根的实际读回。
+同资源冲突返回责任方；不猜原生身份，不按名称合并，不恢复 Protocol 翻译或模型 dry-run。
+
+`status`／`work-tree`／`board` 披露团队、role、actor、工作类型、代次／范围与在途活动。
+消息、已读、完整消费、依赖满足、实际应用、生产检查及独立接受分别保留。
+未知执行／写入先沿原身份对账，不能通过新代次、计划或新会话重放。暂停／预算控制覆盖
+所有在途角色，停稳后再收尾；临时读取能力统一清理。
+Host 保留真实授权收取时间（`authorization.received_at`）；`semantic-starts/` 保存真实
+原生 turn/started 的角色／作者／用途／线程及时点，业务开始还须核对实际来源分析和读取，
+不能用创建线程或空调用证明。时间缺失保持未知，不拿 prepare 时间重置授权时钟。
+
+无此合同的既有 binding 沿旧路径接续，不迁移旧原生上下文。新任务只有显式选择
+`single-modeler/v1` 才用单根模式，状态会披露；不因配置错误自动降级。
+快照 fork 保留源团队合同、创建新原生上下文；专职团队重新登记当前工作，不复制旧树或
+继承旧检查／验收。工程证据与真实采用边界见
+[R5.0-012 交付记录](../../docs/delivery/test-docs/2026-11-03-r5-0-012-delivery.md)。
 
 ### 精确模型读取与当前后续验证
 
@@ -165,20 +199,22 @@ PostgreSQL 业务 schema 默认 `ontoweave_v5_workspace`，checkpoint 默认
 
 ```yaml
 schema_version: ontoweave-task/v1
+team_contract: role-team/v1  # 省略时的新任务默认值
 task_ref: authorized-task
 run_id: unique-run
 work_unit_id: bounded-unit
 objective: 本次有界业务目标
 materials: /absolute/path/approved-materials
 model_profile: /absolute/path/glm-flash-low.yaml
-instructions: 本次获准建模方法和角色说明
+instructions: 本次业务目标的补充；专业合同由 prepare 冻结
 semantic_workspace: true
-shared_memory: true
 work_management: true
+unit_concurrency: 2  # 可以为1，仍分别执行专业职责
 authorization:
-  mode: usage_only
+  mode: amount
   reference: 当次真实Host授权引用
-  budget_ref: 原预算引用（如有则保留）
+  budget_ref: Host依据真实授权创建的稳定预算路径
+  received_at: 实际授权收取的UTC时间（替换为ISO8601，不用prepare时间）
 scope:
   mode: create
   base_url: http://127.0.0.1:8001
@@ -317,7 +353,8 @@ SQL 实际执行。缺标准或引用无法绑定来源的题保留在分母并�
 
 ## 可选生产成员通信与任务卡
 
-任务可增加 `collaboration`，例如：
+本节兼容 peer 配置仅适用于既有单根 binding 或显式 `single-modeler/v1`。默认专职团队
+沿上述 role/work_kind 工作树通信；不混挂旧 peer 合同。旧任务可增加 `collaboration`，例如：
 
 ```yaml
 collaboration:
@@ -363,10 +400,13 @@ python -m ontoweave_modeling board --run-dir /path/to/run --agent-id modeling --
 
 ## 多工作单元子集
 
-任务可添加 `work_units` 及 `unit_concurrency` 作为初始工作树，也可用 work_management
+本节保留原单根工作树示例；新默认已由程序建立专职团队，由 Coordinator 维护专业分派。
+新模式如需预配置工作，必须提供相符 role_id/work_kind，不能把旧通用单元当专职配置。
+旧模式任务可添加 `work_units` 及 `unit_concurrency` 作为初始工作树，也可用 work_management
 让 Agent 按需动态委派。下例只展示最小直接子级：
 
 ```yaml
+team_contract: single-modeler/v1  # 显式选择本节旧合同，不是新任务默认值
 unit_concurrency: 2
 work_units:
   - unit_id: installation
@@ -395,7 +435,8 @@ P2 验证；[工程及真实运行记录](../../docs/delivery/records/2026-10-29
 
 ## 最小共享业务记忆
 
-Task 增加 `shared_memory: true` 后，生产成员可调用 `write_memory`、`read_memory`、
+本节是单根合同的旧记忆入口；默认专职团队用 semantic workspace，不挂载这些旧工具。
+旧 Task 增加 `shared_memory: true` 后，生产成员可调用 `write_memory`、`read_memory`、
 `search_memory`；可以与 collaboration 同时使用，也可以只供单个成员换会话接续。
 记录包含 entry_id、kind、title、body、source_refs；作者、更新时间和 revision 由程序保存。
 kind 是普通标签，建议 judgment／decision／open_item，不强制枚举或固定业务步骤。
@@ -470,7 +511,8 @@ uv run --locked --project modeling_team/v5 python -m ontoweave_modeling input \
 成果复用。忙碌时先入队，在自然回合结束后处理，防止旧候选继续应用；`resume` 沿原 run
 激活待处理变化。材料撤回不自动证明原业务判断为假。
 
-任务设置 `work_management: true` 可从零个预设单元开始，使用 `delegate_work`、
+旧单根任务设置 `work_management: true` 可从零个预设单元开始；专职新任务自动建立必需
+职责，Coordinator 决定业务范围与后续专业分派。两者均使用 `delegate_work`、
 `get_work_tree`、`reopen_work_unit`、`update_work_unit`。已有 `work_units` 也进入同一工作树；
 子级可以继续委派，依赖就绪才组合，根单元是唯一模型写方。委派后返回 `waiting_children`，
 父级按需读取直接子级成果并保留未分配范围。`get_work_tree` 默认返回本层直接子级，

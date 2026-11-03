@@ -1,6 +1,6 @@
 # v5 Host 启动与接续
 
-归属：[R5.0-001—007](../../../docs/requirements/requirements-v5.0.md)、
+归属：[R5.0-001—007／012](../../../docs/requirements/requirements-v5.0.md)、
 [v5 入口](../../../modeling_team/v5/README.md)。本文件不授予真实运行、额度或测试代答权限。
 
 ## 选择任务与准备
@@ -8,11 +8,13 @@
 1. 核对当次目标、授权、模型／effort、获准原始材料、实际资源及独立冻结题集。默认模型沿
    `glm-flash-low`；默认新任务金额沿 AGENTS 的 3 元，Host 先创建稳定金额账本并在 Task
    写入 amount／budget_ref。本轮明确不限额的研发任务可沿其既有 usage_only 特例。
-2. 创建 v5 Task，形状见 v5 README。instructions 只需本任务补充：prepare 会冻结当前
-   v5 方法、ontology-modeling 的可复用业务分析／多视角章节与既有动作／流程／规则／接口
-   语义合同；这些内容固定进入新 binding，不依赖环境 Skill 自动发现，也不恢复旧执行路由。
-   不要手工复制旧角色包。新任务建议
-   semantic_workspace/shared_memory/work_management=true，按业务需要委派，简单任务无需子级。
+2. 创建 v5 Task，形状见 v5 README。未填 `team_contract` 默认 `role-team/v1`；Profile
+   逐项绑定 coordinator、competency-question、modeling、acceptance，不静默复用配置。
+   instructions 只需本任务补充，prepare 冻结新专业提示／工具和既有表达合同，不复制旧完整包。
+   程序建立 Coordinator、公共 CQ、Modeler intake；单槽优先真实来源分析，随后按确切范围
+   接续。小任务也保持专职，已有 CQ 由 CQ 复核；semantic workspace/work management 自动启用，
+   新合同不挂旧 shared_memory 工具。实际授权收取时间由 Host 保留在 authorization.received_at，
+   不拿 prepare 重新计时；semantic-starts 与实际来源读取／命题共同核对业务开始。
 3. 获准材料按 manifest 固定 ID／路径／SHA256；生产只拿公开投影，隐藏题另存独立包。
    scope 使用 create 或明确 existing Project／Ontology IDs。新建项目在实际创建后自动
    关联项目工作空间，无需提前猜 Project UUID。多个获准本体的创建变更用 ontology_targets
@@ -56,6 +58,14 @@ blocked/recoverable_issue 先定位第一层，能安全修复就继续原目标
 operation／Batch／Attempt／receipt 对账。正常 resume 复用原编译计划与执行身份；
 不能因无回执盲重发新操作。只修真实失败层，不另建监督框架或替 Agent 写业务答案。
 
+scope-plan 由 Coordinator 提交，程序按 role/work_kind 路由专业工作；公共 CQ 与安全的
+来源分析渐进推进，不等待所有问题完成。Modeler 自己提交完整候选／显式变更，Coordinator
+只按精确版本选择；中间协调计划用 coordination_refs 展开原贡献并保留叶作者和父级检查。
+实际回执回到原 Modeler，公共 CQ 刷新支撑，父级按整体目标检查；正式独立验收另走冻结输入。
+status/work-tree/board 按 role/actor/工作版本及下一依赖核对；多个 execution 不代表多个角色。
+不确定 native 回执可从原 result.json／terminal turn 复用，未知时保留原责任和在途状态，
+不更换会话猜测执行。CQ 自称确认但无原种子／真实完整答复依据时保留 draft/unknown。
+
 材料变化使用 source-revise 的完整新包，声明 change_id、reason、affected_units 及必要的
 affected_records；旧材料、成果和验收保留。变化在自然边界激活，未变单元复用。
 来源撤回只标待重审，由 Agent 判断语义影响，不自动判原陈述为假。
@@ -75,6 +85,7 @@ snapshot-save 的默认观察模式可在 busy 时保存；include-platform 另�
 snapshot-fork 复用平台分叉，会归档源项目全部本体，必须显式 archive-source，并先让
 共用该项目的运行停稳封口。它创建全新原生上下文；不热恢复旧会话或继承旧验收 PASS。
 未知分叉结果保留预分配目标，先读回，不换目标重试。
+fork 保持源团队合同；专职 fork 重新建立当前工作并复用业务材料，不复制旧工作树或原生上下文。
 
 handoff_ready 只表明生产可交接。evaluate 使用独立输入、凭据及只读上下文，绑定冻结实际
 目标；公开小场景不冒充业务盲测。大型业务可用 scope-file 指定冻结子范围，保留原主标准及
@@ -105,6 +116,8 @@ Host 可用 check-unit --unit-id 显式安排有界生产自查；依据原候�
 ## 历史迁移与回退
 
 旧 `python -m modeling_team` 不读取 v5 checkpoint；`scripts/modeling --legacy` 保留该路径。
+旧 v5 无 team_contract 的 binding 保持原单根方法，新任务显式 single-modeler/v1 才能选该模式；
+不因升级、缺角色模型或错误自动改变旧职责／原生上下文。
 迁移旧业务时，先自然停稳并核对原操作，再将获准原文、地图／决定及来源作为显式材料，
 以 existing 绑定真实模型。Agent 复核后写新工作空间；缺原依据、未表达及未知准确保留。
 原 task_ref／budget_ref 保持，不因新 run 清零。旧原生会话和旧 PASS 不热迁。

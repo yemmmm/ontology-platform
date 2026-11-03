@@ -34,7 +34,7 @@ class SourceRevisions:
             plan["content"]["units"]
             if plan
             else {
-                u["unit_id"]: {**u, "parent_id": u.get("parent_id", "modeling")}
+                u["unit_id"]: {**u, "parent_id": u.get("parent_id", self.binding.root_actor)}
                 for u in self.binding.data.get("work_units", [])
             }
         )
@@ -45,8 +45,14 @@ class SourceRevisions:
         from .work_plan import WorkPlan
 
         affected = sorted(
-            {u for key in requested for u in WorkPlan.ancestors({"units": units}, key)}
-            - {"modeling"}
+            {
+                u
+                for key in requested
+                for u in WorkPlan.ancestors(
+                    {"units": units, "root_actor": self.binding.root_actor}, key
+                )
+            }
+            - {self.binding.root_actor}
         )
         content = {
             "change_id": identity,

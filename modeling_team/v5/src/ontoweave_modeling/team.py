@@ -28,7 +28,11 @@ class MaterialReference(BaseModel):
 
 
 class TeamChannel:
-    def __init__(self, task, repository, control, actor="modeling", materials=None):
+    def __init__(self, task, repository, control, actor=None, materials=None):
+        self.root_actor = (
+            "coordinator" if task.get("team_contract") == "role-team/v1" else "modeling"
+        )
+        actor = actor or self.root_actor
         self.task, self.repository, self.control, self.actor = task, repository, control, actor
         self.materials = Path(materials) if materials is not None else None
         self.peers = {p["agent_id"]: p for p in task.get("collaboration", {}).get("peers", [])}
@@ -47,14 +51,14 @@ class TeamChannel:
 
     @property
     def members(self):
-        return {"modeling", *self.peers, *self.work_units}
+        return {self.root_actor, *self.peers, *self.work_units}
 
     def unit(self, actor):
         if actor in self.work_units:
             return actor
         return (
             self.task.get("_parent_work_unit_id", self.task["work_unit_id"])
-            if actor == "modeling"
+            if actor == self.root_actor
             else "peer:" + actor
         )
 
@@ -288,9 +292,25 @@ class TeamChannel:
                     "card": card,
                     "requests": requests,
                     "active_execution": self.control.view()["active"].get(self.unit(actor)),
+                    **self._role_status(actor),
                 }
             )
         return {"agents": result, "complete": True}
+
+    def _role_status(self, actor):
+        if self.root_actor != "coordinator":
+            return {}
+        row = self.repository.get("run:" + self.task["run_id"] + ":work-plan")
+        unit = row["content"]["units"].get(actor, {}) if row else {}
+        return {
+            "role_id": unit.get("role_id", "coordinator"),
+            "actor_id": actor,
+            "work_kind": unit.get("work_kind", "coordination"),
+            "work_phase": unit.get("work_phase", "plan/integrate"),
+            "generation": unit.get("generation", row["content"]["root_generation"] if row else 0),
+            "scope_ref": unit.get("scope_ref"),
+            "dependencies": unit.get("dependencies", []),
+        }
 
 
 def register_team_tools(server, channel):

@@ -71,6 +71,19 @@ class ExecutionManager:
         root = self.binding.root / "executions" / execution_id
         record_id = f"{self.binding.identity}:execution:{execution_id}"
         intent = {"purpose": purpose, "prompt_digest": digest(prompt), "execution_id": execution_id}
+        if self.binding.role_team:
+            intent.update(
+                role_id="acceptance"
+                if purpose in {"acceptance", "process_evaluation"}
+                else self.binding.role,
+                actor_id=self.unit_id
+                if purpose in {"acceptance", "process_evaluation"}
+                else self.binding.actor,
+                work_kind=purpose
+                if purpose in {"acceptance", "process_evaluation"}
+                else self.binding.work_kind,
+                generation=self.binding.data.get("work_generation", 0),
+            )
         prior = self.repository.get(record_id)
         if prior and resume_original and prior["content"]["intent"]["purpose"] == purpose:
             prompt = prior["content"].get("prompt", prompt)
@@ -96,7 +109,7 @@ class ExecutionManager:
                 self.control,
                 role="acceptance"
                 if purpose in {"acceptance", "process_evaluation"}
-                else "modeling",
+                else self.binding.role,
             )
             with admission_guard() if admission_guard else nullcontext():
                 admission = self.control.begin_activity(
@@ -109,6 +122,8 @@ class ExecutionManager:
                 if not admission["admitted"]:
                     raise FrameworkError("execution_not_admitted", control=admission)
                 root.mkdir(parents=True, exist_ok=True, mode=0o700)
+                if self.binding.role_team:
+                    write_json(root / "execution-intent.json", intent)
                 self.repository.put_reference(
                     record_id,
                     "execution",
@@ -122,7 +137,17 @@ class ExecutionManager:
                     0,
                 )
             # Once dispatching is durable, an exception preserves active/unknown state.
-            result = invoke(root, purpose, prompt, admission["inputs"])
+            try:
+                result = invoke(root, purpose, prompt, admission["inputs"])
+            except Exception as error:
+                if not self.binding.role_team:
+                    raise
+                raise FrameworkError(
+                    "native_dispatch_unsettled",
+                    layer="runtime/infrastructure",
+                    execution_id=execution_id,
+                    cause=type(error).__name__,
+                ) from error
         if result.get("status") not in {"completed", "failed", "interrupted"}:
             raise FrameworkError("native_result_not_terminal", layer="runtime/infrastructure")
         write_json(root / "result.json", result)
@@ -230,14 +255,21 @@ class CodexInvocation:
         from .team import TEAM_TOOLS
         from .work_plan import WORK_TOOLS
 
-        role = "acceptance" if purpose in {"acceptance", "process_evaluation"} else "modeling"
+        role = (
+            "acceptance" if purpose in {"acceptance", "process_evaluation"} else self.binding.role
+        )
         tools = ("read_material", "query_semantic_context", "read_model_resource")
         if self.materials_only:
             tools = ("read_material",)
         team_config = None
         instructions = self.instructions
         if (
-            role == "modeling"
+            role
+            in (
+                {"modeling", "coordinator", "competency-question"}
+                if self.binding.role_team
+                else {"modeling"}
+            )
             and not self.read_only
             and (
                 self.binding.data.get("collaboration")
@@ -259,6 +291,10 @@ class CodexInvocation:
                 tools += MEMORY_TOOLS
             if self.binding.data.get("semantic_workspace"):
                 tools += WORKSPACE_TOOLS
+            if self.binding.role_team:
+                from .role_team import production_tools
+
+                tools = production_tools(self.binding.data, role)
             private = json.loads((self.binding.root / "private-runtime.json").read_text())
             connection = dict(private["connection"])
             # Reuse the verified P0 workspace route: resolve before entering the namespace.
@@ -291,7 +327,9 @@ class CodexInvocation:
                     " On a persistent infrastructure tool error, end this turn with recoverable_issue "
                     "and the exact blocker; repeated identical tool retries cannot repair Host infrastructure."
                 )
-            if self.binding.data.get("work_units") or self.binding.data.get("work_management"):
+            if not self.binding.role_team and (
+                self.binding.data.get("work_units") or self.binding.data.get("work_management")
+            ):
                 instructions += (
                     " Use delegate_work to create bounded direct children only when useful. "
                     "They may delegate further. Keep unallocated scope and overall rules in your own work. "
@@ -303,7 +341,7 @@ class CodexInvocation:
                     "Use reopen_work_unit for explicit rework; ordinary notifications do not require "
                     "recreating a finished proposal."
                 )
-            if self.binding.is_child and purpose == "modeling":
+            if self.binding.is_child and purpose == "modeling" and not self.binding.role_team:
                 instructions += (
                     " You own this child work unit only. Return its source-grounded proposed "
                     "business candidate for the parent to integrate; changes may be null because "
@@ -329,7 +367,7 @@ class CodexInvocation:
                     "recoverable_issue with exact issues, preserving unconsumed inputs for repair. "
                     "No required accept/confirm handshake."
                 )
-            if self.binding.data.get("shared_memory"):
+            if self.binding.data.get("shared_memory") and not self.binding.role_team:
                 instructions += (
                     " Shared task business memory is enabled. Use write_memory for judgments, "
                     "decisions and open items (entry_id, kind, title, body, source_refs). "
@@ -399,6 +437,28 @@ class CodexInvocation:
             with self.bridge.provider(root.name, role, tools) as url:
 
                 def observe(method, params):
+                    if (
+                        method == "turn/started"
+                        and self.binding.role_team
+                        and role == "modeling"
+                        and purpose in {"source_intake", "slice_modeling"}
+                    ):
+                        write_json(
+                            self.binding.root / "semantic-starts" / (root.name + ".json"),
+                            {
+                                "execution_id": root.name,
+                                "role_id": role,
+                                "actor_id": self.binding.actor,
+                                "purpose": purpose,
+                                "thread_id": params["threadId"],
+                                "turn_id": params["turn"]["id"],
+                                "observed_at": datetime.now(UTC).isoformat(),
+                                "authorization_received_at": self.binding.data["authorization"].get(
+                                    "received_at"
+                                ),
+                                "evidence": "native turn/started; source analysis/read proof remains in retained events",
+                            },
+                        )
                     if method == "thread/tokenUsage/updated":
                         with (root / "usage.jsonl").open("a") as stream:
                             stream.write(json.dumps({"method": method, "params": params}) + "\n")

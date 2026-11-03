@@ -44,6 +44,9 @@ def _amount_state(binding, addition, role) -> dict:
             )
         }
         context["actual_model"] = first["requested_model"]
+        context.update(
+            {key: first[key] for key in ("actor_id", "purpose", "work_kind") if key in first}
+        )
         # Fresh executions have a zero baseline; a resumed reader retains its real prior counter.
         context["cumulative_segment"] = {
             "id": root.name,

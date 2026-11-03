@@ -51,6 +51,14 @@ class FlowState(TypedDict, total=False):
     peer_next: str
     work_generation: int
     candidate_basis_ref: dict
+    role_result_ref: dict
+    role_phase: str
+    integration_plan_ref: dict
+    intake_material_ref: dict
+    result_material_ref: dict
+    role_id: str
+    actor_id: str
+    work_kind: str
 
 
 class WorkUnitFlow:
@@ -100,6 +108,15 @@ class WorkUnitFlow:
                 "binding_ref": binding_ref,
                 "semantic_acceptance": "unverified",
                 "work_generation": self.binding.data.get("work_generation", 0),
+                **(
+                    {
+                        "role_id": self.binding.role,
+                        "actor_id": self.binding.actor,
+                        "work_kind": self.binding.work_kind,
+                    }
+                    if self.binding.role_team
+                    else {}
+                ),
             }
         )
 
@@ -125,7 +142,13 @@ class WorkUnitFlow:
             admitted = self.control.begin_activity(unit, operation_id)
             if not admitted["admitted"]:
                 raise FrameworkError("execution_not_admitted", control=admitted)
-        result = self.bridge.call(action, payload or {})
+        try:
+            result = self.bridge.call(action, payload or {})
+        except Exception:
+            if self.binding.role_team and action == "snapshot":
+                # A failed read has no uncertain write to reconcile.
+                self.control.finish_turn(unit, operation_id)
+            raise
         if result.get("project_id"):
             self.repository.put_reference(
                 "run:" + self.binding.data["run_id"] + ":project-binding",
@@ -157,6 +180,10 @@ class WorkUnitFlow:
         plan = self.repository.get("run:" + self.binding.data["run_id"] + ":work-plan")
         if not plan:
             return []
+        if self.binding.role_team:
+            from .role_work import pending_units
+
+            return pending_units(self, plan["content"])
         return [
             unit["unit_id"]
             for unit in plan["content"]["units"].values()
@@ -176,6 +203,10 @@ class WorkUnitFlow:
         state = self._fresh(state)
         if state["activity"] != "model":
             return state
+        if self.binding.role_team:
+            from .role_work import model
+
+            return model(self, state)
         if any(self.team.pending(actor) for actor in self.team.peers):
             return self._save(
                 {**state, "activity": "collaborate", "peer_next": "model", "status": "ready"}
@@ -606,6 +637,8 @@ class WorkUnitFlow:
         state = self._fresh(state)
         if state["activity"] != "apply":
             return state
+        if self.binding.role_team and (self.binding.is_child or self.binding.role != "coordinator"):
+            raise FrameworkError("root_application_required")
         candidate = self.repository.read_reference(state["candidate_ref"])
         operation_id = f"apply-{state['round']:05d}"
         original_operation = self.repository.get(self.binding.identity + ":" + operation_id)
@@ -643,16 +676,21 @@ class WorkUnitFlow:
                         },
                     }
                 )
-        result = self._host(
-            "apply",
-            operation_id,
-            {
-                "operation_id": operation_id,
-                "candidate": candidate["candidate"],
-                "changes": candidate["changes"],
-                "ontology_targets": candidate.get("ontology_targets"),
-            },
-        )
+        try:
+            result = self._host(
+                "apply",
+                operation_id,
+                {
+                    "operation_id": operation_id,
+                    "candidate": candidate["candidate"],
+                    "changes": candidate["changes"],
+                    "ontology_targets": candidate.get("ontology_targets"),
+                },
+            )
+        except FrameworkError as error:
+            if not self.binding.role_team or error.code != "host_response_unknown":
+                raise
+            result = {"status": "uncertain", "operation_id": operation_id, "issue": error.as_dict()}
         previous = self.repository.get(self.binding.identity + ":" + operation_id)
         ref = self.repository.put_reference(
             self.binding.identity + ":" + operation_id,
@@ -663,6 +701,10 @@ class WorkUnitFlow:
         if result.get("status") == "uncertain":
             return self._save({**state, "operation_ref": ref, "status": "uncertain"})
         if result.get("status") != "completed":
+            if self.binding.role_team:
+                from .role_work import application_failure
+
+                application_failure(self, {**state, "operation_ref": ref})
             target = self._host("snapshot", "snapshot-" + operation_id)
             target_ref = self.repository.put_reference(
                 f"{self.binding.identity}:correction-baseline:{state['round']}",
@@ -680,12 +722,29 @@ class WorkUnitFlow:
                     "issue": {"code": "application_needs_correction", "operation_ref": ref},
                 }
             )
-        return self._save({**state, "activity": "self_check", "operation_ref": ref})
+        updated = self._save({**state, "activity": "self_check", "operation_ref": ref})
+        if self.binding.role_team:
+            from .role_work import application_receipts
+
+            application_receipts(self, updated)
+        return updated
 
     def _review_children(self, state, units):
+        options = (
+            {"invoke_factory": self.check_invoke_factory}
+            if getattr(self, "check_invoke_factory", None) is not None
+            else {}
+        )
         try:
             checks = [
-                check_unit(self.binding, self.repository, self.bridge, unit) for unit in units
+                check_unit(
+                    self.binding,
+                    self.repository,
+                    self.bridge,
+                    unit,
+                    **options,
+                )
+                for unit in units
             ]
         except FrameworkError as error:
             if error.code in {"task_not_running", "execution_not_admitted"}:
@@ -715,6 +774,11 @@ class WorkUnitFlow:
         state = self._fresh(state)
         if state["activity"] != "self_check":
             return state
+        if self.binding.role_team:
+            from .role_work import before_self_check
+
+            if pending := before_self_check(self, state):
+                return pending
         proposal = self.repository.read_reference(state["candidate_ref"])
         if review := self._review_children(state, proposal.get("review_units", [])):
             return review
@@ -1035,12 +1099,41 @@ class WorkUnitFlow:
             "semantic_acceptance": "unverified",
             "human_context": self.human.context(),
         }
+        if self.binding.role_team:
+            plan = self.repository.get("run:" + self.binding.data["run_id"] + ":work-plan")[
+                "content"
+            ]
+            handoff.update(
+                team_contract=self.binding.data["team_contract"],
+                integration_plan_ref=state.get("integration_plan_ref"),
+                scope_refs=plan.get("scope_refs", {}),
+                public_cq_ref=plan.get("public_cq_ref"),
+                role_results={
+                    u["unit_id"]: row["content"].get("role_result_ref")
+                    for u in self.binding.data["work_units"]
+                    if (
+                        row := self.repository.get(
+                            self.binding.for_unit(u["unit_id"]).identity + ":work"
+                        )
+                    )
+                },
+            )
         ref = self.repository.put_reference(
             self.binding.identity + ":handoff:" + digest(handoff), "handoff", handoff, 0
         )
         return self._save({**state, "handoff_ref": ref, "status": "handoff_ready"})
 
     def _route(self, state):
+        reconciling = (
+            state.get("activity") == "apply"
+            and state.get("operation_ref")
+            and self.repository.read_reference(state["operation_ref"]).get("status") == "uncertain"
+        )
+        if (
+            self.binding.role_team
+            and self.binding.data["work_unit_id"] in self.control.view()["active"]
+        ):
+            reconciling = True
         if (
             self.binding.data.get("custom_cq")
             and not self.binding.is_child
@@ -1051,7 +1144,7 @@ class WorkUnitFlow:
 
             CustomCQ(self.binding, self.repository).sync(self.bridge)
         plan = self.repository.get("run:" + self.binding.data["run_id"] + ":work-plan")
-        if plan:
+        if plan and not reconciling:
             generation = (
                 plan["content"]["units"].get(self.binding.actor, {}).get("generation", 0)
                 if self.binding.is_child
@@ -1066,7 +1159,7 @@ class WorkUnitFlow:
             if r["content"]["status"] == "queued"
             and (not self.binding.is_child or self.binding.actor in r["content"]["affected_units"])
         ]
-        if pending:
+        if pending and not reconciling:
             self._save({**state, "status": "source_change_pending"})
             return END
         if state["status"] == "waiting_input":

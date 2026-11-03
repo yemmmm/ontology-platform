@@ -334,6 +334,7 @@ class TaskBinding:
                 "custom_cq",
                 "cq_question_ids",
                 "process_evaluation",
+                "team_contract",
             }
             != required
         ):
@@ -403,10 +404,18 @@ class TaskBinding:
         materials = (task_path.parent / task["materials"]).resolve()
         profile = (task_path.parent / task["model_profile"]).resolve()
         manifest = _check_sources(materials)
-        models = {
-            role: asdict(ModelBinding.from_profile(profile, role))
-            for role in ("modeling", "acceptance")
-        }
+        team_contract = task.get("team_contract", "role-team/v1")
+        if team_contract not in {"role-team/v1", "single-modeler/v1"}:
+            raise FrameworkError("team_contract_unknown", team_contract=team_contract)
+        roles = ("modeling", "acceptance")
+        if team_contract == "role-team/v1":
+            roles += ("coordinator", "competency-question")
+        models = {}
+        for role in roles:
+            try:
+                models[role] = asdict(ModelBinding.from_profile(profile, role))
+            except (KeyError, ValueError, TypeError) as error:
+                raise FrameworkError("role_model_binding_invalid", role_id=role) from error
         if any(model["provider"] != "glm-direct" for model in models.values()):
             raise FrameworkError("provider_route_not_implemented")
         data = {
@@ -420,6 +429,7 @@ class TaskBinding:
             "profile_sha256": hashlib.sha256(profile.read_bytes()).hexdigest(),
             "source_manifest": manifest,
             "source_manifest_digest": digest(manifest),
+            "team_contract": team_contract,
         }
         data["instructions"] = modeling_instructions(task["instructions"])
         data["custom_cq"] = task.get(
@@ -445,6 +455,10 @@ class TaskBinding:
                 "its responsible unit_ids and cross-unit integration needs; the parent owns "
                 "unassigned and combined goals. Draft criteria cannot prove PASS."
             )
+        if team_contract == "role-team/v1":
+            from .role_team import freeze_team
+
+            freeze_team(data, task["instructions"])
         root.mkdir(parents=True, exist_ok=False, mode=0o700)
         for entry in manifest.values():
             destination = root / "materials" / entry["path"]
@@ -494,7 +508,23 @@ class TaskBinding:
 
     @property
     def actor(self) -> str:
-        return self.data.get("_unit_id", "modeling")
+        return self.data.get("_unit_id", self.root_actor)
+
+    @property
+    def root_actor(self) -> str:
+        return "coordinator" if self.role_team else "modeling"
+
+    @property
+    def role_team(self) -> bool:
+        return self.data.get("team_contract") == "role-team/v1"
+
+    @property
+    def role(self) -> str:
+        return self.data.get("role_id", self.root_actor if self.role_team else "modeling")
+
+    @property
+    def work_kind(self) -> str:
+        return self.data.get("work_kind", "coordination" if self.role_team else "modeling")
 
     @property
     def thread_id(self) -> str:
@@ -510,18 +540,36 @@ class TaskBinding:
 
     def for_unit(self, unit_id: str) -> TaskBinding:
         unit = next(unit for unit in self.data["work_units"] if unit["unit_id"] == unit_id)
+        role = unit.get("role_id", "modeling")
         return TaskBinding(
             self.root,
             {
                 **self.data,
                 "_unit_id": unit_id,
                 "_parent_work_unit_id": self.data["work_unit_id"],
-                "_parent_actor": unit.get("parent_id", "modeling"),
+                "_parent_actor": unit.get("parent_id", self.root_actor),
                 "work_generation": unit.get("generation", 0),
                 "work_unit_id": unit_id,
                 "objective": unit["objective"],
                 "assigned_material_ids": unit.get("material_ids", []),
-                "instructions": self.data["instructions"] + "\n" + unit.get("instructions", ""),
+                **(
+                    {
+                        "role_id": role,
+                        "actor_id": unit.get("actor_id", unit_id),
+                        "work_kind": unit["work_kind"],
+                        "work_phase": unit.get("work_phase", "propose"),
+                        "scope_ref": unit.get("scope_ref"),
+                    }
+                    if self.role_team
+                    else {}
+                ),
+                "instructions": (
+                    self.data["role_packages"][role]["instructions"]
+                    if self.role_team
+                    else self.data["instructions"]
+                )
+                + "\n"
+                + unit.get("instructions", ""),
             },
         )
 
@@ -530,7 +578,7 @@ class TaskBinding:
         return [
             u
             for u in self.data.get("work_units", [])
-            if u.get("parent_id", "modeling") == self.actor
+            if u.get("parent_id", self.root_actor) == self.actor
         ]
 
 

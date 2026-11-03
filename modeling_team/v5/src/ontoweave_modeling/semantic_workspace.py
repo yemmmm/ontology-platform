@@ -125,6 +125,15 @@ class SemanticWorkspace:
         ):
             content["model_basis"] = dict(self.model_revisions)
         prior = repository.get(identity)
+        if self.task.get("team_contract") == "role-team/v1":
+            if unit_id is not None and unit_id != self.actor:
+                raise FrameworkError("semantic_record_owner_forbidden", record_id=record_id)
+            if prior and prior["content"].get("author") != self.actor:
+                raise FrameworkError(
+                    "semantic_record_owner_forbidden",
+                    record_id=record_id,
+                    owner=prior["content"].get("author"),
+                )
         if prior and all(prior["content"].get(k) == v for k, v in content.items()):
             return {
                 "status": "recorded",

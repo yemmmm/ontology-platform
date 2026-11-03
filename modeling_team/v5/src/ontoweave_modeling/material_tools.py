@@ -295,7 +295,10 @@ def material_server(
             from .work_plan import WorkPlan, register_work_tools
 
             register_work_tools(server, WorkPlan(scope["task"], repo, scope["actor"]))
-        if scope["task"].get("shared_memory"):
+        if (
+            scope["task"].get("shared_memory")
+            and scope["task"].get("team_contract") != "role-team/v1"
+        ):
             from .memory import SharedMemory, register_memory_tools
 
             register_memory_tools(

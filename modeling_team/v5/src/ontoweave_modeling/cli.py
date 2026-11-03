@@ -427,7 +427,7 @@ def parser() -> argparse.ArgumentParser:
     revise.add_argument("--change-file", type=Path, required=True)
     commands.append(revise)
     tree = sub.add_parser("work-tree", help="Read one level of the current dynamic work tree")
-    tree.add_argument("--parent-id", default="modeling")
+    tree.add_argument("--parent-id")
     unit_check = sub.add_parser(
         "check-unit", help="Run an original unit's bounded production read-back"
     )
@@ -633,9 +633,19 @@ def dispatch(args) -> dict:
             "control": control.view(),
         }
     if args.command == "status":
+        if binding.role_team:
+            from .work_plan import WorkPlan
+
+            binding = WorkPlan(binding.data, repo).binding(binding)
         row = repo.get(binding.identity + ":work")
         budget = synchronize_budget(binding, control)
         return {
+            "team_contract": binding.data.get("team_contract", "single-modeler/v1"),
+            "root_actor": binding.root_actor,
+            "semantic_starts": [
+                json.loads(path.read_text())
+                for path in sorted((binding.root / "semantic-starts").glob("*.json"))
+            ],
             "work": row["content"] if row else None,
             "control": control.view(),
             "budget": budget,

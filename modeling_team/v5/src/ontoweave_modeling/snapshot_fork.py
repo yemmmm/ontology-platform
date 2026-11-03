@@ -103,6 +103,7 @@ class SnapshotFork:
                     )
                 }
                 task.update(
+                    team_contract=old.get("team_contract", "single-modeler/v1"),
                     run_id=run_id,
                     materials=str(original.materials),
                     model_profile=str(self.binding.root / "model-profile.yaml"),
@@ -118,6 +119,8 @@ class SnapshotFork:
                         "fork_created_by_run": run_id,
                     },
                 )
+                if original.role_team:
+                    task["instructions"] = old["task_instructions"]
                 task["objective"] = (
                     "Continue from captured actual model and attributed business records. Reuse valid existing definitions; return no_change if the actual model already satisfies the sources. Historical workflow states and acceptance are not inherited proof. "
                     + task["objective"]
@@ -130,6 +133,8 @@ class SnapshotFork:
                     "unit_concurrency",
                 ):
                     if key in old:
+                        if original.role_team and key == "work_units":
+                            continue
                         task[key] = old[key]
                 task["project_ref"] = target_id
                 write_json(inputs / "task.json", task)

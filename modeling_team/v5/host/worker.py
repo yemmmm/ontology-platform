@@ -80,10 +80,10 @@ class PlatformWorker:
         return scope
 
     def competency_questions(self, payload, *, publish=False):
-        from fastapi import HTTPException
         from app.core.config import Settings
         from app.repositories.postgres import create_session_factory
         from app.services.custom_cq import record_results, snapshot
+        from fastapi import HTTPException
 
         project = self.binding.data.get("project_ref")
         actual = self.binding.data["scope"].get("project_id")
@@ -101,11 +101,18 @@ class PlatformWorker:
         try:
             with factory() as session:
                 if publish:
-                    return record_results(session, project, payload["snapshot"], payload["public"],
-                                          payload["evaluation_id"])
-                return snapshot(session, project, payload.get(
-                    "question_ids", self.binding.data.get("cq_question_ids")
-                ))
+                    return record_results(
+                        session,
+                        project,
+                        payload["snapshot"],
+                        payload["public"],
+                        payload["evaluation_id"],
+                    )
+                return snapshot(
+                    session,
+                    project,
+                    payload.get("question_ids", self.binding.data.get("cq_question_ids")),
+                )
         except HTTPException as error:
             detail = error.detail if isinstance(error.detail, dict) else {"message": error.detail}
             raise FrameworkError(
@@ -368,12 +375,40 @@ class PlatformWorker:
                         }
                     ],
                 }
-            ontology_by_item, target_bindings = {}, {}
+            ontology_by_item, target_bindings, by_target = {}, {}, {}
             for item in raw_changes:
                 if not isinstance(item, dict):
                     continue
                 change_id = item.get("change_id")
-                target = resolve(item["target_ref"]) if item.get("target_ref") else None
+                reference = item.get("target_ref")
+                if (
+                    self.binding.role_team
+                    and reference
+                    and (
+                        not isinstance(reference, dict)
+                        or set(reference) != {"artifact_ref", "path"}
+                        or any(not isinstance(value, str) for value in reference.values())
+                    )
+                ):
+                    target = None  # Let the compiler locate the malformed reference.
+                else:
+                    try:
+                        target = resolve(reference) if reference else None
+                    except (FrameworkError, KeyError, TypeError, ValueError, OSError) as error:
+                        if not self.binding.role_team:
+                            raise
+                        return {
+                            "status": "not_written",
+                            "errors": [
+                                {
+                                    "code": "binding_lookup_failed",
+                                    "change_id": change_id,
+                                    "cause": error.as_dict()
+                                    if isinstance(error, FrameworkError)
+                                    else type(error).__name__,
+                                }
+                            ],
+                        }
                 if target:
                     target_bindings[change_id] = target
                     if targets.get(change_id) not in {None, target.get("ontology_id")}:
@@ -401,6 +436,29 @@ class PlatformWorker:
                 )
             except ModelChangeCompilationError as error:
                 return {"status": "not_written", "errors": error.errors}
+            if self.binding.role_team:
+                from ontoweave_modeling.role_team import target_changes_conflict
+
+                # The compiler owns malformed-input feedback. Compare only validated
+                # changes, using the actual native identity already resolved above.
+                for item in raw_changes:
+                    target = target_bindings.get(item["change_id"])
+                    if not target or not target.get("resource_iri"):
+                        continue
+                    identity = (target.get("ontology_id"), target["resource_iri"])
+                    for other in by_target.get(identity, []):
+                        if target_changes_conflict(other, item):
+                            return {
+                                "status": "not_written",
+                                "errors": [
+                                    {
+                                        "code": "shared_target_conflict",
+                                        "change_ids": [other["change_id"], item["change_id"]],
+                                        "instruction": "Return conflicting changes to their original owners for an explicit coordinated revision.",
+                                    }
+                                ],
+                            }
+                    by_target.setdefault(identity, []).append(item)
             plan = {
                 "intent_digest": digest(intent),
                 "batches": batches,
@@ -463,7 +521,7 @@ class PlatformWorker:
 
     def read_config(self, payload) -> dict:
         role = payload["role"]
-        if role not in {"modeling", "acceptance"}:
+        if role not in self.binding.data["models"]:
             raise FrameworkError("role_not_allowed")
         scope = self.scope()
         path = self.root / f"{role}-read-private.json"
@@ -572,7 +630,7 @@ def provider(binding, payload):
     from modeling_team.usage_capture import NumericReceiptWriter
 
     role, execution_id = payload["role"], safe_id(payload["execution_id"])
-    if role not in {"modeling", "acceptance"}:
+    if role not in binding.data["models"]:
         raise FrameworkError("role_not_allowed")
     model = binding.data["models"][role]
     if model["provider"] != "glm-direct":
@@ -598,6 +656,18 @@ def provider(binding, payload):
         allowed_tools.update(MEMORY_TOOLS)
     if role == "modeling" and binding.data.get("semantic_workspace"):
         allowed_tools.update(WORKSPACE_TOOLS)
+    identity = {}
+    if binding.role_team:
+        from ontoweave_modeling.role_team import production_tools
+
+        if role != "acceptance":
+            allowed_tools = set(production_tools(binding.data, role))
+        path = binding.root / "executions" / execution_id / "execution-intent.json"
+        if not path.is_file():
+            raise FrameworkError("execution_identity_required")
+        identity = json.loads(path.read_text())
+        if identity["role_id"] != role or identity["execution_id"] != execution_id:
+            raise FrameworkError("execution_role_mismatch")
     if not tools.issubset(allowed_tools):
         raise FrameworkError("tool_not_allowed")
     credential = preflight_glm_credential()
@@ -609,6 +679,15 @@ def provider(binding, payload):
             "authorization_ref": binding.data["authorization"]["reference"],
             "agent_id": execution_id,
             "role": role,
+            **(
+                {
+                    "actor_id": identity["actor_id"],
+                    "purpose": identity["purpose"],
+                    "work_kind": identity["work_kind"],
+                }
+                if identity
+                else {}
+            ),
             "phase": "P1.1",
             "provider": model["provider"],
             "requested_model": model["model"],
