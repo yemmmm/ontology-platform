@@ -14,8 +14,44 @@ from .acceptance import read_coverage, require_governed_read
 from .contracts import FrameworkError, digest, safe_id, write_json
 from .control import TaskControl
 from .execution import CodexInvocation, ExecutionManager
+from .results import ResultContractError, decode_json_result
 
-RUBRIC_VERSION = "process-evaluation/v1"
+RUBRIC_VERSION = "process-evaluation/v2"
+DIMENSION_FIELDS = (
+    "dimension",
+    "status",
+    "score",
+    "expectation",
+    "finding",
+    "evidence",
+    "gap",
+    "impact",
+    "priority",
+)
+REPORT_SCHEMA = {
+    "type": "object",
+    "required": [
+        "binding_digest",
+        "dimensions",
+        "combination_cases",
+        "unexamined",
+        "key_gaps",
+    ],
+    "properties": {
+        "binding_digest": {"type": "string"},
+        "dimensions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "object", "required": list(DIMENSION_FIELDS)},
+        },
+        "combination_cases": {
+            "type": "array",
+            "items": {"type": "object", "required": ["scenario", "expected", "actual", "evidence"]},
+        },
+        "unexamined": {"type": "array"},
+        "key_gaps": {"type": "array"},
+    },
+}
 DIMENSIONS = {
     "cq": ["goal_coverage", "clarity", "conditions_and_cross_unit_questions", "source_fidelity"],
     "slicing": ["scope_allocation", "whole_rules", "shared_identity", "integration_responsibility"],
@@ -29,21 +65,49 @@ DIMENSIONS = {
 INSTRUCTIONS = """You are an independent read-only process evaluator, not formal acceptance.
 Read all bound sources and stage artifacts. Assess only the declared scope and versions.
 Do not create, continue or repair production; do not write production memory or completion.
-Do not infer correctness from labels, counts, graph paths or self-checks. CQ quality,
-answer evidence readiness and model answerability are different. Generated answers cannot
-prove question coverage. Preserve unknowns and unallocated parent scope. Inspect absent
-links and rare exceptions, not only existing dependencies. For integration jointly test
-shared identities, upstream conditions, exceptions, units/time and source whole rules;
-include a discriminating correct/incorrect combination scenario. Do not invent relations.
+Stage boundaries (binding.point):
+- cq: assess the source-grounded questions or capability goals, including their coverage,
+  clarity, business conditions/exceptions and cross-unit questions. Capability goals may
+  include expected answers; this is a defect only if their declared use requires blind
+  questions. CQ quality, answer evidence readiness and actual model answerability are
+  separate. Missing an applied model or answers is not a question-quality defect.
+- slicing: assess the declared plan's scope allocation, whole rules, shared meanings,
+  dependencies and integration responsibility. No applied model, receipts or completed
+  execution are required to judge a plan. A coherent single unit is valid; do not demand
+  delegation, extra roles, hypothetical recovery branches or distinct author/unit names.
+- integration: verify the actual combined model at the bound revision with governed
+  resource bodies. Check shared identities, upstream conditions, exceptions, units/time
+  and whole rules; include a discriminating correct/incorrect combination scenario.
+  Read-back of a definition or domain/range does not prove automatic rejection of invalid
+  writes or inference enforcement. Do not claim such behavior without execution evidence.
+For every stage, distinguish a missing bound artifact from an actual missing production
+record or wrong business meaning. Required but unreadable evidence means unverified, not
+an invented defect or score. Optional/out-of-scope checks belong in boundary_notes, not
+unexamined. Do not require implementation-only evidence for cq or slicing.
+evaluator_feedback describes only this diagnostic evaluator's previous error and how to
+repair its own report. It is never evidence of a production failure, a missing CQ answer,
+or a business gap, and must not affect production scores.
+Do not infer correctness from labels, counts, graph paths or self-checks. Generated
+answers cannot prove question coverage. Preserve unknowns and unallocated parent scope.
+Inspect absent links and rare exceptions, not only existing dependencies. Do not invent
+relations. Scope/unit identifiers and actor names may differ without a responsibility gap.
 0=core contradiction, 1=major gap, 2=partial with material gap, 3=meets declared scope,
 4=meets scope with verified boundaries/exceptions/counterexamples. Missing evidence means
 unverified (null score); not_applicable needs a verifiable scope reason. Each dimension
 requires expectation, finding, evidence, gap, impact and priority. No weighted total.
+For each scored dimension, priority=none means no established gap; any established gap,
+including a minor one at score 3 or 4, needs low/medium/high/critical priority and evidence.
+Every key_gaps entry must summarize an established gap in a scored dimension with a
+non-none priority. Do not use prose alone to declare gaps. When no gap exists, use gap=""
+and key_gaps=[]; put normal limits, scope exclusions and notes in boundary_notes. Use
+unexamined only for required checks within this stage and declared scope.
 Only actual governed model bodies at the bound revision prove integration. Historical
 saved reads are historical diagnostics, never current online validation.
-Return JSON: {binding_digest, dimensions:[{dimension,status,score,expectation,finding,
+Return only one JSON object, without commentary or additional JSON examples:
+{binding_digest, dimensions:[{dimension,status,score,expectation,finding,
 evidence:[string],gap,impact,priority}], combination_cases:[{scenario,expected,actual,evidence}],
-unexamined:[string], key_gaps:[string]}. status is scored/unverified/not_applicable;
+unexamined:[string], key_gaps:[string], boundary_notes:[string]}.
+status is scored/unverified/not_applicable;
 priority is critical/high/medium/low/none. Evidence strings cite source fields/ranges or
 actual model relationships. All required dimensions must appear exactly once.
 """
@@ -58,6 +122,15 @@ def validate_config(config):
         raise FrameworkError("process_evaluation_config_invalid")
     if set(config.get("points", DIMENSIONS)) - DIMENSIONS.keys():
         raise FrameworkError("process_evaluation_point_invalid")
+
+
+def require_current_rubric(basis):
+    if basis["rubric_version"] != RUBRIC_VERSION or basis["rubric_digest"] != digest(INSTRUCTIONS):
+        raise FrameworkError(
+            "process_rubric_version_unavailable",
+            rubric_version=basis["rubric_version"],
+            next_action="Explicitly submit the same artifact versions under the current rubric.",
+        )
 
 
 class ProcessEvaluation:
@@ -90,11 +163,12 @@ class ProcessEvaluation:
             return self._configure(enabled, points)
 
     @contextmanager
-    def _admission_guard(self, point):
+    def _admission_guard(self, basis):
         with self._control_lock():
             settings = self.settings()
-            if not settings["enabled"] or point not in settings["points"]:
+            if not settings["enabled"] or basis["point"] not in settings["points"]:
                 raise FrameworkError("process_disabled_before_admission")
+            require_current_rubric(basis)
             yield
 
     def _configure(self, enabled, points=None):
@@ -299,9 +373,10 @@ class ProcessEvaluation:
         manager = ExecutionManager(
             self.repo, TaskControl(self.repo), self.binding, unit_id="process:" + binding_digest
         )
+        error_scope = "evaluation_runtime"
         try:
-            folder, manifest = self._materials(record)
             basis = record["binding"]
+            folder, manifest = self._materials(record)
             if (
                 basis["point"] == "integration"
                 and self.bridge.call("snapshot")["model_revisions"] != basis["model_revisions"]
@@ -329,7 +404,13 @@ class ProcessEvaluation:
                     "dimensions": DIMENSIONS[basis["point"]],
                     "target": record["target"],
                     "materials": manifest,
-                    "contract_feedback": record.get("error"),
+                    "evaluator_feedback": {
+                        "scope": "process_evaluation_only",
+                        "previous_error": record["error"],
+                        "action": "Repair your diagnostic report only; this is not production evidence.",
+                    }
+                    if record.get("error") and record.get("error_scope") == "evaluator_report"
+                    else None,
                 }
             )
             ref = manager.run(
@@ -347,14 +428,14 @@ class ProcessEvaluation:
                     materials_only=basis["point"] != "integration",
                 ),
                 resume_original=True,
-                admission_guard=lambda: self._admission_guard(basis["point"]),
+                admission_guard=lambda: self._admission_guard(basis),
             )
             native = self.repo.read_reference(ref)["result"]
             if native["status"] != "completed":
                 raise FrameworkError("process_native_turn_failed", layer="runtime/infrastructure")
-            from .results import decode_json_result
-
-            report = decode_json_result(native["final_response"], {"type": "object"})
+            require_current_rubric(basis)
+            error_scope = "evaluator_report"
+            report = decode_json_result(native["final_response"], REPORT_SCHEMA)
             validate_report(report, basis["point"], binding_digest)
             events = (
                 self.binding.root
@@ -372,8 +453,10 @@ class ProcessEvaluation:
                 require_governed_read(events, basis["model_revisions"])
                 if not coverage["returned_resource_bodies"]:
                     raise FrameworkError("process_actual_model_body_missing")
+                error_scope = "evaluation_runtime"
                 if self.bridge.call("snapshot")["model_revisions"] != basis["model_revisions"]:
                     raise FrameworkError("process_target_changed")
+                error_scope = "evaluator_report"
             if not coverage["complete"]:
                 raise FrameworkError("process_evidence_incomplete", coverage=coverage)
             row = self.repo.get(row["object_id"])
@@ -384,6 +467,8 @@ class ProcessEvaluation:
                 satisfaction=satisfaction(report),
                 execution_ref=ref,
                 coverage=coverage,
+                error=None,
+                error_scope=None,
                 finished_at=time.time(),
             )["content"]
         except (FrameworkError, ValueError, OSError, TypeError, KeyError) as error:
@@ -399,7 +484,12 @@ class ProcessEvaluation:
             result = self._save(
                 row,
                 state=state,
-                error=error.as_dict() if isinstance(error, FrameworkError) else str(error),
+                error=error.as_dict()
+                if isinstance(error, FrameworkError)
+                else {"code": str(error), **error.details}
+                if isinstance(error, ResultContractError)
+                else str(error),
+                error_scope=error_scope,
                 **({"finished_at": time.time()} if state == "failed" else {}),
             )["content"]
         self.summary("progress")
@@ -540,6 +630,8 @@ class ProcessEvaluation:
                 )
             for gap in r.get("report", {}).get("key_gaps", []):
                 lines.append(f"\n- Key gap: {gap}")
+            for note in r.get("report", {}).get("boundary_notes", []):
+                lines.append(f"\n- Boundary note: {note}")
         lines.extend(
             [
                 "",
@@ -564,19 +656,7 @@ def validate_report(report, point, binding_digest):
     if sorted(d.get("dimension", "") for d in dimensions) != sorted(DIMENSIONS[point]):
         raise FrameworkError("process_report_dimensions_invalid")
     for d in dimensions:
-        if not all(
-            k in d
-            for k in (
-                "status",
-                "score",
-                "expectation",
-                "finding",
-                "evidence",
-                "gap",
-                "impact",
-                "priority",
-            )
-        ):
+        if not all(k in d for k in DIMENSION_FIELDS):
             raise FrameworkError("process_report_dimension_fields_missing")
         if d["status"] not in {"scored", "unverified", "not_applicable"} or not isinstance(
             d["evidence"], list
@@ -605,6 +685,10 @@ def validate_report(report, point, binding_digest):
         isinstance(report.get(k), list) for k in ("key_gaps", "unexamined", "combination_cases")
     ):
         raise FrameworkError("process_report_coverage_missing")
+    for field in ("key_gaps", "unexamined", "boundary_notes"):
+        values = report.get(field, [])
+        if not isinstance(values, list) or any(not isinstance(v, str) or not v for v in values):
+            raise FrameworkError("process_report_notes_invalid", field=field)
     if (
         point == "integration"
         and any(d["status"] == "scored" for d in dimensions)
@@ -621,11 +705,8 @@ def validate_report(report, point, binding_digest):
 
 def satisfaction(report):
     ds = report["dimensions"]
-    if report["key_gaps"] or any(
-        d["status"] == "scored"
-        and (d["score"] < 3 or d["gap"] or d["priority"] in {"critical", "high"})
-        for d in ds
-    ):
+    # Narrative fields explain the judgment; they must not make semantic decisions.
+    if any(d["status"] == "scored" and (d["score"] < 3 or d["priority"] != "none") for d in ds):
         return "gaps"
     if report["unexamined"] or any(d["status"] == "unverified" for d in ds):
         return "unverified"

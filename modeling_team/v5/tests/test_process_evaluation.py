@@ -220,13 +220,186 @@ def test_score_anchors_and_gaps(point, score, expected):
     validate_report(r, point, "basis")
     assert satisfaction(r) == expected
     r["key_gaps"] = ["missing overall constraint"]
+    r["dimensions"][0]["priority"] = "medium"
     assert satisfaction(r) == "gaps"
     r["key_gaps"] = []
+    r["dimensions"][0]["priority"] = "none"
     r["dimensions"][0].update(status="unverified", score=None)
     assert satisfaction(r) == ("unverified" if score >= 3 else "gaps")
     r["dimensions"][0]["score"] = 3
     with pytest.raises(FrameworkError, match="process_unknown_must_not_score"):
         validate_report(r, point, "basis")
+
+
+def test_no_gap_annotations_do_not_override_structured_judgment():
+    r = report("basis", score=4)
+    for d in r["dimensions"]:
+        d["gap"] = "无实质缺口；当前范围不要求形式化互斥公理。"
+    r["key_gaps"] = ["无实质性缺口", "边界注记：未给定基数，不得推断。"]
+    r["boundary_notes"] = ["This is a plan, not proof of actual application."]
+    validate_report(r, "cq", "basis")
+    assert satisfaction(r) == "satisfied"
+    r["dimensions"][0].update(status="unverified", score=None)
+    assert satisfaction(r) == "unverified"
+
+
+@pytest.mark.parametrize("priority", ["low", "medium", "high", "critical"])
+def test_declared_gap_is_not_hidden_by_high_scores(priority):
+    r = report("basis", score=4)
+    r["dimensions"][0].update(gap="Missing a source exception", priority=priority)
+    validate_report(r, "cq", "basis")
+    assert satisfaction(r) == "gaps"
+
+
+def test_report_selection_ignores_empty_objects_in_explanatory_text(binding, workspace):
+    p = ProcessEvaluation(binding, workspace)
+    p.configure(True)
+    record = p.submit(submission(workspace))
+    calls = []
+
+    def invoke(root, purpose, prompt, inputs):
+        result = actor(binding, calls)(root, purpose, prompt, inputs)
+        result["final_response"] = (
+            "The plan has model_revisions={}; this is not an application check.\n"
+            f"```json\n{result['final_response']}\n```"
+        )
+        return result
+
+    result = p.run(record["binding_digest"], invoke=invoke)
+    assert result["state"] == "completed"
+    assert result["report"]["binding_digest"] == record["binding_digest"]
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("template_dimensions", [[], [{"dimension": "example"}]])
+def test_incomplete_report_template_does_not_hide_actual_report(
+    binding, workspace, template_dimensions
+):
+    p = ProcessEvaluation(binding, workspace)
+    p.configure(True)
+    record = p.submit(submission(workspace))
+
+    def invoke(root, purpose, prompt, inputs):
+        result = actor(binding, [])(root, purpose, prompt, inputs)
+        template = report("example")
+        template["dimensions"] = template_dimensions
+        result["final_response"] = json.dumps(template) + "\n" + result["final_response"]
+        return result
+
+    assert p.run(record["binding_digest"], invoke=invoke)["state"] == "completed"
+
+
+def test_two_distinct_reports_remain_ambiguous(binding, workspace):
+    p = ProcessEvaluation(binding, workspace)
+    p.configure(True)
+    record = p.submit(submission(workspace))
+
+    def invoke(root, purpose, prompt, inputs):
+        result = actor(binding, [])(root, purpose, prompt, inputs)
+        result["final_response"] += "\n" + json.dumps(report(record["binding_digest"], score=4))
+        return result
+
+    result = p.run(record["binding_digest"], invoke=invoke)
+    assert result["state"] == "failed"
+    assert "result_json_missing_or_ambiguous" in str(result["error"])
+
+
+def test_retry_feedback_is_evaluator_only_and_success_clears_current_error(binding, workspace):
+    p = ProcessEvaluation(binding, workspace)
+    p.configure(True)
+    record = p.submit(submission(workspace))
+    seen = []
+
+    def invoke(root, purpose, prompt, inputs):
+        seen.append(json.loads(prompt))
+        result = actor(binding, [])(root, purpose, prompt, inputs)
+        if len(seen) == 1:
+            result["final_response"] = "No JSON report."
+        return result
+
+    first = p.run(record["binding_digest"], invoke=invoke)
+    assert first["state"] == "failed"
+    second = p.run(record["binding_digest"], invoke=invoke, retry=True)
+    assert second["state"] == "completed"
+    feedback = seen[1]["evaluator_feedback"]
+    assert feedback["scope"] == "process_evaluation_only"
+    assert "result_json_missing_or_ambiguous" in str(feedback["previous_error"])
+    assert "contract_feedback" not in seen[1]
+    assert second.get("error") is None
+    old = workspace.get(p.prefix + record["binding_digest"], 3)
+    assert old["content"]["state"] == "failed" and old["content"]["error"]
+
+
+def test_source_failure_is_not_report_repair_feedback(binding, workspace):
+    p = ProcessEvaluation(binding, workspace)
+    p.configure(True)
+    record = p.submit(submission(workspace))
+    source = binding.materials / "source.md"
+    original = source.read_bytes()
+    source.write_text("Source drift")
+    calls = []
+    first = p.run(record["binding_digest"], invoke=actor(binding, calls))
+    assert first["state"] == "failed" and not calls
+    assert first["error"]["code"] == "process_source_version_unavailable"
+    source.write_bytes(original)
+
+    def invoke(root, purpose, prompt, inputs):
+        assert json.loads(prompt)["evaluator_feedback"] is None
+        return actor(binding, calls)(root, purpose, prompt, inputs)
+
+    assert p.run(record["binding_digest"], invoke=invoke, retry=True)["state"] == "completed"
+
+
+def test_rubric_identity_includes_version():
+    from ontoweave_modeling.contracts import digest
+    from ontoweave_modeling.process_evaluation import INSTRUCTIONS, require_current_rubric
+
+    with pytest.raises(FrameworkError, match="process_rubric_version_unavailable"):
+        require_current_rubric(
+            {"rubric_digest": digest(INSTRUCTIONS), "rubric_version": "process-evaluation/v1"}
+        )
+
+
+def test_changed_rubric_does_not_silently_rescore_old_binding(binding, workspace, monkeypatch):
+    import ontoweave_modeling.process_evaluation as module
+
+    p = ProcessEvaluation(binding, workspace)
+    p.configure(True)
+    s = submission(workspace)
+    old = p.submit(s)
+    monkeypatch.setattr(module, "INSTRUCTIONS", module.INSTRUCTIONS + "\nNew scoring standard.")
+    calls = []
+    result = p.run(old["binding_digest"], invoke=actor(binding, calls))
+    assert result["state"] == "failed" and not calls
+    assert result["error"]["code"] == "process_rubric_version_unavailable"
+    new = p.submit(s)
+    assert new["binding_digest"] != old["binding_digest"]
+    assert p.run(new["binding_digest"], invoke=actor(binding, calls))["state"] == "completed"
+
+
+def test_rubric_change_still_reconciles_original_inflight_result(binding, workspace, monkeypatch):
+    import ontoweave_modeling.process_evaluation as module
+
+    p = ProcessEvaluation(binding, workspace)
+    p.configure(True)
+    record = p.submit(submission(workspace))
+    calls = []
+
+    def interrupted(root, purpose, prompt, inputs):
+        result = actor(binding, calls)(root, purpose, prompt, inputs)
+        (root / "result.json").write_text(json.dumps(result))
+        raise FrameworkError("worker_disconnected", layer="runtime/infrastructure")
+
+    first = p.run(record["binding_digest"], invoke=interrupted)
+    assert first["state"] == "running"
+    assert TaskControl(workspace).view()["active"]
+    monkeypatch.setattr(module, "INSTRUCTIONS", module.INSTRUCTIONS + "\nNew scoring standard.")
+    second = p.run(record["binding_digest"], invoke=actor(binding, calls))
+    assert len(calls) == 1
+    assert TaskControl(workspace).view()["active"] == {}
+    assert workspace.list_kind("execution")[0]["content"]["state"] == "finished"
+    assert second["state"] == "failed"
+    assert second["error"]["code"] == "process_rubric_version_unavailable"
 
 
 def test_queued_budget_pause_blocks_without_call(binding, workspace):
