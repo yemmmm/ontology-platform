@@ -847,15 +847,24 @@ def _normalize_field_map(
     return result
 
 
-def _candidate_issue(issue: Any) -> dict[str, Any]:
+def _candidate_issue(issue: Any, candidate: Mapping[str, Any]) -> dict[str, Any]:
+    pointer = getattr(issue, "artifact", "")
+    pointer = pointer if pointer.startswith("/") else ""
+    segments = pointer.split("/")
+    item_id = None
+    if len(segments) > 2 and segments[1] == "items" and segments[2].isdigit():
+        index = int(segments[2])
+        items = candidate.get("items", [])
+        if isinstance(items, list) and index < len(items) and isinstance(items[index], Mapping):
+            item_id = items[index].get("item_id")
     return {
         "code": getattr(issue, "reason_code", None) or "unified_schema_mismatch",
         "change_id": None,
-        "item_id": None,
-        "field": None,
-        "path": "/candidate",
-        "candidate_path": "/candidate",
-        "message": getattr(issue, "message", None) or str(issue),
+        "item_id": item_id,
+        "field": segments[-1] if pointer and not segments[-1].isdigit() else None,
+        "path": "/candidate" + pointer,
+        "candidate_path": "/candidate" + pointer,
+        "message": getattr(issue, "detail", None) or getattr(issue, "message", None) or str(issue),
         "retryable": True,
     }
 
@@ -2174,7 +2183,7 @@ def _validate_request(
     if candidate_copy is not None:
         candidate_issues = tuple(validate_unified_candidate(candidate_copy))
         if candidate_issues:
-            errors.extend(_candidate_issue(issue) for issue in candidate_issues)
+            errors.extend(_candidate_issue(issue, candidate_copy) for issue in candidate_issues)
             return None
     raw_changes = request.get("changes")
     if not isinstance(raw_changes, list) or not raw_changes:

@@ -59,6 +59,10 @@ class FlowState(TypedDict, total=False):
     role_id: str
     actor_id: str
     work_kind: str
+    correction_basis: dict
+    correction_execution_refs: list[dict]
+    retained_artifact_ref: dict | None
+    rejected_result_material_ref: dict | None
 
 
 class WorkUnitFlow:

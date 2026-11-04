@@ -7,7 +7,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .contracts import FrameworkError, digest
 
@@ -25,6 +25,21 @@ class MaterialReference(BaseModel):
     object_id: str
     revision: int
     digest: str | None = None
+
+
+class WorkCard(BaseModel):
+    """The five mutable card fields plus compatibility metadata owned by the platform."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_work: str | None = None
+    scope: str | None = None
+    next_steps: str | list[str] | None = None
+    waiting_note: str | None = None
+    result_refs: list[dict[str, object]] | None = None
+    author: str | None = None
+    expected_revision: int | None = None
+    reported_at: str | None = None
 
 
 class TeamChannel:
@@ -217,12 +232,16 @@ class TeamChannel:
             raise FrameworkError("team_message_identity_conflict") from error
 
     def update_card(self, card, expected_revision=0):
-        card = dict(card)
+        if isinstance(card, BaseModel):
+            card = card.model_dump(exclude_unset=True)
+        else:
+            card = dict(card)
         if "expected_revision" in card:
             nested = card.pop("expected_revision")
             if expected_revision not in {0, nested}:
                 raise FrameworkError("work_card_revision_conflict")
             expected_revision = nested
+        card.pop("reported_at", None)
         if card.get("author") == self.actor:
             card.pop("author")
         allowed = {"current_work", "scope", "next_steps", "waiting_note", "result_refs"}
@@ -359,9 +378,13 @@ def register_team_tools(server, channel):
         return call(channel.read, reference.model_dump(exclude_none=True), offset, limit)
 
     @server.tool()
-    def update_work_card(card: dict, expected_revision: int = 0) -> dict:
-        """Update ONLY own current_work, scope, next_steps, waiting_note and result_refs."""
-        return call(channel.update_card, card, expected_revision)
+    def update_work_card(card: WorkCard, expected_revision: int = 0) -> dict:
+        """Update ONLY own current_work, scope, next_steps, waiting_note and result_refs.
+
+        author and nested expected_revision are accepted only for legacy bound-call
+        compatibility; reported_at is platform-owned and ignored.
+        """
+        return call(channel.update_card, card.model_dump(exclude_unset=True), expected_revision)
 
     @server.tool()
     def get_work_board(agent_id: str | None = None, revision: int | None = None) -> dict:

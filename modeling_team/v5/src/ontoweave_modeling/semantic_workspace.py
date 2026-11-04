@@ -1,6 +1,9 @@
 """Persistent propositions, decisions and derived navigation, separate from applied models."""
 
 from datetime import UTC, datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict
 
 from .contracts import FrameworkError, bound_project_ref, digest
 
@@ -10,6 +13,35 @@ WORKSPACE_TOOLS = (
     "search_semantic_records",
     "get_modeling_context",
 )
+
+
+class RecordReference(BaseModel):
+    """A reference returned by read_semantic_record for dependency navigation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    record_id: str
+    revision: int
+    scope: Literal["task", "project"] = "task"
+    unit_id: str | None = None
+    # Older returned references included this content digest; it is metadata only.
+    digest: str | None = None
+
+
+class SourceReference(BaseModel):
+    """A manifest-bound source reference; the bound manifest supplies omitted metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    material_id: str
+    sha256: str | None = None
+    ranges: Any | None = None
+    source_ranges: list[Any] | None = None
+    # These manifest fields have appeared in persisted/source-read references and are
+    # retained as optional metadata; integrity still comes from the bound manifest.
+    path: str | None = None
+    source_ref: str | None = None
+    material_type: str | None = None
 
 
 class SemanticWorkspace:
@@ -97,12 +129,15 @@ class SemanticWorkspace:
         sources = []
         for ref in source_refs or []:
             entry = self.task["source_manifest"].get(ref["material_id"])
-            if entry is None or ref.get("sha256", entry["sha256"]) != entry["sha256"]:
+            supplied_sha256 = ref.get("sha256")
+            if entry is None or (
+                supplied_sha256 is not None and supplied_sha256 != entry["sha256"]
+            ):
                 raise FrameworkError(
                     "source_reference_mismatch",
                     material_id=ref["material_id"],
                     expected_sha256=entry["sha256"] if entry else None,
-                    actual_sha256=ref.get("sha256"),
+                    actual_sha256=supplied_sha256,
                 )
             sources.append({**entry, **ref, "sha256": entry["sha256"]})
         repository = self.scoped(scope)
@@ -370,8 +405,8 @@ def register_workspace_tools(server, workspace):
         kind: str,
         title: str,
         body: str,
-        source_refs: list[dict] | None = None,
-        depends_on: list[dict] | None = None,
+        source_refs: list[SourceReference] | None = None,
+        depends_on: list[RecordReference] | None = None,
         states: dict | None = None,
         expected_revision: int = 0,
         scope: str = "task",
@@ -380,8 +415,13 @@ def register_workspace_tools(server, workspace):
         """Persist a material_review, proposition, interpretation, decision, definition, coverage,
         open_item or summary. Keep full conditions/exceptions/unknowns. states independently records
         review/cognition/expression/work/applicability, never application/acceptance. depends_on uses
-        exact returned reference objects; source refs name approved material_id plus optional ranges.
-        Project scope is available only for this Host-bound project. On conflict reread and merge."""
+        exact returned record references; source refs name an approved material_id plus optional
+        sha256 and existing ranges. sha256 may be omitted because the bound source manifest fills
+        it; do not invent or hand-copy a digest. Project scope is available only for this
+        Host-bound project. On conflict reread and merge."""
+
+        source_refs = [ref.model_dump(exclude_unset=True) for ref in source_refs or []]
+        depends_on = [ref.model_dump(exclude_unset=True) for ref in depends_on or []]
         return call(
             workspace.write,
             record_id,

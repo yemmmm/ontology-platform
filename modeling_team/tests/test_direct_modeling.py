@@ -47,6 +47,23 @@ def _candidate(items: list[dict]) -> dict:
     }
 
 
+def test_candidate_shape_errors_reach_the_submitter_with_actual_item_and_json_pointer():
+    candidate = _candidate([_item("kept-item", "entity", "A")])
+    candidate["items"][0].pop("business_meaning")
+    with pytest.raises(ModelChangeCompilationError) as caught:
+        compile_model_changes(
+            _request([_change("create-one", "create", "individual", item_id="kept-item")]),
+            candidate=candidate,
+            ontology_by_item={"create-one": "ontology-1"},
+            resolve_binding=lambda _ref: None,
+        )
+    error = caught.value.errors[0]
+    assert error["code"] == "unified_schema_mismatch"
+    assert error["item_id"] == "kept-item"
+    assert error["path"] == error["candidate_path"] == "/candidate/items/0"
+    assert "business_meaning" in error["message"]
+
+
 def _change(change_id: str, action: str, resource_kind: str, item_id=None, *, target_ref=None, fields=None):
     return {
         "change_id": change_id,

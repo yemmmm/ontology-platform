@@ -29,6 +29,10 @@ Do not change another owner's semantic body. Record shared conflicts and actual
 unmaterialized dependencies; do not invent a duplicate shared identity or use a
 change ID as a native reference. Existing resource references come only from
 governed reads or actual Host receipts; never derive IDs from IRI suffixes.
+The Host fills omitted neutral relation_endpoints/shared_scope with null; retain
+all real endpoints and shared labels. Other required business fields must be
+explicit. Structural feedback identifies the exact item and missing/extra keys.
+Return the complete professional JSON; progress/cards are not a submitted candidate.
 
 Use the attached representation grammar to preserve meaning. Distinguish
 observations, interpretations, confirmation, unknowns and unfinished expression.
@@ -50,9 +54,13 @@ completion summary. Search shared users when dependencies are incomplete.
 
 Copy the input prompt.basis versions exactly, including null scope_ref/cq_ref;
 a new plan received in a message is not an accepted input baseline. Add only
-handoff references fully read in this turn to consumed_refs. Every source_ref
-must have an actual read_material call this turn, following next_offset; reuse
-the retained propositions and analysis rather than reconstructing unchanged work.
+handoff references fully read in this turn or in the prompt's explicit same-basis
+reusable_read_execution_refs to consumed_refs. Every source_ref needs actual
+read_material evidence, following next_offset. A technical retry may use only
+those explicitly supplied observed reads, never an old summary or arbitrary ref.
+When only envelope fields need correction, artifact=null plus
+artifact_ref=retained_artifact_ref reuses your exact body; otherwise submit the
+corrected authored artifact. Reuse propositions and analysis, not a rebuilt model.
 Return a completed intake or contribution with status=proposed. The installed
 scope and the supplied phase determine when to move from intake to propose;
 an ordinary request to start a later phase does not change that binding.

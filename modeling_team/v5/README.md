@@ -44,6 +44,27 @@ Host 保留真实授权收取时间（`authorization.received_at`）；`semantic
 继承旧检查／验收。工程证据与真实采用边界见
 [R5.0-012 交付记录](../../docs/delivery/test-docs/2026-11-03-r5-0-012-delivery.md)。
 
+### 交付与技术纠错合同
+
+2026-11-04的[流程修订](../../docs/delivery/designs/2026-11-04-role-team-flow-repair-design.md)
+明确以下兼容增量；工程证据见[验证记录](../../docs/delivery/test-docs/2026-11-04-role-team-flow-repair.md)。
+
+- `role-work-result/v1`可选`artifact_ref`只接受prompt给出的`retained_artifact_ref`，且
+  `artifact=null`；本作者同基线的纯信封纠错可避免重交正文，任意/陈旧引用仍拒绝。
+- prompt的`reusable_read_execution_refs`是程序验证的同作者、阶段、generation、来源/
+  scope/CQ/shared/model及业务答复基线上的真实读证明。未列出的历史、未读/缺页材料
+  不能声称已消费。新业务答复使旧成果复用失效；有原生绑定时沿已有resume并差分计量。
+- 候选仅缺`relation_endpoints`/`shared_scope`时可补null，原字段值及业务正文不变；
+  单一已授权Ontology用`ontology_targets={}`复用已有投影，多目标仍须明确放置。
+- `public-cq-set/v1`可选`model_support=[{cq_id,status,evidence}]`记录实际支撑，status为
+  supported/conditional/unsupported/unverified。仅该证据变化进入原属主self_check；
+  questions/unknowns/coverage_gaps的真实变化仍交原责任重评，不把证据槽当业务事实来源。
+- 卡片/record/source工具schema显式体现既有字段；reported_at由程序盖章，已绑定源的
+  semantic record可省略SHA。身份、摘要、引用和授权错误继续准确反馈。
+
+新任务会冻结更新后的专业提示；旧run保留原冻结材料/提示，只兼容程序增量，不能宣称已
+热替换所有旧指令。新CLI加载修复也不会恢复已关闭预算或自动开始调用。
+
 ### 精确模型读取与当前后续验证
 
 生产、自查和独立评价在 `read_material`／`query_semantic_context` 外，可使用只读工具

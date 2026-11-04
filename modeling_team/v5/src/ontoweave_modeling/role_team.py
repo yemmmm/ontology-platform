@@ -110,6 +110,16 @@ PUBLIC_CQ = object_schema(
         "coverage_gaps": STRINGS,
     }
 )
+PUBLIC_CQ["properties"]["model_support"] = {
+    "type": "array",
+    "items": object_schema(
+        {
+            "cq_id": STR,
+            "status": {"enum": ["supported", "conditional", "unsupported", "unverified"]},
+            "evidence": STRINGS,
+        }
+    ),
+}
 INTAKE = object_schema(
     {
         "schema_version": {"const": "source-intake/v1"},
@@ -117,9 +127,9 @@ INTAKE = object_schema(
         "unknowns": STRINGS,
     }
 )
-# The fields the combiner must inspect before the existing Host compiler runs.
-# Business payload validation remains with that compiler; these shapes only make
-# malformed IDs/collections actionable for their original author.
+# Decode the professional envelope without collapsing canonical candidate issues
+# into a first-error JSON-schema message. The role boundary then reuses the full
+# pure candidate validator; representation compilation still belongs to the Host.
 MODEL_CANDIDATE = {
     "type": ["object", "null"],
     "properties": {
@@ -233,6 +243,7 @@ def result_schema(binding, phase):
             },
             "basis": BASIS,
             "artifact": {"anyOf": [artifact, {"type": "null"}]},
+            "artifact_ref": NULL_REF,
             "source_refs": SOURCE_REFS,
             "issues": STRINGS,
             "consumed_ids": WORK_RESULT_SCHEMA["properties"]["consumed_ids"],
@@ -542,7 +553,16 @@ def _expand_coordination(binding, repository, plan, basis, ancestors=()):
         consumed.extend(ref for ref in nested_basis["consumed_refs"] if ref not in consumed)
     required = direct_owners | coordination_owners
     if set(plan["check_units"]) != required:
-        raise FrameworkError("original_owner_check_missing", owner_work_ids=sorted(required))
+        raise FrameworkError(
+            "original_owner_check_missing",
+            owner_work_ids=sorted(required),
+            requested_check_units=plan["check_units"],
+            instruction="check_units must name exactly the selected original owners. "
+            "A Modeling no_change result still needs its exact contribution selection "
+            "and selected_change_ids=[]. Copy its actual candidate_ref/changes_ref, "
+            "including null only when the retained result has null references. "
+            "Public CQ is separate, not a null Modeling contribution.",
+        )
     expanded["check_units"] = list(
         dict.fromkeys(c["owner_work_id"] for c in expanded["contributions"])
     )
@@ -778,8 +798,14 @@ def compose_integration(binding, repository, plan, basis):
         )
     if set(plan["check_units"]) - set(owners):
         raise FrameworkError("unit_check_scope_forbidden")
-    if set(plan["ontology_targets"]) - {c["change_id"] for c in changes}:
-        raise FrameworkError("integration_placement_unknown")
+    if unknown := set(plan["ontology_targets"]) - {c["change_id"] for c in changes}:
+        raise FrameworkError(
+            "integration_placement_unknown",
+            unknown_change_ids=sorted(unknown),
+            instruction="Use the exact program-returned qualified_change_ids. "
+            "With one authorized Ontology, ontology_targets={} uses the existing Host default; "
+            "do not retranscribe qualified IDs merely to repeat that placement.",
+        )
     candidate = (
         {**candidate_meta, "candidate_id": "integrated-" + digest(plan)[:24], "items": items}
         if candidate_meta

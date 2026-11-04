@@ -2141,7 +2141,7 @@ def _unified_definition_ref_issues(
                 issues.append(
                     StagedDecisionIssue(
                         "unified_schema_mismatch",
-                        f"{location}.definition_ref is invalid",
+                        f"{location}/definition_ref is invalid",
                         location,
                     )
                 )
@@ -2149,7 +2149,7 @@ def _unified_definition_ref_issues(
                 issues.append(
                     StagedDecisionIssue(
                         "missing_candidate_reference",
-                        f"{location}.definition_ref is not declared",
+                        f"{location}/definition_ref is not declared",
                         location,
                     )
                 )
@@ -2157,14 +2157,16 @@ def _unified_definition_ref_issues(
         for key, child in value.items():
             issues.extend(
                 _unified_definition_ref_issues(
-                    child, item_ids=item_ids, location=f"{location}.{key}"
+                    child,
+                    item_ids=item_ids,
+                    location=f"{location}/{str(key).replace('~', '~0').replace('/', '~1')}",
                 )
             )
     elif isinstance(value, list):
         for index, child in enumerate(value):
             issues.extend(
                 _unified_definition_ref_issues(
-                    child, item_ids=item_ids, location=f"{location}[{index}]"
+                    child, item_ids=item_ids, location=f"{location}/{index}"
                 )
             )
     return issues
@@ -2179,10 +2181,16 @@ def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
                 "unified_schema_mismatch", "candidate is not r3-0-009-unified-graph/v2", ""
             ),
         )
-    if set(value) != set(UNIFIED_CANDIDATE_FIELDS):
+    candidate_fields = set(value)
+    missing_fields = sorted(set(UNIFIED_CANDIDATE_FIELDS) - candidate_fields, key=str)
+    unexpected_fields = sorted(candidate_fields - set(UNIFIED_CANDIDATE_FIELDS), key=str)
+    if missing_fields or unexpected_fields:
         return (
             StagedDecisionIssue(
-                "unified_schema_mismatch", "candidate fields drift from r3-0-009-unified-graph/v2", ""
+                "unified_schema_mismatch",
+                "candidate fields drift from r3-0-009-unified-graph/v2: "
+                f"missing fields {missing_fields}; unexpected fields {unexpected_fields}",
+                "",
             ),
         )
     issues: list[StagedDecisionIssue] = []
@@ -2190,50 +2198,83 @@ def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
         if not _nonempty(value.get(field)) or "://" in str(value.get(field)):
             issues.append(
                 StagedDecisionIssue(
-                    "missing_candidate_reference", f"candidate {field} is invalid", ""
+                    "missing_candidate_reference", f"candidate {field} is invalid", f"/{field}"
                 )
             )
     revision = value.get("revision")
     if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
-        issues.append(StagedDecisionIssue("approval_stale", "candidate revision is invalid", ""))
+        issues.append(StagedDecisionIssue("approval_stale", "candidate revision is invalid", "/revision"))
     items = value.get("items")
     if not isinstance(items, list) or not items:
-        issues.append(StagedDecisionIssue("missing_candidate_reference", "candidate has no items", ""))
+        issues.append(
+            StagedDecisionIssue("missing_candidate_reference", "candidate has no items", "/items")
+        )
         items = []
     seen_items: set[str] = set()
-    valid_items: list[Mapping[str, Any]] = []
-    for item in items:
-        if not isinstance(item, Mapping) or (
-            set(item) - UNIFIED_CANDIDATE_ITEM_OPTIONAL_FIELDS
-            != set(UNIFIED_CANDIDATE_ITEM_FIELDS)
-        ):
+    valid_items: list[tuple[int, Mapping[str, Any]]] = []
+    for index, item in enumerate(items):
+        item_path = f"/items/{index}"
+        if not isinstance(item, Mapping):
             issues.append(
                 StagedDecisionIssue(
-                    "unified_schema_mismatch", "candidate item fields drift from the contract", ""
+                    "unified_schema_mismatch",
+                    f"candidate item at index {index} must be an object",
+                    item_path,
+                )
+            )
+            continue
+        item_fields = set(item)
+        missing_fields = sorted(set(UNIFIED_CANDIDATE_ITEM_FIELDS) - item_fields, key=str)
+        unexpected_fields = sorted(
+            item_fields - set(UNIFIED_CANDIDATE_ITEM_FIELDS) - set(UNIFIED_CANDIDATE_ITEM_OPTIONAL_FIELDS),
+            key=str,
+        )
+        if missing_fields or unexpected_fields:
+            issues.append(
+                StagedDecisionIssue(
+                    "unified_schema_mismatch",
+                    "candidate item fields drift from the contract at "
+                    f"index {index} (item_id={item.get('item_id')!r}): "
+                    f"missing fields {missing_fields}; unexpected fields {unexpected_fields}",
+                    item_path,
                 )
             )
             continue
         item_id = item.get("item_id")
         if not _nonempty(item_id):
-            issues.append(StagedDecisionIssue("missing_candidate_reference", "item_id is missing", ""))
+            issues.append(
+                StagedDecisionIssue(
+                    "missing_candidate_reference",
+                    f"item_id is missing at index {index}",
+                    f"{item_path}/item_id",
+                )
+            )
         elif item_id in seen_items:
             issues.append(
-                StagedDecisionIssue("missing_candidate_reference", f"item_id {item_id} repeats", "")
+                StagedDecisionIssue(
+                    "missing_candidate_reference",
+                    f"item_id {item_id} repeats at index {index}",
+                    f"{item_path}/item_id",
+                )
             )
         else:
             seen_items.add(item_id)
         if item.get("item_kind") not in UNIFIED_CANDIDATE_ITEM_KINDS:
             issues.append(
-                StagedDecisionIssue("unified_schema_mismatch", "candidate item_kind is invalid", "")
+                StagedDecisionIssue(
+                    "unified_schema_mismatch",
+                    f"candidate item_kind is invalid at index {index}",
+                    f"{item_path}/item_kind",
+                )
             )
         else:
-            valid_items.append(item)
-    for item in valid_items:
+            valid_items.append((index, item))
+    for index, item in valid_items:
         issues.extend(
             _unified_definition_ref_issues(
                 item,
                 item_ids=seen_items,
-                location=f"items[{item.get('item_id')}]",
+                location=f"/items/{index}",
             )
         )
     return tuple(issues)

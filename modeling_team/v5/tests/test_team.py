@@ -145,6 +145,58 @@ def test_team_tools_loaded_through_real_mcp(team, binding, workspace, tmp_path):
     assert a.board("modeling")["agents"][0]["card"]["content"]["current_work"] == "MCP"
 
 
+def test_update_work_card_schema_and_bound_metadata_compatibility(
+    team, binding, workspace, tmp_path
+):
+    a, _ = team
+    config = tmp_path / "team.json"
+    config.write_text(
+        json.dumps(
+            {
+                "task": a.task,
+                "connection": workspace.connection,
+                "schema": workspace.schema,
+                "actor": "modeling",
+            }
+        )
+    )
+    server = material_server(binding.root / "materials", team_config=config)
+    tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+    card = tools["update_work_card"].inputSchema["properties"]["card"]
+    card = tools["update_work_card"].inputSchema["$defs"][card["$ref"].rsplit("/", 1)[-1]]
+    assert card["additionalProperties"] is False
+    assert set(card["properties"]) == {
+        "current_work",
+        "scope",
+        "next_steps",
+        "waiting_note",
+        "result_refs",
+        "author",
+        "expected_revision",
+        "reported_at",
+    }
+
+    asyncio.run(
+        server.call_tool(
+            "update_work_card",
+            {
+                "card": {
+                    "current_work": "MCP",
+                    "author": "modeling",
+                    "expected_revision": 0,
+                    "reported_at": "caller-supplied-time",
+                }
+            },
+        )
+    )
+    stored = a.board("modeling")["agents"][0]["card"]["content"]
+    assert stored["current_work"] == "MCP"
+    assert stored["reported_at"] != "caller-supplied-time"
+
+    with pytest.raises(Exception, match="invalid_work_card"):
+        asyncio.run(server.call_tool("update_work_card", {"card": {"author": "reviewer"}}))
+
+
 def test_two_members_exchange_and_rebuild_does_not_replay_application(
     team, binding, workspace, saver
 ):

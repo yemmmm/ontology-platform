@@ -47,7 +47,12 @@ class RoleActors:
             events = [
                 tool_event(
                     "read_material",
-                    {"text": "actual source", "sha256": source["sha256"]},
+                    {
+                        "text": "actual source",
+                        "sha256": source["sha256"],
+                        "offset": 0,
+                        "total_characters": len("actual source"),
+                    },
                     {"material_id": "source"},
                 )
             ]
@@ -175,7 +180,11 @@ class RoleActors:
                         )
                         response["basis"]["consumed_refs"].append(material_ref)
                         result = self.repository.read_reference(work["role_result_ref"])
-                        changes = self.repository.read_reference(result["changes_ref"])
+                        changes = (
+                            self.repository.read_reference(result["changes_ref"])
+                            if result["changes_ref"]
+                            else {"changes": []}
+                        )
                         contributions.append(
                             {
                                 "owner_work_id": entry["unit_id"],

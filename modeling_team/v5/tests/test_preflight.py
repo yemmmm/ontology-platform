@@ -21,8 +21,23 @@ BINDING = ModelBinding("glm-direct", "glm-5.3-flash", "low")
 
 
 def test_import_does_not_load_legacy_runner():
-    assert "modeling_team" not in sys.modules
-    assert "modeling_team.runner" not in sys.modules
+    # Test startup itself, independent of contract tests that legitimately use
+    # shared pure helpers later in the pytest process.
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; import ontoweave_modeling.preflight; "
+                "import ontoweave_modeling.role_candidates; "
+                "assert 'modeling_team' not in sys.modules; "
+                "assert 'modeling_team.runner' not in sys.modules"
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_profile_preserves_role_binding(tmp_path):

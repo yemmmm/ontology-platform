@@ -37,6 +37,7 @@ from modeling_team.staged_decisions import (
     validate_materialization_unlock,
     validate_stage3_slot,
     validate_staged_submission,
+    validate_unified_candidate,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -117,6 +118,35 @@ def _materialize_unlock() -> dict:
         ],
         "skip_reason": None,
     }
+
+
+def test_unified_candidate_item_shape_feedback_lists_fields_and_json_pointer():
+    candidate = {
+        "schema_version": "r3-0-009-unified-graph/v2",
+        "scenario_id": "scenario-1",
+        "candidate_id": "candidate-1",
+        "revision": 1,
+        "items": [
+            {
+                "item_id": "item-1",
+                "item_kind": "entity",
+                "value": {},
+                "relation_endpoints": None,
+                "slice_ids": [],
+                "shared_scope": None,
+                "unknowns": [],
+            }
+        ],
+        "explicit_unknowns": [],
+    }
+
+    issues = validate_unified_candidate(candidate)
+
+    assert len(issues) == 1
+    assert issues[0].reason_code == "unified_schema_mismatch"
+    assert issues[0].artifact == "/items/0"
+    assert "missing fields ['business_meaning']" in issues[0].detail
+    assert "unexpected fields []" in issues[0].detail
 
 
 # --- S1: conclusions contract -------------------------------------------------

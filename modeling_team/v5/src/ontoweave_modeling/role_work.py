@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 
 from .acceptance import require_governed_read, successful_reads
@@ -58,6 +59,99 @@ def _basis(flow, baseline, plan):
         "model_revisions": baseline["model_revisions"],
         "consumed_refs": [],
     }
+
+
+def _business_answers(answers):
+    return [
+        {
+            "message_id": answer.get("message_id", answer.get("id")),
+            "body": answer["body"],
+            "metadata": answer.get("metadata", {}),
+        }
+        for answer in answers
+        if answer.get("metadata", {}).get("source") == "user"
+        and not (
+            answer["metadata"].get("author") == "host-technical"
+            and not answer["metadata"].get("request_id")
+        )
+    ]
+
+
+def _correction_basis(binding, basis, phase, human_context):
+    return {
+        "basis": {key: value for key, value in basis.items() if key != "consumed_refs"},
+        "generation": binding.data.get("work_generation", 0),
+        "phase": phase,
+        "human_answers": _business_answers(human_context.get("answers", [])),
+    }
+
+
+def _correction_context(flow, state, basis, phase):
+    """Reuse only this author's observed reads and unchanged artifact on a technical retry."""
+    expected = _correction_basis(flow.binding, basis, phase, flow.human.context())
+    if state.get("issue", {}).get("layer") != "platform-contract":
+        return expected, [], None
+    refs = list(state.get("correction_execution_refs", []))
+    if state.get("execution_ref") and state["execution_ref"] not in refs:
+        refs.append(state["execution_ref"])
+    reusable = []
+    for ref in refs:
+        if not ref["object_id"].startswith(flow.binding.identity + ":execution:"):
+            continue
+        execution = flow.repository.read_reference(ref)
+        original = json.loads(execution["prompt"])
+        actual = _correction_basis(
+            flow.binding,
+            original.get("basis", {}),
+            original.get("phase"),
+            original.get("human_context", {}),
+        )
+        actual["generation"] = execution["intent"].get("generation", 0)
+        if actual == expected and execution["result"]["status"] == "completed":
+            reusable.append(ref)
+    artifact_ref = state.get("retained_artifact_ref")
+    if state.get("correction_basis") != expected:
+        artifact_ref = None
+    return expected, reusable, artifact_ref
+
+
+def _source_was_read(reads, material_id, sha256, *, complete):
+    pages = [
+        data
+        for tool, args, data in reads
+        if tool == "read_material"
+        and args.get("material_id") == material_id
+        and data.get("sha256") == sha256
+        and data.get("ok") is not False
+        and "text" in data
+    ]
+    if not complete:
+        return bool(pages)
+    totals = {page["total_characters"] for page in pages if "total_characters" in page}
+    if len(totals) != 1:
+        return False
+    end = 0
+    for start, stop in sorted(
+        (page.get("offset", 0), page.get("offset", 0) + len(page["text"])) for page in pages
+    ):
+        if start > end:
+            break
+        end = max(end, stop)
+    return end >= next(iter(totals))
+
+
+def _correction_invocation(flow, execution_refs):
+    from .execution import CodexInvocation
+
+    if not execution_refs or not isinstance(flow.invoke, CodexInvocation):
+        return flow.invoke
+    execution = flow.repository.read_reference(execution_refs[-1])
+    root = flow.binding.root / "executions" / execution["intent"]["execution_id"]
+    if not (root / "agent/thread-binding.json").exists():
+        return flow.invoke
+    invoke = copy.copy(flow.invoke)
+    invoke.resume_from = root / "agent"
+    return invoke
 
 
 def _publish(flow, result_ref, envelope, artifact):
@@ -210,7 +304,15 @@ def _refresh_cq(flow, artifact_ref, material, artifact, phase):
     if flow.binding.actor != "cq-public":
         # A recursive public-CQ subtask owns its own result, never the canonical set.
         return
-    changed = not prior or flow.repository.read_reference(prior) != artifact
+    prior_artifact = flow.repository.read_reference(prior) if prior else None
+    # Evidence belongs to the current governed review, not a new business question version.
+    semantic = {key: value for key, value in artifact.items() if key != "model_support"}
+    prior_semantic = (
+        {key: value for key, value in prior_artifact.items() if key != "model_support"}
+        if prior_artifact is not None
+        else None
+    )
+    changed = prior_semantic != semantic
 
     def update(plan):
         plan.update(public_cq_ref=artifact_ref, public_cq_material_ref=material)
@@ -227,8 +329,6 @@ def _refresh_cq(flow, artifact_ref, material, artifact, phase):
 
     manager.change(update)
     # A proof refresh with unchanged public semantics must not trigger team-wide rework.
-    if not changed:
-        return
     plan = manager.row()["content"]
     for unit in plan["units"].values():
         if (
@@ -237,12 +337,31 @@ def _refresh_cq(flow, artifact_ref, material, artifact, phase):
             or unit.get("work_phase") == "source_intake"
         ):
             continue
-        flow.team.send(
-            unit["unit_id"],
-            "New exact public CQ version; determine its effect within your scope.",
-            "cq-" + digest([artifact_ref, unit["unit_id"]])[:24],
-            material_refs=[material],
-        )
+        if changed:
+            flow.team.send(
+                unit["unit_id"],
+                "New exact public CQ version; determine its effect within your scope.",
+                "cq-" + digest([artifact_ref, unit["unit_id"]])[:24],
+                material_refs=[material],
+            )
+        elif phase == "review":
+            flow.control.enqueue(
+                flow.team.prefix
+                + "cq-public:evidence-"
+                + digest([artifact_ref, unit["unit_id"]])[:24],
+                "input",
+                "Public CQ evidence refreshed; consume it in your original-owner self-check. "
+                "The business questions and unknowns are unchanged; retain your current proposal.",
+                unit["unit_id"],
+                metadata={
+                    "source": "agent",
+                    "author": flow.binding.actor,
+                    "recipient": unit["unit_id"],
+                    "run_id": flow.binding.data["run_id"],
+                    "phase": "self_check",
+                    "material_refs": [material],
+                },
+            )
 
 
 def _validate_public_cq(flow, result, plan):
@@ -347,6 +466,9 @@ def model(flow, state):
         binding.identity + ":role-baseline:" + digest(baseline), "model_reference", baseline, 0
     )
     expected_basis = previous_prompt["basis"] if previous_prompt else _basis(flow, baseline, plan)
+    correction_basis, reusable_refs, retained_artifact_ref = _correction_context(
+        flow, state, expected_basis, phase
+    )
     child_results = []
     for unit in plan["units"].values():
         row = repository.get("run:" + binding.data["run_id"] + ":unit:" + unit["unit_id"] + ":work")
@@ -383,33 +505,79 @@ def model(flow, state):
         "human_context": flow.human.context(),
         "previous_result_material_ref": state.get("rejected_result_material_ref")
         or state.get("result_material_ref"),
+        "reusable_read_execution_refs": reusable_refs,
+        "retained_artifact_ref": retained_artifact_ref,
+        "integration_defaults": {
+            "single_authorized_ontology": baseline["ontology_ids"][0]
+            if len(baseline.get("ontology_ids", [])) == 1
+            else None,
+            "instruction": "With one authorized Ontology, ontology_targets={} reuses its Host default. "
+            "check_units selects original Modeling owners, including no_change contributions; CQ is separate.",
+        },
         "feedback": state.get("issue"),
         "result_schema": result_schema(binding, phase),
         "contract": "Return one professional result. Authorship is program-bound. Echo the exact actual basis used. "
-        "consumed_refs names only exact handoff materials completely read using read_handoff_material this turn. "
-        "source_refs names actual approved source reads this turn, not filenames or inferred truth. "
+        "consumed_refs names exact handoff materials completely read in this turn or the explicitly "
+        "listed same-basis technical-correction executions. source_refs names actual approved source "
+        "reads on that same basis; a reference or prior summary is not a read. "
         "An integration selects exact owner result_ref/candidate_ref/changes_ref from retained role result envelopes, "
         "never writes their semantic body. Defer unready scope with its original owner. Original Modelers check every "
         "selected contribution after application; public CQ is separate. Existing baseline resource_refs are exact "
         "existing_resource_ref objects; preserve artifact_ref and path without guessing native IDs. "
         "Use human_requests for real business decisions; consume only delivered queue IDs. "
-        "If a previous rejected result is provided, read its exact material and correct the "
+        "If a previous rejected result needs inspection, read its exact material and correct the "
         "reported technical fields; retain valid business content. It is not an accepted artifact. "
+        "When only envelope fields need correcting, artifact=null plus the supplied retained_artifact_ref "
+        "in artifact_ref reuses your exact body. No other or stale artifact reference is permitted. "
+        "Return the complete professional JSON result, not a progress message or promise to deliver. "
         "For semantic revisions use reopen_work_unit for affected original owners, preserving unaffected siblings.",
     }
     if previous_prompt:
         prompt = previous_prompt
     purpose = "source_intake" if phase == "source_intake" else binding.work_kind
     execution_ref = flow.executions.run(
-        local_execution, purpose, json.dumps(prompt), flow.invoke, resume_original=True
+        local_execution,
+        purpose,
+        json.dumps(prompt),
+        _correction_invocation(flow, reusable_refs),
+        resume_original=True,
     )
-    native = repository.read_reference(execution_ref)["result"]
+    execution = repository.read_reference(execution_ref)
+    native = execution["result"]
+    if any(
+        answer not in correction_basis["human_answers"]
+        for answer in _business_answers(execution["inputs"])
+    ):
+        # A business answer may arrive between prompt construction and admission.
+        # Its consumer must reassess the body rather than reuse the old artifact.
+        retained_artifact_ref = None
+    retained = retained_artifact_ref
+    correction = {
+        "correction_basis": correction_basis,
+        "correction_execution_refs": [*reusable_refs, execution_ref],
+    }
     try:
         if native["status"] != "completed":
             raise FrameworkError(
                 "native_turn_failed", layer="runtime/infrastructure", execution_ref=execution_ref
             )
         result = decode_json_result(native["final_response"], prompt["result_schema"])
+        if result.get("artifact_ref") is not None:
+            if result["artifact"] is not None or result["artifact_ref"] != retained_artifact_ref:
+                raise FrameworkError(
+                    "role_artifact_reuse_forbidden",
+                    expected=retained_artifact_ref,
+                    instruction="Use only the exact retained_artifact_ref on this unchanged correction basis, "
+                    "with artifact=null; otherwise submit a fresh authored artifact.",
+                )
+            result["artifact"] = repository.read_reference(retained_artifact_ref)
+        if result["artifact"] is not None:
+            retained = repository.put_reference(
+                binding.identity + ":role-artifact:" + digest(result["artifact"]),
+                "role_artifact",
+                result["artifact"],
+                0,
+            )
         if (
             binding.role == "coordinator"
             and phase == "plan"
@@ -439,35 +607,56 @@ def model(flow, state):
                     "New plans and contributions belong in artifact, not the input basis. "
                     "List only fully read handoff materials in consumed_refs.",
                 )
-        _read_materials(_events(flow, local_execution), basis["consumed_refs"])
+        current_events = _events(flow, local_execution)
+        old_events = [
+            binding.root
+            / "executions"
+            / repository.read_reference(ref)["intent"]["execution_id"]
+            / "agent/events.jsonl"
+            for ref in reusable_refs
+        ]
+        _read_materials([*old_events, current_events], basis["consumed_refs"])
         if result["status"] in {"proposed", "no_change"}:
             if not result["artifact"] or not result["source_refs"]:
                 raise FrameworkError("role_artifact_or_sources_missing")
-            reads = {
-                (args.get("material_id"), data.get("sha256"))
-                for tool, args, data in successful_reads(_events(flow, local_execution))
-                if tool == "read_material" and "text" in data
-            }
+            current_reads = successful_reads(current_events)
+            old_reads = successful_reads(old_events)
             for ref in result["source_refs"]:
                 entry = binding.data["source_manifest"].get(ref["material_id"])
                 if not entry or entry["sha256"] != ref["sha256"]:
                     raise FrameworkError(
                         "source_reference_mismatch", material_id=ref["material_id"]
                     )
-                if (ref["material_id"], ref["sha256"]) not in reads:
+                if not (
+                    _source_was_read(
+                        current_reads, ref["material_id"], ref["sha256"], complete=False
+                    )
+                    or _source_was_read(
+                        [*old_reads, *current_reads],
+                        ref["material_id"],
+                        ref["sha256"],
+                        complete=True,
+                    )
+                ):
                     raise FrameworkError(
                         "source_read_missing",
                         material_id=ref["material_id"],
-                        instruction="Read this approved material with read_material in this turn "
-                        "before listing it in source_refs; follow next_offset for remaining pages. "
-                        "Reuse the retained business analysis, but do not claim a prior turn's read.",
+                        instruction="Read this approved material completely or use a complete read "
+                        "from the explicitly listed same-basis correction executions. "
+                        "Follow next_offset; an old reference alone is not reading proof.",
                     )
             if binding.role == "modeling" and phase != "source_intake":
+                from .role_candidates import normalize_model_candidate
+
+                result["artifact"]["candidate"] = normalize_model_candidate(
+                    result["artifact"]["candidate"]
+                )
+                result.pop("artifact_ref", None)
                 decode_work_result(
                     json.dumps({**result, **result["artifact"]}), binding.data["source_manifest"]
                 )
             if binding.role == "competency-question" and phase == "review":
-                require_governed_read(_events(flow, local_execution), baseline["model_revisions"])
+                require_governed_read([*old_events, current_events], baseline["model_revisions"])
             if binding.role == "competency-question":
                 _validate_public_cq(flow, {**result, "_execution_ref": execution_ref}, plan)
         flow._confirm_inputs(execution_ref, result)
@@ -480,6 +669,8 @@ def model(flow, state):
         return flow._save(
             {
                 **state,
+                **correction,
+                "retained_artifact_ref": retained,
                 "status": "recoverable_issue",
                 "round": state["round"] + 1,
                 "execution_ref": execution_ref,
@@ -491,6 +682,9 @@ def model(flow, state):
                     "layer": "platform-contract",
                     "recoverable": True,
                     "detail": str(error),
+                    "instruction": "Return the complete professional JSON, not a progress update. "
+                    "Use retained_artifact_ref for unchanged body fields and the explicit reusable "
+                    "read evidence; keep the original objective and business content.",
                 },
             }
         )
@@ -532,6 +726,8 @@ def model(flow, state):
     material = _publish(flow, result_ref, envelope, artifact)
     update = {
         **state,
+        **correction,
+        "retained_artifact_ref": artifact_ref,
         "rejected_result_material_ref": None,
         "execution_ref": execution_ref,
         "role_result_ref": result_ref,
@@ -765,6 +961,21 @@ def before_self_check(flow, state):
                 **state,
                 "status": "waiting_children",
                 "issue": {"code": "public_cq_readback_pending", "owner_work_id": "cq-public"},
+            }
+        )
+    pending = [
+        unit["unit_id"]
+        for unit in plan["units"].values()
+        if unit["status"] == "active"
+        and unit["role_id"] == "modeling"
+        and flow.team.pending(unit["unit_id"])
+    ]
+    if pending:
+        return flow._save(
+            {
+                **state,
+                "status": "waiting_children",
+                "issue": {"code": "model_input_pending", "owner_work_ids": pending},
             }
         )
     return None

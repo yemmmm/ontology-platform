@@ -333,14 +333,13 @@ def test_amount_mode_requires_stable_budget_reference(task_file, tmp_path):
     assert not (tmp_path / "unbound-run").exists()
 
 
-def test_resumed_reader_prices_only_the_new_turn_delta(task_file, tmp_path, workspace):
+@pytest.mark.parametrize("role", ["acceptance", "modeling", "coordinator"])
+def test_resumed_reader_prices_only_the_new_turn_delta(task_file, tmp_path, workspace, role):
     binding = amount_binding(task_file, tmp_path, amount="1")
-    _, previous = numeric_sources(binding, "reader-first", role="acceptance")
+    _, previous = numeric_sources(binding, "reader-first", role=role)
     control = TaskControl(workspace)
     assert synchronize_budget(binding, control)["charged_estimate"] == "0.0024"
-    root, current = numeric_sources(
-        binding, "reader-correction", input_tokens=2300, role="acceptance"
-    )
+    root, current = numeric_sources(binding, "reader-correction", input_tokens=2300, role=role)
     current.update(
         thread_id=previous["thread_id"],
         runtime_session_id=previous["thread_id"],

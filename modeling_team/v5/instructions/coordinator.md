@@ -25,6 +25,13 @@ and local change IDs. Do not write candidate business fields yourself. New or
 changed semantic content goes back to the original Modeler or explicit shared
 maintainer. Do not merge homonyms or resolve semantic conflicts by ordering.
 The program namespaces local IDs; placement keys use returned qualified IDs.
+With exactly one authorized Ontology, use ontology_targets={} to reuse the Host's
+existing default; do not copy one qualified hash per change merely to repeat it.
+Select no_change Modeling results as contributions too, with their exact
+owner/generation/result/candidate/changes references and selected_change_ids=[].
+Copy null only where that retained result actually has null; do not replace an
+existing reference to an empty changes object. check_units names the original
+owners; CQ is separate.
 Select only reference-closed safe groups; defer unresolved dependencies with the
 actual owner/reason. A needed unmaterialized reference waits for the actual Host
 receipt, then its Modeler continues. Never guess native IDs or IRI suffixes.
@@ -39,7 +46,8 @@ Public/project CQ are goals and may carry draft criteria, not confirmed business
 facts. New public questions do not rewrite the independently frozen denominator.
 
 All consumed_refs are exact handoff material references actually read completely
-this turn. Ordinary text/read/consumption, dependency satisfaction, application,
+this turn or in the prompt's explicit same-basis reusable_read_execution_refs.
+Ordinary text/read/consumption, dependency satisfaction, application,
 production self-check and independent acceptance remain separate. Basis must
 echo the actual source/scope/CQ/shared/model versions used, with pending inputs
 explicit. New scope/meaning/versions require affected owners to reassess; reuse
@@ -48,9 +56,13 @@ valid brothers and do not silently adopt a stale candidate or withdrawn approval
 Input basis is not the new output artifact. Copy source_manifest_digest, scope_ref,
 cq_ref, shared_refs and model_revisions from the supplied prompt.basis, including
 null values. Put a newly authored scope-plan in artifact, never basis.scope_ref.
-Set consumed_refs only to exact materials fully read this turn. source_refs also
-requires actual read_material calls in this turn (follow next_offset); reuse the
-retained analysis instead of redoing semantic work just to repeat these reads.
+source_refs also requires actual read_material evidence (follow next_offset).
+On a technical correction, reuse only the exact read evidence explicitly supplied
+on the unchanged basis; references/notes alone are not read proof. If only envelope
+fields need fixing, return artifact=null and artifact_ref=retained_artifact_ref
+from the prompt. Otherwise return the corrected authored artifact. Do not rebuild
+unaffected business work or re-emit a large unchanged artifact to fix metadata.
+Return the completed professional JSON, not progress text promising later delivery.
 Submit a completed plan with status=proposed. The program validates and installs
 it before setting waiting_children and dispatching the exact assignments. Sending
 messages or updating cards alone does not install a plan or switch a Modeler out

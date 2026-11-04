@@ -103,6 +103,69 @@ def test_owned_navigation_can_page_through_the_public_tool(workspace, binding):
     assert space.search(unit_id="local")["records"] == []
 
 
+def test_workspace_tool_uses_typed_record_and_source_references(workspace, binding):
+    import asyncio
+
+    from mcp.server.fastmcp import FastMCP
+
+    from ontoweave_modeling.semantic_workspace import register_workspace_tools
+
+    space = SemanticWorkspace(workspace, binding.data)
+    server = FastMCP("workspace-contracts")
+    register_workspace_tools(server, space)
+    tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+    write_schema = tools["write_semantic_record"].inputSchema
+
+    def array_items(field):
+        items = next(branch["items"] for branch in field["anyOf"] if branch.get("type") == "array")
+        if "$ref" in items:
+            return write_schema["$defs"][items["$ref"].rsplit("/", 1)[-1]]
+        return items
+
+    record_ref = array_items(write_schema["properties"]["depends_on"])
+    assert record_ref["additionalProperties"] is False
+    assert set(record_ref["properties"]) >= {"record_id", "revision", "scope", "unit_id"}
+    assert record_ref["properties"]["scope"]["enum"] == ["task", "project"]
+
+    source_ref = array_items(write_schema["properties"]["source_refs"])
+    assert source_ref["additionalProperties"] is False
+    assert set(source_ref["properties"]) >= {
+        "material_id",
+        "sha256",
+        "ranges",
+        "source_ranges",
+    }
+    assert "sha256" not in source_ref.get("required", [])
+
+    prior = space.write("prior", "proposition", "Prior", "A source-grounded note")["record"]
+    response = asyncio.run(
+        server.call_tool(
+            "write_semantic_record",
+            {
+                "record_id": "next",
+                "kind": "summary",
+                "title": "Next",
+                "body": "Keep the dependency and source binding.",
+                "depends_on": [
+                    {
+                        "record_id": prior["record_id"],
+                        "revision": prior["revision"],
+                        "scope": "task",
+                        "unit_id": "modeling",
+                    }
+                ],
+                "source_refs": [
+                    {"material_id": "source", "source_ranges": [{"offset": 0, "length": 8}]}
+                ],
+            },
+        )
+    )
+    assert response
+    saved = space.read("next")
+    assert saved["depends_on"][0]["record_id"] == "prior"
+    assert saved["source_refs"][0]["sha256"] == binding.data["source_manifest"]["source"]["sha256"]
+
+
 @pytest.mark.parametrize(
     "reference",
     [
