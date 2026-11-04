@@ -530,6 +530,9 @@ def model(flow, state):
         "reported technical fields; retain valid business content. It is not an accepted artifact. "
         "When only envelope fields need correcting, artifact=null plus the supplied retained_artifact_ref "
         "in artifact_ref reuses your exact body. No other or stale artifact reference is permitted. "
+        "For a Modeling artifact, shared_conflicts declares actual unresolved incompatible shared definitions. "
+        "Settled ownership decisions, deferred enrichment, dependencies and version notes belong in signed "
+        "work records, not in that conflict declaration. "
         "Return the complete professional JSON result, not a progress message or promise to deliver. "
         "For semantic revisions use reopen_work_unit for affected original owners, preserving unaffected siblings.",
     }
