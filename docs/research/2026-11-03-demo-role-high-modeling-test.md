@@ -63,3 +63,11 @@ CQ 过程评价绑定 685738b1242dd91108b68d974857a2053905f94d4ecc01cae7a8b258c5
 cleanup-final.json 确认 scope_disposition=deleted-empty：本轮空项目/本体已删除，关联 Session/Lease/项目 key 无残留，protocol_key_revoked=true、admin_key_revoked=true、aggregate_keys_non_active=true；快照与原生失败证据、工作空间及预算均保留。旧测试项目不受影响。
 
 关键原件：inputs 下 authorization-and-scope.json、task.json、process-slicing.log、process-cq.log、process-summary-failed-final.json、status-final.json、observed-usage-summary.json、budget-final.json、cleanup-final.json；run 下 executions、semantic-starts 与 snapshots。只新增本研究记录，未修改平台实现，无需运行前后端套件或重启服务。
+
+## 2026-11-04 原件复盘更正
+
+[后续复盘](2026-11-04-demo-role-high-retrospective.md)直接核对原生事件后确认：最后 Coordinator **已完整读取**两个精确版本材料（Modeler 成果 4398/4398 字符、范围计划 2029/2029，均 next_offset=null）。`role_material_not_consumed/read_characters=0` 是平台将原始参数中的 JSON 字符串与对象直接比较造成的假阴性，不能据此归因 Agent 未读；只在离线内存中规范化参数表示，同一原件即通过原校验。原始事件和旧描述保留，本段修正当前归因。
+
+尾差 unknown 也进一步定位为派生分支未过滤 completed 的无独立 usage 捕获记录，并非单纯旧缓存：87 条捕获尝试全部 completed，原生计量 12/12 已知，实际 inflight=0。计费与资源收尾结论不变。
+
+计数口径补充：任务级新 run 为 1、业务初建轮为 1；`semantic-starts/` 实际有 3 条 Modeler source_intake 原生开始记录，三个不同线程。原文“1 次 fresh semantic start”只表达首次任务启动，不能作为所有原生语义开始的总计；12 个托管执行也不能当作 12 轮业务建模。
