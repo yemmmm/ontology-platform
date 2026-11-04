@@ -54,7 +54,8 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None, invoke_fact
         }
     else:
         proposal = repository.read_reference(work["candidate_ref"])
-    requested = proposal.get("review_units", [])
+    # This unit is always checked below; only its direct children need recursion.
+    requested = [child for child in proposal.get("review_units", []) if child != unit_id]
     if set(requested) - {unit["unit_id"] for unit in selected.direct_units}:
         raise FrameworkError("unit_check_scope_forbidden", unit_id=unit_id)
     child_checks = [

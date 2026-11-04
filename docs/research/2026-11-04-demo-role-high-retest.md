@@ -2,13 +2,15 @@
 
 日期：2026-11-04。目标：验证 R5.0-012 修后真实专职协作和完整 Demo 建模质量。
 
+**最新结论：追加3 CNY后总授权6 CNY已耗尽，累计估算6.03286852 CNY，run已停稳且无在途。实际apply完成，143项资源绑定、Ontology revision 2；专职角色采用和CQ治理读回已观察，原属主专用自查被冗余self-review路由拒绝，正式独立验收0/36项执行。整体PARTIAL，L0未闭环，L1/L2未验证，不能保证多Agent建模质量。原模型、会话和失败证据保留；无额外付费调用授权。下文首批3元统计保留为历史截止，最新接续证据见文末。**
+
 来源：[R5.0-012/011](../requirements/requirements-v5.0.md)、[修复记录](../delivery/records/2026-11-04-role-team-live-contract-fixes.md)、[v5 runbook](../../skills/modeling-dev-loop/references/v5-runbook.md)。
 
 配置：scripts/modeling、role-team/v1；所有托管生产、过程评价与独立评价均 glm-direct/glm-5.3-flash/high；独立 3 CNY 金额预算。一轮新建模，不沿用旧项目、候选或 PASS。复用上一轮冻结 Demo 原文、API、Schema 和公开 CQ；36 项原独立标准隔离保留，生产不可见。evaluation.model_read_scope=whole_model。
 
 输入：`workspaces/v5-runs/demo-role-high-20261104-inputs`；运行：`workspaces/v5-runs/demo-role-high-20261104-start1`；代码：`365f6db`。其他工作树改动保留。
 
-**截至本次交接：PARTIAL，金额预算暂停已停稳。三个专职角色、公开 CQ 和 143 项候选整合已实际采用；停在 apply 前，实际模型 revision 0。L0 未闭环，正式 L1 0/36 项执行、质量未验证，L2 未执行。** 公开 Demo 不构成客户业务盲测或普遍质量保证。
+**首批3元暂停时：PARTIAL，金额预算暂停已停稳。三个专职角色、公开 CQ 和 143 项候选整合已实际采用；停在 apply 前，实际模型 revision 0。L0 未闭环，正式 L1 0/36 项执行、质量未验证，L2 未执行。** 公开 Demo 不构成客户业务盲测或普遍质量保证。
 
 ## 首次真实启动
 
@@ -102,3 +104,80 @@ T0复核：当前非空且实际来源引用保护来源可追溯性；拒绝可
 关键原件位于 `workspaces/v5-runs/demo-role-high-20261104-inputs/`：`OUTCOME-AS-OF-PAUSE.json`、`status-final.json`、`budget-final.json`、`observed-usage-summary.json`、`snapshot-budget-paused.json`、`process-summary-paused.json`、`process-slicing-result.json`、`process-cq-result.json`、两份技术指导及投递回执、start/resume原日志。run目录保留executions、semantic-starts、快照和平台数据。
 
 本轮未修改平台代码、模型Profile、获准源材料或独立题集；最终manifest/题集摘要和12份原生模型/effort绑定复核通过。只新增本记录并同步归属需求状态，执行本地链接/格式与证据一致性检查；无需前后端套件或服务重启。这些检查不构成真实模型质量验收。
+
+## 用户追加3元后原run接续
+
+用户回复“同意增加额度”，对应上一条明确追加3 CNY请求。Host按 `user-20261104-demo-role-high-add-3-01` 向原账本追加3元，总授权6 CNY；此前3.24694924元用量保留，续跑前余额2.75305076元。恢复前实际平台快照确认同一Project/Ontology仍revision 0、资源引用为空，原run paused/apply且无在途；未删除scope、未重置预算、未新建任务或替换Profile。沿已保存143项组合从apply恢复，后续状态另记；上一节暂停原件与统计不覆盖。
+
+### 续跑首次application：字段形状拒绝，未写入
+
+`apply-00006` 保存 application_reference，status=not_written；候选校验返回 `unified_schema_mismatch / candidate item fields drift from the contract`，所有定位仅/candidate，未给item_id。程序把原Modeler generation重开到2（modeler--role-00006），Coordinator等待，不新建run。Host按systematic-debugging先追原始载荷和权威合同：143项都缺中立item包装字段，13项仅缺relation_endpoints，60项两者均缺，70项仅缺shared_scope；没有额外字段。与原Modeler原生JSON逐项比较，同样缺失，排除Coordinator组合丢字段。未改候选或代码，只将精确字段存在性差异交回原Modeler，要求保留原业务正文、真实端点/共享定义及未知。此技术反馈在忙碌回合中投递仍以实际delivery/consumption为准。
+
+T0：实际关系端点/共享语义不能由Host猜造；本轮拒绝已明确not_written且可重入，不是永久run死亡。缺省空字段的强制存在性与v5外层结果schema宽松存在合同张力，但当前冻结技术合同明确八字段闭集；先沿准确反馈允许原作者补正，不以删除校验放行未经编译/原子应用验证的载荷，也不把此格式拒绝归为模型语义质量差。是否将无业务含义的空字段改为边界默认值，应另做窄合同一致性修复；本轮尚未修改生产代码。
+
+Host另给下一整合回合一条中立技术澄清：当前恰有一个已授权Ontology，worker现有逻辑支持ontology_targets={}自动落到该唯一目标，等价于已选放置、不改变拓扑；避免新贡献版本后重复抄143个新hash。源码已核对，Coordinator在无ready子级时会在LLM调用前保持waiting_children，因此此消息不为等子级额外开空推理回合。未修改代码或Candidate业务字段；是否采用及实际消费仍看后继原生回执。
+
+Host复用现有纯静态编译器做一次内存副本假设检验：只对缺失的两个中立包装字段setdefault(null)，并镜像Host实际candidate_ref技术注入，143项候选形状错误归零，静态编译得到2批计划、无下游静态编译错误；原candidate.json SHA/字节保持未变，没有执行平台write或生成替代Modeler候选。首份本地诊断曾漏模拟Host注入candidate_ref而产生假性candidate_ref_required，已在诊断原件标明并修正，未把这些假错误送给Team。此复核只支持包装字段是当前静态阻塞层，不证明API apply、实际治理读回或业务语义质量。原件neutral-wrapper-static-diagnostic.json。
+
+`modeler--role-00006` 原生结果实际143项/143变更（45 entity、20 property、4 table_mapping、4 join_mapping、70 relation），原条目ID无丢失；卡片135是数错，不能当实际范围减少。原回执所有relation_endpoints字段已补齐，但仍131项缺shared_scope，12项包装字段齐全。Host的精准字段反馈在忙碌回合后送入 `modeler--role-00008`，原Modeler继续技术补正；没有用Host静态副本替代其正式候选，也没有将“不丢ID”当作全部业务正文/语义已经验收。
+
+`modeler--role-00008` 实际正式结果已接纳，143项/143变更、原item_id无丢失；必需八字段全部齐全，13个原非空shared_scope标签与原始正式版本一致（含先前重写丢失的一处已恢复）。复用现有静态compiler对实际新载荷复核：0 candidate schema错误、0静态编译错误、2批计划；无需插入假设空值。Host字段反馈实际列入consumed_ids。结果原件modeler-round8-static-verification.json；这仍不是实际apply或独立L1通过。Coordinator已沿原scope接续整合（role-00008），费用约4.48275 CNY、余额1.51725。
+
+### 实际写入完成：revision 2 / 143项
+
+Coordinator `role-00008` 已实际采用唯一Ontology的空ontology_targets默认投影，更新为Modeler generation2/result2:8精确贡献并保留143项原作者。`apply-00009` 成功完成；真实平台快照 `1daaeea617204b1fbd911b42f19444d7` 确认同一Ontology revision 2，resource_refs=143、resource_bindings=143，model_read_error=null，role_application=1。此前apply-00006 not_written及原件不覆盖。143项经现有compiler分为2批执行，不等于2轮业务建模；还需核对应用回执及实际治理正文，不能用2个revision增量当作质量通过。
+
+当前根进入self_check，CQ处review，正式独立36项仍未执行。剩余约1.148 CNY；优先完成生产必要自查和正式L1，再视准入余额补整合过程诊断，避免可选诊断先消耗最后正式验收资源。整合诊断暂缓并不计通过，阶段覆盖保留unobserved；不从正式私有评分回填过程分数。无新预算申请或模型/effort变化。
+
+### CQ读回刷新触发额外影响评估
+
+CQ `cq-public--role-00003` 已完成实际revision2读回，13题问题/定义对象未改。原件public-cq-review-diff.json核对所有差异只位于unknowns（7条）与coverage_gaps（2条）：主要是补实际模型证据/修订、由“尚未模型验证”改为“已按revision2核对”，未变Q3/Q4编码未知及Q7/Q8/Q9来源缺口。问题文本与13题分母完全相同，不等于新增业务需求。
+
+_refresh_cq当前按整个artifact比较changed，因此仍给Modeler投递“New exact public CQ version; determine its effect within your scope”普通输入；实际投递到modeler--role-00010，原self_check receipt则仍按phase=self_check queued。原Modeler先进入propose影响评估，根专用check_unit因其当时非proposal_ready触发unit_check_not_ready，转回等待子级；此时没有实际unit_check LLM报告，不能说原作者自查已经完成或语义失败。保留这次状态/回执与代码路径；尚未修改调度，也不把新的影响评估当作新的业务修模轮。是否将proof刷新交给原作者自查并避免额外propose，需依据最终no_change/修改结果区分，不能靠Host猜文本语义删通知。
+
+`modeler--role-00010` 实际返回no_change（candidate=null、changes=null），不是重建143项。其记录/卡片明确新版CQ仅实际支撑证据更新，业务范围/共享定义无变化，并在实际revision2上做73项资源清单、35项关键实体/属性正文和8个映射的责任范围治理读回，原未知保留。该读回是生产侧自述及治理读取证据，不是专用unit_check报告或正式独立L1。当前Coordinator进入role-00010整合此no_change；资金约5.45785/余额0.54215，物理模型仍revision2，没有再次申请写入。
+
+Coordinator `role-00010` 拟用contributions=[]收尾，但check_units=[modeler]，实际触发original_owner_check_missing（owner_work_ids=[]）。Host在忙碌边界前交回精确技术约束：当前composer允许选择Modeling角色的no_change结果（candidate_ref/changes_ref=null、selected_change_ids=[]），由此保留check_units原属主；CQ无候选贡献不合法不代表Modeling no_change贡献不合法。不得重选旧143个create。原模型revision2未受影响，原进程进入role-00011纠正；输入host-nochange-owner-selector-20261104是否消费按后继回执。此为空变更收尾合同采用失败，不是新模型质量结论。
+
+
+### 第二次预算停稳与原属主自查路由修复
+
+Coordinator `role-00011` 已正确选择Modeling generation2/no_change的精确贡献，不再重复143个create；随后真实触发 `unit_check_scope_forbidden / unit_id=modeler`。根最终paused/activity=model/round13，控制active={}。实际Modeler已接纳proposal含review_units=[modeler]；它是无子级的自身冗余检查声明。`check_unit`原逻辑只允许direct_units，故在本人的专用治理读回之前拒绝。该失败归为platform-contract，不能据此判模型业务语义错误。
+
+T0复核：原属主本人的检查在check_unit下半段无条件执行，因此自列不是越权访问，也不需要递归调用自己。收窄为从子级递归列表排除当前unit_id；其他非直属子级仍拒绝，原成员身份、generation、精确候选、实际模型revision、来源和治理读取证明均保留。本次只改unit_checks.py两行含注释，不改变实际候选、业务字段、Ontology拓扑、预算门或独立验收标准。不另建框架、不删除整体范围守卫。
+
+GitNexus impact未索引到check_unit（UNKNOWN），detect_changes也未覆盖这段v5代码；不能把其空影响结果当作图覆盖。以实际调用点替代：flow._review_children、CLI check-unit及自身递归；回归覆盖自身、子级、自查证明复用、修改回退和错误恢复。先新增真实已接纳proposal形状的测试：修复前冗余自身用例以unit_check_scope_forbidden失败，越界用例通过；最初测试曾在legacy提案入口提前被旧合同拒绝，调整夹具为已接纳proposal后才复现原失败层。修复后test_unit_checks.py的20项全部通过（46.76s）。正确测试目录下完整v5回归411项通过、1条依赖警告（866.47s）；Ruff和git diff --check通过。工程验证不等于真实语义验收。
+
+当前原CLI已自然退出；下次获准resume会重新加载修复模块，沿同一run读取原检查点。因预算关闭，尚未发起修复后的真实专用unit-check或根整体检查，故不声称实际阻塞已解除。未调用stop/cleanup、未删除已写模型或会话；保留原scope及生产访问以便按同一账本安全接续。最终平台快照9866b76de11f498db600bbb2cdea54e6：原Project/Ontology不变、revision2、143项resource_refs/bindings、model_read_error=null；独立包SHA仍沿原冻结值，未向生产泄露隐藏题或答案。
+
+### 6元授权截止统计与验证边界
+
+同一账本原3元+用户明确批准追加3元=6 CNY；最后一个已准入回合自然收尾后估算6.03286852 CNY，超额0.03286852，remaining=-0.03286852，admission_open=false、paused_confirmed、inflight=0、pending_settlement=0。不是新获准支出或提供商最终账单；没有继续追加预算或开启新付费回合。19/19已知托管调用计量完整，无缺失用量；外部Host/未接线辅助调用用量未知，单列且不计任务扣款，不按零估算。
+
+| 角色 | 原生调用 | 输入tokens | 输出tokens | 缓存输入tokens | 原生区间并集秒 | 估算CNY |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Coordinator | 9 | 5,582,223 | 404,573 | 4,566,272 | 7,671.217 | 2.72556844 |
+| Modeler | 6 | 9,044,699 | 413,002 | 8,192,576 | 7,859.882 | 2.66798252 |
+| CQ | 2 | 1,608,960 | 59,612 | 1,416,000 | 1,199.744 | 0.45972800 |
+| 过程评价 | 2 | 101,887 | 33,569 | 57,728 | 732.758 | 0.17958956 |
+| 合计 | 19 | 16,337,769 | 910,756 | 14,232,576 | 不逐角色相加 | 6.03286852 |
+
+输入含缓存，输入+输出=17,248,525 tokens；缓存不能重复加总。原生窗口2026-11-04 05:37:20.646—12:15:16.989 UTC（新加坡13:37:20.646—20:15:16.989），23,876.343秒=6时37分56秒，含第一轮预算暂停后的长等待。全部生产原生区间并集15,829.118秒=4时23分49秒；过程评价与生产重叠，全部调用并集也为该值。原生区间含工具/provider等待，不等于纯语义推理有效时间；Host、harness/文档的有效劳动时间未完整计量，不做净降耗判断。新增工程回归耗时单列，不混入上述生产窗口。
+
+过程评价仍只完成切片与CQ两点：切片四维4/4/4/4，CQ为3/4/4/4，均保留低优先级gaps；整合点未观察，未为补齐评分而占用最后正式验收资源。正式L1未执行，不是36题失败。实际unknowns（编码、时间格式/时区、事件/历史与操作者来源缺口）保留，不能用虚构答案补齐。
+
+| 验证对象 | 本次截至6元停稳的证据 | 结论 |
+| --- | --- | --- |
+| 专职职责采用、F1—F5 | 独立Coordinator、Modeler、CQ上下文及精确交接已采用 | 局部真实通过 |
+| 组合及实际apply、F6/F7 | 143项原作者组合、唯一已授权Ontology投影、application完成、rev2实际快照 | 已观察；不代表业务语义通过 |
+| 自查/恢复、F8—F10 | CQ读回完成，Modeler另有生产读回/no_change；专用unit-check路由失败并局部工程修复 | L0仍未闭环，修复后真实恢复待授权 |
+| 独立质量、A15 | 隔离36项冻结标准；尚未handoff/evaluate | L1未验证，不能保证建模质量 |
+| 复杂多Modeler/递归及重复性、A3/A16 | 当前只有一个Modeler承担两关联切片；无第二同条件运行 | 未覆盖，不能宣称普遍多Agent质量或L2通过 |
+
+最新原件：status-before-unitcheck-repair.json、snapshot-final-six-cny-paused.json、process-report-final-six-cny.json、observed-usage-summary.json、usage-final-budget-pause.log及unitcheck-repair-full-regression.log，均在本次inputs目录。此前失败及3元截止原件不覆盖。获准继续时优先原属主专用读回、根整体自查和冻结36项独立验收；不重建模型、不重置账本、不以过程分数代替L1。追加金额仍需用户新的明确授权，测试和快照不隐含付费授权。
+
+
+工程回归命令纠错：首次全量命令只给-c配置路径，未显式给测试目录；从仓库根运行时pytest因此递归收集历史workspace副本，221.71s后报告5512个收集错误。该轮是Host测试命令范围错误，不是当前v5套件或模型失败；原日志unitcheck-repair-overbroad-collection.log保留。已改为显式 `pytest -c modeling_team/v5/pyproject.toml modeling_team/v5/tests --tb=short -q`，同一依赖/PG配置；只以后者判断完整v5回归。
+
+
+最终工程结果：显式modeling_team/v5/tests范围 **411 passed, 1 warning in 866.47s**。唯一警告来自pydantic_settings的lifespan未解析forward reference（test_material_ranges_preserve_version_and_exact_source），不是失败；本轮未修改该依赖。定向20项通过、Ruff通过、两份文档84个本地链接/16张表格/代码围栏及diff空白检查通过。19个实际原生线程的(model, effort)集合仅(glm-5.3-flash, high)。本次只变更建模CLI模块及测试，不涉及backend/frontend，无应用服务重启；新CLI导入修复不等于已完成真实续跑。修复技术通知以host-unitcheck-self-routing-repair-20261104留给原Coordinator，不添加预算、不改变业务内容、不自动触发原生调用；消费与真实修复效果留待获准接续核对。

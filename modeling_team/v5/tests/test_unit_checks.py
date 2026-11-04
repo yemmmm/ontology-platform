@@ -14,7 +14,7 @@ from ontoweave_modeling.unit_checks import check_unit
 from ontoweave_modeling.work_plan import WorkPlan
 
 
-def proposed_child(binding, workspace, saver):
+def proposed_child(binding, workspace, saver, *, review_units=()):
     binding.data["work_units"] = [{"unit_id": "local", "objective": "Own this source meaning."}]
     WorkPlan(binding.data, workspace).row()
     selected = binding.for_unit("local")
@@ -22,12 +22,48 @@ def proposed_child(binding, workspace, saver):
     original_call = platform.call
     platform.call = lambda action, payload=None: original_call(action, payload)
     actor = Actor(selected, platform)
+
     assert (
         WorkUnitFlow(selected, workspace, platform, actor).advance(saver)["status"]
         == "proposal_ready"
     )
+    if review_units:
+        # Role-team results can retain this metadata even for a no_change proposal.
+        work_id = selected.identity + ":work"
+        row = workspace.get(work_id)
+        proposal = workspace.read_reference(row["content"]["candidate_ref"])
+        proposal["review_units"] = list(review_units)
+        reference = workspace.put_reference(
+            selected.identity + ":review-test-proposal", "proposal", proposal, 0
+        )
+        workspace.put_reference(
+            work_id, "work_unit", {**row["content"], "candidate_ref": reference}, row["revision"]
+        )
     platform.call("apply", {"operation_id": "actual-root-write"})
     return selected, platform
+
+
+def test_redundant_self_review_still_checks_actual_model_once(binding, workspace, saver):
+    selected, platform = proposed_child(binding, workspace, saver, review_units=["local"])
+    actor = Actor(selected, platform)
+    proof = check_unit(binding, workspace, platform, "local", invoke=actor)
+    assert proof["result"]["status"] == "ready"
+    assert proof["basis"]["model_revisions"] == {"ontology": 1}
+    assert proof["governed_read_material_ref"]
+    assert check_unit(binding, workspace, platform, "local", invoke=actor) == proof
+    assert actor.calls == ["self_check"]
+    assert len(platform.effects) == 1
+
+
+def test_self_review_does_not_allow_unrelated_units(binding, workspace, saver):
+    selected, platform = proposed_child(
+        binding, workspace, saver, review_units=["local", "unrelated"]
+    )
+    actor = Actor(selected, platform)
+    with pytest.raises(FrameworkError, match="unit_check_scope_forbidden"):
+        check_unit(binding, workspace, platform, "local", invoke=actor)
+    assert actor.calls == []
+    assert len(platform.effects) == 1
 
 
 def test_original_unit_check_receives_existing_workspace_navigation(binding, workspace, saver):
