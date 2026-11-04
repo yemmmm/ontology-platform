@@ -407,6 +407,10 @@ class TaskBinding:
         team_contract = task.get("team_contract", "role-team/v1")
         if team_contract not in {"role-team/v1", "single-modeler/v1"}:
             raise FrameworkError("team_contract_unknown", team_contract=team_contract)
+        if team_contract == "role-team/v1":
+            from .custom_cq import public_goal_questions
+
+            public_goal_questions(materials, manifest)
         roles = ("modeling", "acceptance")
         if team_contract == "role-team/v1":
             roles += ("coordinator", "competency-question")

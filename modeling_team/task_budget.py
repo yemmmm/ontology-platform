@@ -1276,6 +1276,7 @@ class TaskBudget:
             configured_limits["inflight"] = dynamic_inflight
         elif any(
             not attempt.get("has_usage")
+            and not attempt.get("native_coverage")
             and attempt.get("status") != "not_admitted"
             and (
                 not native_primary_for(attempt)

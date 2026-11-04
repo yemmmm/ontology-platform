@@ -96,6 +96,8 @@ def successful_reads(events_path: Path | list[Path]) -> list[tuple[str, dict, di
         ):
             continue
         result = item.get("result") or {}
+        if result.get("isError"):
+            continue
         data = result.get("structuredContent")
         if data is None:
             for block in result.get("content", []):

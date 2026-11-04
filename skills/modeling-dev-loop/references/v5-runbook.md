@@ -15,10 +15,18 @@
    接续。小任务也保持专职，已有 CQ 由 CQ 复核；semantic workspace/work management 自动启用，
    新合同不挂旧 shared_memory 工具。实际授权收取时间由 Host 保留在 authorization.received_at，
    不拿 prepare 重新计时；semantic-starts 与实际来源读取／命题共同核对业务开始。
+   Host 脚本若放在仓库外，调用 TaskBudget.create 时沿既有 HostBridge 的 Python/环境，
+   或显式将仓库根目录放入 PYTHONPATH；先确认预算创建成功，再启动，不依赖脚本目录导入。
 3. 获准材料按 manifest 固定 ID／路径／SHA256；生产只拿公开投影，隐藏题另存独立包。
    scope 使用 create 或明确 existing Project／Ontology IDs。新建项目在实际创建后自动
    关联项目工作空间，无需提前猜 Project UUID。多个获准本体的创建变更用 ontology_targets
    明确放置；现有资源更新沿实际验证目标。当前入口不承诺任意自动扩展项目或授权范围。
+
+公开 CQ 材料标为 `material_type=competency_goal` 时，专职路径接受公开 draft
+`ontoweave-custom-cq-seed/v1`（含 design-v1）或项目入口生成的完整
+`ontoweave-cq-snapshot/v1`。seed 的 external_id 保持为公开 cq_id，附带答案不构成确认；
+snapshot 保留其稳定身份、作者和确认依据。prepare 与 source-revise 会在模型调用前核对
+格式/公开性/身份/摘要，并给出材料路径及可修正反馈；不要手工拼 snapshot 摘要绕过导入。
 
 已有 Operation 的精确读取使用 `operation-detail`；映射精确读取使用
 `table-mapping-detail`／`join-mapping-detail`，普通
@@ -65,6 +73,17 @@ scope-plan 由 Coordinator 提交，程序按 role/work_kind 路由专业工作�
 status/work-tree/board 按 role/actor/工作版本及下一依赖核对；多个 execution 不代表多个角色。
 不确定 native 回执可从原 result.json／terminal turn 复用，未知时保留原责任和在途状态，
 不更换会话猜测执行。CQ 自称确认但无原种子／真实完整答复依据时保留 draft/unknown。
+
+遇到 `role_*_basis_changed`，先核对当前输入 basis 和回执的 expected/received；新计划
+与输入基线分开，null 也须准确回传。源码当前要求 source_refs 对应本回合真实读取，
+不能指导 Agent 免读后仍声明本回合已读；可复用未变业务分析，避免重写命题。
+消息/卡片不代替 scope-plan 的正式接纳；检查原 Modeler 的 phase 已从 intake 切到 propose。
+
+消费校验报错时先看原工具的成功回执、确切引用及分页字符区间，不能把错误信封的
+read_characters=0 直接解释成 Agent 未读。若是平台误拒，按 AGENTS T0 做最窄实现修复、
+测试并复测原步骤；提示可纠正使用方法，不能替代代码修复。可恢复错误和预算仍有余额时，
+不只因已花一半预算就自行结束原目标；若必须收口，明确其依据、尚未完成的目标和下一责任。
+清理前先确认是否仍需原 scope 接续，已删除的空 scope 不能称作可直接 resume。
 
 材料变化使用 source-revise 的完整新包，声明 change_id、reason、affected_units 及必要的
 affected_records；旧材料、成果和验收保留。变化在自然边界激活，未变单元复用。

@@ -48,6 +48,15 @@ review/cognition/expression/work states; source/peer text alone is not approval.
 Refresh the same authored records after actual reads instead of duplicating a
 completion summary. Search shared users when dependencies are incomplete.
 
+Copy the input prompt.basis versions exactly, including null scope_ref/cq_ref;
+a new plan received in a message is not an accepted input baseline. Add only
+handoff references fully read in this turn to consumed_refs. Every source_ref
+must have an actual read_material call this turn, following next_offset; reuse
+the retained propositions and analysis rather than reconstructing unchanged work.
+Return a completed intake or contribution with status=proposed. The installed
+scope and the supplied phase determine when to move from intake to propose;
+an ordinary request to start a later phase does not change that binding.
+
 After application check your own source-grounded meaning against actual governed
 definitions and relationships at the current revision, using the real bindings
 and receipts. A successful write, matching label, recall miss or inventory alone

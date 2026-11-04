@@ -361,3 +361,27 @@ def test_resumed_reader_prices_only_the_new_turn_delta(task_file, tmp_path, work
     assert state["charged_estimate"] == "0.00282"
     assert state["coverage"]["unknown"] == 0
     assert synchronize_budget(binding, control)["charged_estimate"] == "0.00282"
+
+
+def test_completed_capture_covered_by_native_usage_has_no_unknown_inflight_tail(
+    task_file, tmp_path, workspace
+):
+    binding = amount_binding(task_file, tmp_path, amount="1")
+    numeric_sources(binding)
+    state = synchronize_budget(binding, TaskControl(workspace))
+    assert state["charged_estimate"] == "0.0024"
+    assert state["coverage"]["status"] == "complete"
+    assert state["inflight_count"] == state["pending_settlement"] == 0
+    assert state["tail_bound"]["components"]["inflight"]["count"] == 0
+    assert state["tail_bound"]["status"] == "bounded"
+    assert state["tail_bound"]["amount"] == "0"
+
+
+def test_completed_capture_without_native_usage_keeps_unknown_tail(task_file, tmp_path, workspace):
+    binding = amount_binding(task_file, tmp_path, amount="1")
+    root, _ = numeric_sources(binding)
+    (root / "budget-native-usage.jsonl").unlink()
+    state = synchronize_budget(binding, TaskControl(workspace))
+    assert state["pending_settlement"] == 1
+    assert state["tail_bound"]["status"] == "unknown"
+    assert state["tail_bound"]["amount"] is None

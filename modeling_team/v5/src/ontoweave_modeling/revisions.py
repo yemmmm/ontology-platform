@@ -17,6 +17,10 @@ class SourceRevisions:
         """Accept a Host source package immediately; activate only at a settled boundary."""
         identity = safe_id(change["change_id"])
         manifest = _check_sources(materials)
+        if self.binding.role_team:
+            from .custom_cq import public_goal_questions
+
+            public_goal_questions(materials, manifest)
         record_id = self.binding.identity + ":source-change:" + identity
         request_digest = digest({"change": change, "manifest": manifest})
         prior = self.repository.get(record_id)

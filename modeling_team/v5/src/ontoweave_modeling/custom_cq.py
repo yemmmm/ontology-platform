@@ -3,10 +3,89 @@
 import json
 from pathlib import Path
 
-from .contracts import FrameworkError, digest, write_json
+from .contracts import FrameworkError, digest, validate_schema, write_json
 from .revisions import SourceRevisions
 
 MATERIAL_ID = "cq-goals"
+
+
+def public_goal_questions(materials, manifest):
+    """Read approved public seed goals or verified project snapshots without changing either."""
+    questions = {}
+    for entry in manifest.values():
+        if entry.get("material_type") != "competency_goal":
+            continue
+        try:
+            value = json.loads((Path(materials) / entry["path"]).read_text())
+            if (
+                isinstance(value, dict)
+                and value.get("schema_version") == "ontoweave-cq-snapshot/v1"
+            ):
+                rows = validate_snapshot(value)["questions"]
+            else:
+                validate_schema(
+                    value,
+                    {
+                        "type": "object",
+                        "required": ["schema_version", "seed_id", "revision", "questions"],
+                        "properties": {
+                            "schema_version": {
+                                "enum": [
+                                    "ontoweave-custom-cq-seed/v1",
+                                    "ontoweave-custom-cq-seed/design-v1",
+                                ]
+                            },
+                            "seed_id": {"type": "string", "minLength": 1},
+                            "revision": {"type": "integer", "minimum": 1},
+                            "visibility": {"const": "public"},
+                            "criteria_status": {"const": "draft"},
+                            "questions": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "object",
+                                    "required": ["external_id", "question"],
+                                    "properties": {
+                                        "external_id": {"type": "string", "minLength": 1},
+                                        "question": {"type": "string", "minLength": 1},
+                                        "reference_answer": {"type": ["string", "null"]},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                )
+                rows = [
+                    {
+                        "cq_id": row["external_id"],
+                        "question": row["question"],
+                        # An import seed is a draft goal, never confirmation authority.
+                        "cq_definition": {
+                            "criteria_status": "draft",
+                            "reference_answer": row.get("reference_answer"),
+                        },
+                    }
+                    for row in value["questions"]
+                ]
+            if len({q["cq_id"] for q in rows}) != len(rows):
+                raise FrameworkError("public_cq_identity_or_disposition_invalid")
+            for question in rows:
+                identity = question["cq_id"]
+                if identity in questions and questions[identity] != question:
+                    raise FrameworkError(
+                        "public_cq_identity_or_disposition_invalid", cq_id=identity
+                    )
+                questions[identity] = question
+        except (ValueError, KeyError, TypeError) as error:
+            raise FrameworkError(
+                "public_cq_seed_invalid",
+                path=entry["path"],
+                cause=error.as_dict() if isinstance(error, FrameworkError) else str(error),
+                instruction="Supply a public draft ontoweave-custom-cq-seed/v1 (or design-v1), "
+                "or an intact ontoweave-cq-snapshot/v1 from the project CQ snapshot entry. "
+                "Keep stable question IDs; seed answers do not confirm business facts.",
+            ) from error
+    return questions
 
 
 def validate_snapshot(snapshot):

@@ -6,6 +6,12 @@ actual business slices and cross-slice constraints. Existing public/project CQ
 is input to review and reuse, not a reason to create near duplicates or narrow
 the objective to the existing questions. Preserve stable cq_id and distinguish
 reused, revised and new questions, source support, unknowns and coverage gaps.
+Check coverage against the complete source propositions, including state changes,
+ordered conditions, exceptions, temporal rules, atomicity and cross-slice effects
+where applicable. Existing analytics questions alone do not cover all behavior.
+Combine related checks when clear; do not add questions just to reach a count.
+Keep uncovered source conditions explicit with their impact and responsibility;
+do not silently reclassify them as optional to report complete coverage.
 
 Read approved original sources and fixed public materials completely as needed.
 The scope may be provisional. Public CQ being unfinished does not prevent safe
@@ -34,3 +40,13 @@ Keep real questions in waiting_input/human_requests (question/reason/impact);
 consume only actual queued IDs and resolve only fully answered matching human
 request IDs. On a technical issue return recoverable_issue and its exact blocker;
 retain the current work identity and previous valid results for repair.
+
+Copy source_manifest_digest, scope_ref, cq_ref, shared_refs and model_revisions
+from this turn's prompt.basis, including null. Newly published CQ/plan references
+belong in the artifact/handoff, not in those input fields. consumed_refs lists only
+exact handoff materials fully read this turn; source_refs likewise requires actual
+read_material calls this turn, with remaining pages read via next_offset. Reuse
+previous valid questions and analysis instead of rewriting them for technical
+corrections. Submit a completed public-cq-set with status=proposed. A public draft
+seed uses external_id as its stable cq_id and remains draft even if it supplies
+an answer; a project snapshot keeps its existing cq_id and confirmation evidence.

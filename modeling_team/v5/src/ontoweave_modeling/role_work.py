@@ -25,10 +25,8 @@ def _read_materials(events, references):
     reads = list(successful_reads(events))
     for reference in references:
         ranges, total = [], None
-        for tool, arguments, data in reads:
+        for tool, _, data in reads:
             if tool != "read_handoff_material" or data.get("reference") != reference:
-                continue
-            if arguments.get("reference", reference) != reference:
                 continue
             start = data.get("offset", 0)
             total = data.get("total_characters")
@@ -90,7 +88,6 @@ def _install_scope(flow, artifact, artifact_ref, material):
             if identity in {
                 binding.root_actor,
                 "acceptance",
-                "cq-public",
                 binding.data["work_unit_id"],
             }:
                 raise FrameworkError("work_unit_identity_conflict", unit_id=identity)
@@ -101,7 +98,13 @@ def _install_scope(flow, artifact, artifact_ref, material):
                 raise FrameworkError("material_forbidden", unit_id=identity)
             prior = plan["units"].get(identity)
             if prior and (prior["role_id"] != assignment["role_id"] or prior["parent_id"] != root):
-                raise FrameworkError("work_owner_forbidden", unit_id=identity)
+                raise FrameworkError(
+                    "work_owner_forbidden",
+                    unit_id=identity,
+                    expected={"role_id": prior["role_id"], "parent_id": prior["parent_id"]},
+                    received={"role_id": assignment["role_id"], "parent_id": root},
+                    instruction="Reuse the existing role and parent; do not reassign its identity.",
+                )
             requested = {
                 **assignment,
                 "parent_id": root,
@@ -173,7 +176,12 @@ def _install_scope(flow, artifact, artifact_ref, material):
         # Public production reviews the new scope, rather than being replaced by the root.
         cq = plan["units"]["cq-public"]
         primary_scope = plan["scope_refs"].get(binding.root_actor, cq.get("scope_ref"))
-        cq.update(scope_ref=primary_scope, generation=cq["generation"] + 1, work_phase="produce")
+        # Nested plans still refresh panorama coverage even when the root scope is unchanged.
+        # An explicit CQ assignment above has already advanced this exact scope once.
+        if "cq-public" not in assigned or cq.get("scope_ref") != primary_scope:
+            cq.update(
+                scope_ref=primary_scope, generation=cq["generation"] + 1, work_phase="produce"
+            )
         return assigned
 
     assigned = manager.change(update)
@@ -254,18 +262,9 @@ def _validate_public_cq(flow, result, plan):
         else {"questions": []}
     )
     confirmed = [q for q in prior["questions"] if q["criteria_status"] == "confirmed"]
-    seeds = {}
-    for entry in flow.binding.data["source_manifest"].values():
-        if entry.get("material_type") == "competency_goal":
-            from .custom_cq import validate_snapshot
+    from .custom_cq import public_goal_questions
 
-            try:
-                source = validate_snapshot(
-                    json.loads((flow.binding.materials / entry["path"]).read_text())
-                )
-            except (ValueError, KeyError) as error:
-                raise FrameworkError("public_cq_seed_invalid", path=entry["path"]) from error
-            seeds.update({q["cq_id"]: q for q in source["questions"]})
+    seeds = public_goal_questions(flow.binding.materials, flow.binding.data["source_manifest"])
     for question in questions:
         if any(ref not in result["source_refs"] for ref in question["source_refs"]):
             raise FrameworkError("public_cq_source_not_consumed", cq_id=question["cq_id"])
@@ -382,7 +381,8 @@ def model(flow, state):
         "public_cq_material_ref": plan.get("public_cq_material_ref"),
         "child_results": child_results,
         "human_context": flow.human.context(),
-        "previous_result_material_ref": state.get("result_material_ref"),
+        "previous_result_material_ref": state.get("rejected_result_material_ref")
+        or state.get("result_material_ref"),
         "feedback": state.get("issue"),
         "result_schema": result_schema(binding, phase),
         "contract": "Return one professional result. Authorship is program-bound. Echo the exact actual basis used. "
@@ -393,6 +393,8 @@ def model(flow, state):
         "selected contribution after application; public CQ is separate. Existing baseline resource_refs are exact "
         "existing_resource_ref objects; preserve artifact_ref and path without guessing native IDs. "
         "Use human_requests for real business decisions; consume only delivered queue IDs. "
+        "If a previous rejected result is provided, read its exact material and correct the "
+        "reported technical fields; retain valid business content. It is not an accepted artifact. "
         "For semantic revisions use reopen_work_unit for affected original owners, preserving unaffected siblings.",
     }
     if previous_prompt:
@@ -408,17 +410,35 @@ def model(flow, state):
                 "native_turn_failed", layer="runtime/infrastructure", execution_ref=execution_ref
             )
         result = decode_json_result(native["final_response"], prompt["result_schema"])
+        if (
+            binding.role == "coordinator"
+            and phase == "plan"
+            and result["status"] == "waiting_children"
+            and result["artifact"] is not None
+        ):
+            # A complete explicit plan must be installed before its children can run.
+            # All source, basis and ownership checks below still apply.
+            result["status"] = "proposed"
         basis = result["basis"]
-        if basis["source_manifest_digest"] != expected_basis["source_manifest_digest"]:
-            raise FrameworkError("role_source_basis_changed")
-        if basis["scope_ref"] != expected_basis["scope_ref"]:
-            raise FrameworkError("role_scope_basis_changed")
-        if basis["model_revisions"] != expected_basis["model_revisions"]:
-            raise FrameworkError("role_model_basis_changed")
-        if basis["shared_refs"] != expected_basis["shared_refs"]:
-            raise FrameworkError("role_shared_basis_changed")
-        if basis["cq_ref"] not in (None, expected_basis["cq_ref"]):
-            raise FrameworkError("role_cq_basis_changed")
+        for field, code in (
+            ("source_manifest_digest", "role_source_basis_changed"),
+            ("scope_ref", "role_scope_basis_changed"),
+            ("model_revisions", "role_model_basis_changed"),
+            ("shared_refs", "role_shared_basis_changed"),
+            ("cq_ref", "role_cq_basis_changed"),
+        ):
+            if basis[field] != expected_basis[field] and not (
+                field == "cq_ref" and basis[field] is None
+            ):
+                raise FrameworkError(
+                    code,
+                    field="basis." + field,
+                    expected=expected_basis[field],
+                    received=basis[field],
+                    instruction="Echo this turn's input basis value exactly, including null. "
+                    "New plans and contributions belong in artifact, not the input basis. "
+                    "List only fully read handoff materials in consumed_refs.",
+                )
         _read_materials(_events(flow, local_execution), basis["consumed_refs"])
         if result["status"] in {"proposed", "no_change"}:
             if not result["artifact"] or not result["source_refs"]:
@@ -435,7 +455,13 @@ def model(flow, state):
                         "source_reference_mismatch", material_id=ref["material_id"]
                     )
                 if (ref["material_id"], ref["sha256"]) not in reads:
-                    raise FrameworkError("source_read_missing", material_id=ref["material_id"])
+                    raise FrameworkError(
+                        "source_read_missing",
+                        material_id=ref["material_id"],
+                        instruction="Read this approved material with read_material in this turn "
+                        "before listing it in source_refs; follow next_offset for remaining pages. "
+                        "Reuse the retained business analysis, but do not claim a prior turn's read.",
+                    )
             if binding.role == "modeling" and phase != "source_intake":
                 decode_work_result(
                     json.dumps({**result, **result["artifact"]}), binding.data["source_manifest"]
@@ -446,12 +472,18 @@ def model(flow, state):
                 _validate_public_cq(flow, {**result, "_execution_ref": execution_ref}, plan)
         flow._confirm_inputs(execution_ref, result)
     except (FrameworkError, ResultContractError) as error:
+        rejected_material = None
+        if native["status"] == "completed" and native.get("final_response"):
+            rejected_material = flow.team.publish(
+                "rejected-" + local_execution, text=native["final_response"]
+            )
         return flow._save(
             {
                 **state,
                 "status": "recoverable_issue",
                 "round": state["round"] + 1,
                 "execution_ref": execution_ref,
+                "rejected_result_material_ref": rejected_material,
                 "issue": error.as_dict()
                 if isinstance(error, FrameworkError)
                 else {
@@ -500,6 +532,7 @@ def model(flow, state):
     material = _publish(flow, result_ref, envelope, artifact)
     update = {
         **state,
+        "rejected_result_material_ref": None,
         "execution_ref": execution_ref,
         "role_result_ref": result_ref,
         "result_material_ref": material,

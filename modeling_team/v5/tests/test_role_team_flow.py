@@ -29,6 +29,8 @@ def role_binding(task_file, tmp_path):
 
 
 class RoleActors:
+    """One unchanged source meaning; late CQ review cannot authorize duplicate creation."""
+
     def __init__(self, binding, repository, platform):
         self.binding, self.repository, self.platform = binding, repository, platform
         self.calls = []
@@ -134,6 +136,9 @@ class RoleActors:
                         "shared_conflicts": [],
                         "public_cq_disposition": "Current public question reviewed or still pending",
                     }
+                    if prompt["actual_baseline"]["model_revisions"].get("ontology", 0) > 0:
+                        response["status"] = "no_change"
+                        response["artifact"]["changes"]["changes"] = []
                 elif phase == "plan":
                     response["artifact"] = {
                         "schema_version": "scope-plan/v1",
