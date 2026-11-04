@@ -49,6 +49,38 @@ def test_technical_invocation_retains_original_native_context_without_mutating_f
     assert _correction_invocation(flow, []) is invocation
 
 
+def test_json_syntax_feedback_reaches_original_role_without_losing_location(
+    role_binding, workspace, saver
+):
+    platform = RolePlatform()
+    base = RoleActors(role_binding, workspace, platform).factory(role_binding)
+    prompts = []
+    malformed = '{"schema_version":"role-work-result/v1",\n "artifact": {,}}'
+
+    def invoke(root, purpose, text, inputs):
+        prompt = json.loads(text)
+        prompts.append(prompt)
+        native = base(root, purpose, text, inputs)
+        if len(prompts) == 1:
+            native["final_response"] = malformed
+        else:
+            assert prompt["feedback"]["json_error"]["line"] == 2
+            assert prompt["feedback"]["json_error"]["column"] == 15
+        return native
+
+    flow = WorkUnitFlow(role_binding, workspace, platform, invoke)
+    rejected = flow.advance(saver)
+    assert rejected["status"] == "recoverable_issue"
+    assert rejected["issue"]["json_error"]["message"] == (
+        "Expecting property name enclosed in double quotes"
+    )
+    original = workspace.read_reference(rejected["execution_ref"])["result"]["final_response"]
+    assert original == malformed
+    assert flow.advance(saver)["status"] == "waiting_children"
+    assert len(prompts) == 2
+    assert not platform.effects
+
+
 def test_partial_source_read_cannot_be_upgraded_by_technical_retry(role_binding, workspace, saver):
     platform = RolePlatform()
     base = RoleActors(role_binding, workspace, platform).factory(role_binding)

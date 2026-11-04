@@ -682,6 +682,7 @@ def model(flow, state):
                     "layer": "platform-contract",
                     "recoverable": True,
                     "detail": str(error),
+                    **error.details,
                     "instruction": "Return the complete professional JSON, not a progress update. "
                     "Use retained_artifact_ref for unchanged body fields and the explicit reusable "
                     "read evidence; keep the original objective and business content.",
