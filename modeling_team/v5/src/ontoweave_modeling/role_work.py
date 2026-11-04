@@ -517,9 +517,10 @@ def model(flow, state):
         "feedback": state.get("issue"),
         "result_schema": result_schema(binding, phase),
         "contract": "Return one professional result. Authorship is program-bound. Echo the exact actual basis used. "
-        "consumed_refs names exact handoff materials completely read in this turn or the explicitly "
-        "listed same-basis technical-correction executions. source_refs names actual approved source "
-        "reads on that same basis; a reference or prior summary is not a read. "
+        "consumed_refs names exact handoff materials completely read in this turn or in the explicitly "
+        "listed same-basis technical-correction executions. reusable_read_execution_refs are execution "
+        "proofs, not handoff materials; never copy those execution references into basis.consumed_refs. "
+        "source_refs names actual approved source reads on that same basis; a reference or prior summary is not a read. "
         "An integration selects exact owner result_ref/candidate_ref/changes_ref from retained role result envelopes, "
         "never writes their semantic body. Defer unready scope with its original owner. Original Modelers check every "
         "selected contribution after application; public CQ is separate. Existing baseline resource_refs are exact "

@@ -81,3 +81,13 @@ def test_only_top_level_values_are_considered_and_identical_repetition_is_not_am
 def test_missing_required_field_feedback_names_the_field(message):
     with pytest.raises(ResultContractError, match="references.*required property"):
         decode_json_result(message, SCHEMA)
+
+
+def test_unmatched_result_with_trailing_metadata_reports_the_missing_envelope_field():
+    with pytest.raises(ResultContractError) as caught:
+        decode_json_result('{} , "references": ["source:v1"]', SCHEMA)
+    assert caught.value.details["matching_objects"] == 0
+    assert caught.value.details["schema_errors"][0] == {
+        "path": "$",
+        "message": "'references' is a required property",
+    }

@@ -125,7 +125,7 @@ uv run --locked --project modeling_team/v5 python -m ontoweave_modeling.prefligh
   --model-profile modeling_team/model-profiles/glm-flash-low.yaml \
   --role modeling \
   --output-dir workspaces/v5-codex-p0/manual-001
-uv run --locked --project modeling_team/v5 pytest \
+PYTHONPATH="$PWD" uv run --locked --project modeling_team/v5 pytest \
   -c modeling_team/v5/pyproject.toml modeling_team/v5/tests
 uv run --locked --project modeling_team/v5 ruff check modeling_team/v5/src modeling_team/v5/tests modeling_team/v5/scripts
 uv run --locked --project modeling_team/v5 ruff format --check modeling_team/v5/src modeling_team/v5/tests modeling_team/v5/scripts
