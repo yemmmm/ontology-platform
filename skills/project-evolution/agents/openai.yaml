@@ -1,0 +1,4 @@
+interface:
+  display_name: "阶段自主演进"
+  short_description: "围绕阶段目标推进建模、诊断与修复，以关键事件控制主Agent上下文"
+  default_prompt: "使用 $project-evolution，依据当前阶段目标和已有授权推进建模、诊断、修复与独立验证，仅处理关键事件，并在达标或无安全下一步时收口。"
