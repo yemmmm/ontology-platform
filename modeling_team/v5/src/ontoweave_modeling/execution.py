@@ -248,6 +248,16 @@ class CodexInvocation:
         self.materials_only = materials_only
         self.resume_from = resume_from
 
+    def _instructions_for(self, purpose: str, prompt: str) -> str:
+        if not self.binding.role_team or self.instructions != self.binding.data["instructions"]:
+            return self.instructions
+        package = self.binding.data["role_packages"].get(self.binding.role, {})
+        phases = package.get("phase_instructions", {})
+        phase = purpose if purpose in {"source_intake", "self_check"} else "propose"
+        if phase not in phases or not self.instructions.startswith(package["instructions"]):
+            return self.instructions
+        return phases[phase] + self.instructions[len(package["instructions"]) :]
+
     def __call__(self, root: Path, purpose: str, prompt: str, inputs: list) -> dict:
         from .codex_agent import CodexAgent
         from .memory import MEMORY_TOOLS
@@ -262,7 +272,8 @@ class CodexInvocation:
         if self.materials_only:
             tools = ("read_material",)
         team_config = None
-        instructions = self.instructions
+        submission = None
+        instructions = self._instructions_for(purpose, prompt)
         if (
             role
             in (
@@ -300,6 +311,20 @@ class CodexInvocation:
             # Reuse the verified P0 workspace route: resolve before entering the namespace.
             connection.setdefault("hostaddr", socket.gethostbyname(connection["host"]))
             team_config = root / "team-private.json"
+            if (
+                self.binding.role_team
+                and role == "modeling"
+                and purpose in {"source_intake", self.binding.work_kind}
+                and self.binding.data["role_packages"][role].get("artifact_submission")
+            ):
+                professional = json.loads(prompt)
+                submission = {
+                    "execution_id": root.name,
+                    "phase": professional["phase"],
+                    "basis": professional["basis"],
+                }
+            if submission is None:
+                tools = tuple(tool for tool in tools if tool != "submit_role_artifact")
             team_config.write_text(
                 json.dumps(
                     {
@@ -309,6 +334,7 @@ class CodexInvocation:
                         "actor": purpose.removeprefix("peer:")
                         if purpose.startswith("peer:")
                         else self.binding.actor,
+                        "role_submission": submission,
                     }
                 )
             )
@@ -392,6 +418,16 @@ class CodexInvocation:
                     "Preserve conditions, exceptions, negation, modality and unknowns, including unallocated scope. "
                     "When the actual existing model already satisfies the source, return no_change with null "
                     "candidate/changes and source_refs; the program still performs actual governed self-check."
+                )
+            if submission is not None:
+                instructions += (
+                    " Stage the complete artifact using submit_role_artifact; fix its structural feedback "
+                    "within this turn. Then return artifact=null and the exact returned artifact_ref in "
+                    "your professional envelope. Do not repeat the body in the final message. The staged "
+                    "body is the durable original: avoid copying it into additional semantic records; "
+                    "record only additional judgments, dependencies and open items when useful. "
+                    "After reassessing the current basis, an unchanged own previous body can be "
+                    "staged by submit_role_artifact(artifact_ref=...) without rewriting its contents."
                 )
         if purpose == "self_check":
             scope = (

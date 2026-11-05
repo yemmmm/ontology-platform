@@ -61,6 +61,7 @@ class FlowState(TypedDict, total=False):
     work_kind: str
     correction_basis: dict
     correction_execution_refs: list[dict]
+    read_execution_refs: list[dict]
     retained_artifact_ref: dict | None
     rejected_result_material_ref: dict | None
 

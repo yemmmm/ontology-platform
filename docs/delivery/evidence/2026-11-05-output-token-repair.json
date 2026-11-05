@@ -1,0 +1,463 @@
+{
+  "date": "2026-11-05",
+  "scope": "Bounded production output-contract test; no application or independent L1. All failed attempts in both new runs included.",
+  "models": {
+    "provider": "glm-direct",
+    "model": "glm-5.3-flash",
+    "effort": "high",
+    "unit_concurrency": 2
+  },
+  "source_comparison": {
+    "same_five_source_hashes": true,
+    "baseline_run": "demo-role-high-20261105-start1",
+    "baseline_execution": "modeler--role-00000",
+    "baseline_native_usage": {
+      "cacheWriteInputTokens": 0,
+      "cachedInputTokens": 343744,
+      "inputTokens": 409896,
+      "outputTokens": 27199,
+      "reasoningOutputTokens": 14656,
+      "totalTokens": 437095
+    },
+    "new_native_usage": {
+      "inputTokens": 125458,
+      "outputTokens": 13384,
+      "reasoningOutputTokens": 9564,
+      "cachedInputTokens": 96256,
+      "totalTokens": 138842
+    },
+    "output_reduction_percent": 50.7923,
+    "total_reduction_percent": 68.2353,
+    "new_wall_seconds": 339.209854,
+    "time_comparison_limitation": "New probe includes preparation; old roughly 448-second native window has a different boundary. No precise time gain or semantic equivalence is claimed.",
+    "actual_source_coverage": [
+      {
+        "material_id": "scope",
+        "sha256": "3b123d7c2fd577b2434860273de37539975cd48334176bf18d6eff036fb18584",
+        "returned_characters": 279,
+        "total_characters": 279,
+        "complete": true
+      },
+      {
+        "material_id": "business",
+        "sha256": "b8a3c76fd07da907f6449a8beee65d47cc7e6ca771f70f28cbe9f15fdf9003fa",
+        "returned_characters": 1546,
+        "total_characters": 1546,
+        "complete": true
+      },
+      {
+        "material_id": "api",
+        "sha256": "9cf99d65e6c3138992321ad5439c432080fda3299fe4faa7ab4b0239c3834f6d",
+        "returned_characters": 13424,
+        "total_characters": 13424,
+        "complete": true
+      },
+      {
+        "material_id": "schema",
+        "sha256": "edc3cee89d32aba59029da74b840c5b86f97a1f899bea582d5d264b1d08d30b9",
+        "returned_characters": 1036,
+        "total_characters": 1036,
+        "complete": true
+      },
+      {
+        "material_id": "public-cq",
+        "sha256": "c20cf5810f370269dd5467f98f5ef010dc93c9ed02ca6da612c296505523e148",
+        "returned_characters": 5020,
+        "total_characters": 5020,
+        "complete": true
+      }
+    ]
+  },
+  "all_new_run_usage": {
+    "totals": {
+      "inputTokens": 3187637,
+      "outputTokens": 211182,
+      "reasoningOutputTokens": 119794,
+      "cachedInputTokens": 2588928,
+      "totalTokens": 3398819
+    },
+    "roles": {
+      "competency-question": {
+        "inputTokens": 1363781,
+        "outputTokens": 70428,
+        "reasoningOutputTokens": 41086,
+        "cachedInputTokens": 1136896,
+        "totalTokens": 1434209
+      },
+      "modeling": {
+        "inputTokens": 1518349,
+        "outputTokens": 106250,
+        "reasoningOutputTokens": 55620,
+        "cachedInputTokens": 1247744,
+        "totalTokens": 1624599
+      },
+      "coordinator": {
+        "inputTokens": 305507,
+        "outputTokens": 34504,
+        "reasoningOutputTokens": 23088,
+        "cachedInputTokens": 204288,
+        "totalTokens": 340011
+      }
+    },
+    "endpoint_crosscheck": true,
+    "provider_request_union_seconds": 3169.755683,
+    "unresolved": []
+  },
+  "executions": [
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "cq-public--role-00000",
+      "role": "competency-question",
+      "phase": null,
+      "status": "completed",
+      "started_at": null,
+      "provider_first_request": "2026-11-05T07:27:33.314078+00:00",
+      "provider_last_end": "2026-11-05T07:42:54.500496+00:00",
+      "completed_provider_requests": 14,
+      "provider_request_seconds": 915.2717489999999,
+      "continuation_baseline": null,
+      "inputTokens": 459901,
+      "outputTokens": 40640,
+      "reasoningOutputTokens": 26673,
+      "cachedInputTokens": 403136,
+      "totalTokens": 500541
+    },
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "cq-public--role-00001",
+      "role": "competency-question",
+      "phase": null,
+      "status": "completed",
+      "started_at": null,
+      "provider_first_request": "2026-11-05T07:54:32.117176+00:00",
+      "provider_last_end": "2026-11-05T07:55:28.552199+00:00",
+      "completed_provider_requests": 1,
+      "provider_request_seconds": 56.435023,
+      "continuation_baseline": "cq-public--role-00000",
+      "inputTokens": 74745,
+      "outputTokens": 2464,
+      "reasoningOutputTokens": 1541,
+      "cachedInputTokens": 56384,
+      "totalTokens": 77209
+    },
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "cq-public--role-00003",
+      "role": "competency-question",
+      "phase": null,
+      "status": "completed",
+      "started_at": null,
+      "provider_first_request": "2026-11-05T07:57:58.414593+00:00",
+      "provider_last_end": "2026-11-05T08:02:30.986441+00:00",
+      "completed_provider_requests": 5,
+      "provider_request_seconds": 269.450685,
+      "continuation_baseline": "cq-public--role-00001",
+      "inputTokens": 471603,
+      "outputTokens": 12001,
+      "reasoningOutputTokens": 8564,
+      "cachedInputTokens": 443584,
+      "totalTokens": 483604
+    },
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "cq-public--role-00004",
+      "role": "competency-question",
+      "phase": null,
+      "status": "completed",
+      "started_at": null,
+      "provider_first_request": "2026-11-05T08:47:05.756210+00:00",
+      "provider_last_end": "2026-11-05T08:51:58.771133+00:00",
+      "completed_provider_requests": 3,
+      "provider_request_seconds": 289.47324100000003,
+      "continuation_baseline": "cq-public--role-00003",
+      "inputTokens": 357532,
+      "outputTokens": 15323,
+      "reasoningOutputTokens": 4308,
+      "cachedInputTokens": 233792,
+      "totalTokens": 372855
+    },
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "modeler--role-00000",
+      "role": "modeling",
+      "phase": "source_intake",
+      "status": "completed",
+      "started_at": "2026-11-05T07:27:16.271383+00:00",
+      "provider_first_request": "2026-11-05T07:27:16.336778+00:00",
+      "provider_last_end": "2026-11-05T07:27:22.745314+00:00",
+      "completed_provider_requests": 1,
+      "provider_request_seconds": 6.408536,
+      "continuation_baseline": null,
+      "inputTokens": 7548,
+      "outputTokens": 295,
+      "reasoningOutputTokens": 159,
+      "cachedInputTokens": 0,
+      "totalTokens": 7843
+    },
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "modeler--role-00001",
+      "role": "modeling",
+      "phase": "source_intake",
+      "status": "completed",
+      "started_at": "2026-11-05T07:52:45.174823+00:00",
+      "provider_first_request": "2026-11-05T07:52:45.210887+00:00",
+      "provider_last_end": "2026-11-05T07:54:22.355194+00:00",
+      "completed_provider_requests": 1,
+      "provider_request_seconds": 97.144307,
+      "continuation_baseline": "modeler--role-00000",
+      "inputTokens": 12645,
+      "outputTokens": 3694,
+      "reasoningOutputTokens": 3527,
+      "cachedInputTokens": 0,
+      "totalTokens": 16339
+    },
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "modeler--role-00003",
+      "role": "modeling",
+      "phase": "slice_modeling",
+      "status": "completed",
+      "started_at": "2026-11-05T07:57:57.698071+00:00",
+      "provider_first_request": "2026-11-05T07:57:57.731061+00:00",
+      "provider_last_end": "2026-11-05T08:16:18.703158+00:00",
+      "completed_provider_requests": 11,
+      "provider_request_seconds": 1098.317945,
+      "continuation_baseline": "modeler--role-00001",
+      "inputTokens": 593624,
+      "outputTokens": 58830,
+      "reasoningOutputTokens": 27496,
+      "cachedInputTokens": 517184,
+      "totalTokens": 652454
+    },
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "modeler--role-00004",
+      "role": "modeling",
+      "phase": "slice_modeling",
+      "status": "completed",
+      "started_at": "2026-11-05T08:47:05.691448+00:00",
+      "provider_first_request": "2026-11-05T08:47:05.766730+00:00",
+      "provider_last_end": "2026-11-05T08:56:52.177843+00:00",
+      "completed_provider_requests": 6,
+      "provider_request_seconds": 585.4161190000001,
+      "continuation_baseline": "modeler--role-00003",
+      "inputTokens": 779074,
+      "outputTokens": 30047,
+      "reasoningOutputTokens": 14874,
+      "cachedInputTokens": 634304,
+      "totalTokens": 809121
+    },
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "role-00000",
+      "role": "coordinator",
+      "phase": null,
+      "status": "completed",
+      "started_at": null,
+      "provider_first_request": "2026-11-05T07:27:12.256619+00:00",
+      "provider_last_end": "2026-11-05T07:36:11.305237+00:00",
+      "completed_provider_requests": 6,
+      "provider_request_seconds": 538.264939,
+      "continuation_baseline": null,
+      "inputTokens": 135505,
+      "outputTokens": 21623,
+      "reasoningOutputTokens": 15804,
+      "cachedInputTokens": 95360,
+      "totalTokens": 157128
+    },
+    {
+      "run": "demo-output-high-20261105-start1",
+      "execution": "role-00001",
+      "role": "coordinator",
+      "phase": null,
+      "status": "completed",
+      "started_at": null,
+      "provider_first_request": "2026-11-05T07:52:45.269734+00:00",
+      "provider_last_end": "2026-11-05T07:57:48.826589+00:00",
+      "completed_provider_requests": 3,
+      "provider_request_seconds": 302.958463,
+      "continuation_baseline": "role-00000",
+      "inputTokens": 170002,
+      "outputTokens": 12881,
+      "reasoningOutputTokens": 7284,
+      "cachedInputTokens": 108928,
+      "totalTokens": 182883
+    },
+    {
+      "run": "demo-output-high-20261105-intake-only",
+      "execution": "modeler--role-00000",
+      "role": "modeling",
+      "phase": "source_intake",
+      "status": "completed",
+      "started_at": "2026-11-05T08:15:05.491621+00:00",
+      "provider_first_request": "2026-11-05T08:15:05.558332+00:00",
+      "provider_last_end": "2026-11-05T08:20:23.418063+00:00",
+      "completed_provider_requests": 7,
+      "provider_request_seconds": 317.38639000000006,
+      "continuation_baseline": null,
+      "inputTokens": 125458,
+      "outputTokens": 13384,
+      "reasoningOutputTokens": 9564,
+      "cachedInputTokens": 96256,
+      "totalTokens": 138842
+    }
+  ],
+  "budget": {
+    "authorized_amount": "3",
+    "charged_estimate": "1.49521556",
+    "currency": "CNY",
+    "inflight_count": 0,
+    "pending_settlement": 0,
+    "coverage_gaps": []
+  },
+  "timing": {
+    "authorization_received_at": "2026-11-05T07:18:25+00:00",
+    "native_drained_at": "2026-11-05T08:56:57.467625+00:00",
+    "authorization_to_final_drain_seconds": 5912.467625,
+    "provider_request_union_seconds": 3169.755683,
+    "completed_provider_requests": 58
+  },
+  "accepted_candidate_staging": {
+    "receipt_object_id": "run:demo-output-high-20261105-start1:unit:modeler:role-submission:af9f89365b071716df7f5347f82c08801e34ac39807623a7c7a39fc7e4fe42a2",
+    "actor": "modeler",
+    "phase": "propose",
+    "generation": 1,
+    "execution_id": "modeler--role-00004",
+    "artifact_ref": {
+      "digest": "7b25f8a18324d1de14471448b34276b0f3ccc7fe168ad528f90c2cd1fd63ff72",
+      "revision": 1,
+      "object_id": "run:demo-output-high-20261105-start1:unit:modeler:role-artifact:7b25f8a18324d1de14471448b34276b0f3ccc7fe168ad528f90c2cd1fd63ff72"
+    },
+    "candidate_schema": "r3-0-009-unified-graph/v2",
+    "candidate_items": 45,
+    "change_schema": "r4-3-025-model-changes/v1",
+    "change_count": 45,
+    "body_characters": 32681
+  },
+  "boundary_states": [
+    {
+      "run": "demo-output-high-20261105-start1",
+      "mode": "paused",
+      "control_status": "settled",
+      "active": {},
+      "modeler_status": "proposal_ready",
+      "role_phase": "propose",
+      "role_result_ref": {
+        "digest": "97b667b770e40fee103fe4f1e9171b86cb6bea35aeae2007a80f2ba11b888c0c",
+        "revision": 1,
+        "object_id": "run:demo-output-high-20261105-start1:unit:modeler:role-result:1:4"
+      },
+      "artifact_ref": {
+        "digest": "7b25f8a18324d1de14471448b34276b0f3ccc7fe168ad528f90c2cd1fd63ff72",
+        "revision": 1,
+        "object_id": "run:demo-output-high-20261105-start1:unit:modeler:role-artifact:7b25f8a18324d1de14471448b34276b0f3ccc7fe168ad528f90c2cd1fd63ff72"
+      },
+      "native_status": "completed",
+      "final_characters": 3274,
+      "final_artifact_is_null": true,
+      "final_ref_equals_accepted": true,
+      "candidate_items": 45,
+      "changes": 45,
+      "propositions": 0,
+      "unknowns": 0,
+      "tool_reads_in_final_turn": [
+        "read_handoff_material",
+        "read_model_resource",
+        "read_handoff_material",
+        "submit_role_artifact",
+        "update_work_card",
+        "update_work_card"
+      ],
+      "read_execution_refs": [
+        {
+          "digest": "8119f55b122092ef49ab89bdfaf2887cc9582a274b95f76e87efeae7a2bd8e6a",
+          "revision": 2,
+          "object_id": "run:demo-output-high-20261105-start1:unit:modeler:execution:modeler--role-00003"
+        },
+        {
+          "digest": "06c38c6c5ee41a57a0da4163580b5d65c94450639ebb83689394cb1e887e414a",
+          "revision": 2,
+          "object_id": "run:demo-output-high-20261105-start1:unit:modeler:execution:modeler--role-00000"
+        },
+        {
+          "digest": "035c96fd335437da56200235191b8d21c0351d737b7510f0e604fc0cf77bbf08",
+          "revision": 2,
+          "object_id": "run:demo-output-high-20261105-start1:unit:modeler:execution:modeler--role-00001"
+        },
+        {
+          "digest": "53475cb93addf91b7f12b03a1e467d66de06f654c422be99f5f12be4212b2d26",
+          "revision": 2,
+          "object_id": "run:demo-output-high-20261105-start1:unit:modeler:execution:modeler--role-00004"
+        }
+      ]
+    },
+    {
+      "run": "demo-output-high-20261105-intake-only",
+      "mode": "paused",
+      "control_status": "settled",
+      "active": {},
+      "modeler_status": "proposal_ready",
+      "role_phase": "source_intake",
+      "role_result_ref": {
+        "digest": "b7a0e51f76fdc2eec6d4986e4875921e1f0382039976d756ec6a625ac2c1d79e",
+        "revision": 1,
+        "object_id": "run:demo-output-high-20261105-intake-only:unit:modeler:role-result:0:0"
+      },
+      "artifact_ref": {
+        "digest": "67dc65ff293990b039297f4312fdf1e3089525c5dfbab94cd48bf17b4b5a8e8d",
+        "revision": 1,
+        "object_id": "run:demo-output-high-20261105-intake-only:unit:modeler:role-artifact:67dc65ff293990b039297f4312fdf1e3089525c5dfbab94cd48bf17b4b5a8e8d"
+      },
+      "native_status": "completed",
+      "final_characters": 2403,
+      "final_artifact_is_null": true,
+      "final_ref_equals_accepted": true,
+      "candidate_items": 0,
+      "changes": 0,
+      "propositions": 26,
+      "unknowns": 13,
+      "tool_reads_in_final_turn": [
+        "read_material",
+        "read_material",
+        "read_material",
+        "read_material",
+        "read_material",
+        "read_material",
+        "read_material",
+        "submit_role_artifact",
+        "update_work_card"
+      ],
+      "read_execution_refs": [
+        {
+          "digest": "b012dc4dae55d3d176f3f7509e82cc9dcc1a5ed7538163ef97855c7e17d1c789",
+          "revision": 2,
+          "object_id": "run:demo-output-high-20261105-intake-only:unit:modeler:execution:modeler--role-00000"
+        }
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "snapshot_id": "411b3e4d5d70463e911a8feb30d66d94",
+      "name": "intake-output-reduction-verified",
+      "path": "workspaces/v5-runs/demo-output-high-20261105-intake-only/snapshots/411b3e4d5d70463e911a8feb30d66d94.json",
+      "object_count": 17,
+      "model_read_error": null
+    },
+    {
+      "snapshot_id": "1b2c3f5ae92a4fc7b347cd7bf0340a51",
+      "name": "candidate-staged-output-repair-verified",
+      "path": "workspaces/v5-runs/demo-output-high-20261105-start1/snapshots/1b2c3f5ae92a4fc7b347cd7bf0340a51.json",
+      "object_count": 49,
+      "model_read_error": null
+    }
+  ],
+  "host_usage": "unknown; separately excluded from task cost per user policy",
+  "verification_limits": [
+    "No model apply; ontology remains revision 0",
+    "No private questions/answers read or independent36 evaluation",
+    "No same-completion whole-task net gain or independent semantic-equivalence proof",
+    "D downstream consumption is covered by engineering tests; live production paused after publishing the proposal index"
+  ]
+}

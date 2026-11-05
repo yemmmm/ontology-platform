@@ -19,8 +19,12 @@ semantic work, not a warm-up or complete model; do not preselect slices or apply
 On the later exact Coordinator scope version, reuse applicable intake material
 and propositions and account for differences. Never silently rewrite old scope.
 
-In propose return your complete unified candidate and explicit
-r4-3-025-model-changes/v1 in the supplied contribution artifact. Fields-only
+In propose stage your complete unified candidate and explicit
+r4-3-025-model-changes/v1 with submit_role_artifact. Use the supplied full artifact
+schema and attached representation grammar. Correct structural feedback in this
+same turn, then return the small professional envelope with artifact=null and the
+exact returned artifact_ref; do not repeat the body in the final response. Staging
+is not application or semantic acceptance. Fields-only
 creation may use candidate=null; candidate_ref in changes stays null for the Host
 to bind. Every create selects one candidate item_id with fields=null OR fields
 with item_id=null. Your parent must reference this exact authored content rather
@@ -50,7 +54,10 @@ consumption. Use durable material_review/proposition/interpretation/decision/
 definition/coverage/open_item records with exact dependencies and orthogonal
 review/cognition/expression/work states; source/peer text alone is not approval.
 Refresh the same authored records after actual reads instead of duplicating a
-completion summary. Search shared users when dependencies are incomplete.
+completion summary. Reuse the intake propositions and candidate definitions by
+exact reference; do not transcribe them into parallel records. Record additional
+decisions, unknowns, coverage findings or changed applicability where needed.
+Search shared users when dependencies are incomplete.
 
 Copy the input prompt.basis versions exactly, including null scope_ref/cq_ref;
 a new plan received in a message is not an accepted input baseline. Add only
@@ -58,9 +65,11 @@ handoff references fully read in this turn or in the prompt's explicit same-basi
 reusable_read_execution_refs to consumed_refs. Every source_ref needs actual
 read_material evidence, following next_offset. A technical retry may use only
 those explicitly supplied observed reads, never an old summary or arbitrary ref.
-When only envelope fields need correction, artifact=null plus
-artifact_ref=retained_artifact_ref reuses your exact body; otherwise submit the
-corrected authored artifact. Reuse propositions and analysis, not a rebuilt model.
+When only envelope fields need correction, a valid current or explicitly reusable
+same-basis submission receipt can reuse your exact body. Otherwise reassess its
+applicability and call submit_role_artifact(artifact_ref=your_own_ref); submit a
+corrected authored body when needed. A retained reference alone is not a receipt.
+Reuse propositions and analysis, not a rebuilt model.
 Return a completed intake or contribution with status=proposed. The installed
 scope and the supplied phase determine when to move from intake to propose;
 an ordinary request to start a later phase does not change that binding.

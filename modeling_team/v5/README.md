@@ -49,11 +49,28 @@ Host 保留真实授权收取时间（`authorization.received_at`）；`semantic
 2026-11-04的[流程修订](../../docs/delivery/designs/2026-11-04-role-team-flow-repair-design.md)
 明确以下兼容增量；工程证据见[验证记录](../../docs/delivery/test-docs/2026-11-04-role-team-flow-repair.md)。
 
-- `role-work-result/v1`可选`artifact_ref`只接受prompt给出的`retained_artifact_ref`，且
-  `artifact=null`；本作者同基线的纯信封纠错可避免重交正文，任意/陈旧引用仍拒绝。
-- prompt的`reusable_read_execution_refs`是程序验证的同作者、阶段、generation、来源/
-  scope/CQ/shared/model及业务答复基线上的真实读证明。未列出的历史、未读/缺页材料
-  不能声称已消费。新业务答复使旧成果复用失效；有原生绑定时沿已有resume并差分计量。
+- 原冻结包的`role-work-result/v1`可选`artifact_ref`仍只接受prompt提供的
+  `retained_artifact_ref`且`artifact=null`；同作者同基线纯信封纠错可不重交正文。
+- 新Modeler包按source_intake/propose/self_check冻结阶段提示。来源分析和治理检查不再
+  全量携带候选表示语法；propose保留原完整语法。旧包继续使用原instructions。
+- 新Modeler用`submit_role_artifact(artifact)`提交正文；prompt及工具参数展示完整候选／变更字段，
+  宽松decoder仅用于保留完整错误反馈，不充当生成规范。工具复用原候选校验并返回
+  `{status: staged, artifact_ref}`，不是应用或语义接受。形状错误带可恢复位置／原因，
+  可在当前turn纠正。最后信封使用`artifact=null`和实际工具引用；接纳仍核对本作者、
+  执行、phase、generation和原输入basis，以及真实来源／材料消费。任意或陈旧引用不放行。
+  重新判断适用性后可用`submit_role_artifact(artifact_ref=自己的原件)`避免重抄；新包没有有效
+  回执时不会直接接纳retained引用，旧冻结包的兼容方式不变。
+  当前执行中新写的完整内联正文保留技术兼容，仍检查作者绑定、basis、来源/材料消费、候选和代次；
+  正常生成继续使用工具/小信封，不为有效内联内容增加一次无必要的拒绝与重交。
+- prompt的`reusable_read_execution_refs`绑定实际完成的本作者执行。旧包维持同基线
+  技术纠错；新专职任务在来源manifest未变时可延续同作者正常阶段上下文并复用确切读取事实，
+  未列出历史、未读/缺页材料不能声称已消费。新CQ／scope／model及业务答复仍须重新判断
+  适用性，不自动接受旧正文；来源／授权不兼容时不沿用旧上下文。resume按原baseline差分计量。
+- 新Modeler提案交接为精确索引（原结果、变更ID、共享冲突等）及单独可读取的完整正文。
+  index读取只证明index已读；必要的业务正文／共享定义仍须展开。intake和旧包交接保持原形式。
+  原属主治理检查、整体目标检查与独立验收不由索引或候选替代。
+- 本轮GLM真实探针在`outputSchema`下返回无读取／无正文的占位JSON，因此当前不向
+  生产工具循环传该选项；保留工具内结构校验和最终小信封校验，不将HTTP200视为兼容通过。
 - 候选仅缺`relation_endpoints`/`shared_scope`时可补null，原字段值及业务正文不变；
   单一已授权Ontology用`ontology_targets={}`复用已有投影，多目标仍须明确放置。
 - `public-cq-set/v1`可选`model_support=[{cq_id,status,evidence}]`记录实际支撑，status为

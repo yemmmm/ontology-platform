@@ -14,6 +14,7 @@ from typing import Literal
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 
 def material_server(
@@ -283,6 +284,49 @@ def material_server(
             scope["schema"],
             scope["task"].get("workspace_ref", scope["task"]["task_ref"]),
         )
+        if scope.get("role_submission"):
+            from .contracts import FrameworkError, TaskBinding
+            from .role_artifacts import submit_role_artifact as stage_artifact
+            from .role_team import result_schema
+
+            submission_binding = TaskBinding(root, scope["task"])
+            artifact_parameter = Field(
+                default=None,
+                json_schema_extra=result_schema(
+                    submission_binding, scope["role_submission"]["phase"], guidance=True
+                )["properties"]["artifact"],
+            )
+
+            @server.tool(
+                annotations=ToolAnnotations(
+                    readOnlyHint=False,
+                    destructiveHint=False,
+                    idempotentHint=True,
+                    openWorldHint=False,
+                )
+            )
+            def submit_role_artifact(
+                artifact: dict | None = artifact_parameter,
+                artifact_ref: dict | None = None,
+            ) -> dict:
+                """Stage your complete professional body; correct feedback here, then return its ref.
+
+                This is not application or semantic acceptance. Do not repeat the body in your
+                final envelope. Author, phase and basis are supplied by this actual execution.
+                After reassessing applicability, use artifact_ref for your own unchanged body
+                instead of copying it. Supply exactly one of artifact or artifact_ref.
+                """
+                try:
+                    return stage_artifact(
+                        submission_binding,
+                        repo,
+                        scope["role_submission"],
+                        artifact,
+                        artifact_ref=artifact_ref,
+                    )
+                except FrameworkError as error:
+                    raise ToolError(json.dumps({**error.as_dict(), "recoverable": True})) from None
+
         if (
             scope["task"].get("collaboration")
             or scope["task"].get("work_units")

@@ -38,7 +38,10 @@ def test_technical_invocation_retains_original_native_context_without_mutating_f
     ref = workspace.put_reference(
         role_binding.identity + ":execution:retained-turn",
         "execution",
-        {"intent": {"execution_id": "retained-turn"}},
+        {
+            "intent": {"execution_id": "retained-turn"},
+            "result": {"status": "completed", "thread_id": "original-role"},
+        },
         0,
     )
     continued = _correction_invocation(flow, [ref])
@@ -219,7 +222,9 @@ def test_correction_cannot_reuse_stale_or_other_artifact(role_binding, workspace
     assert result["status"] == "recoverable_issue", result
     assert result["issue"]["code"] == "role_artifact_reuse_forbidden"
     if changed in {"model", "human", "technical_business"}:
-        assert calls[-1]["reusable_read_execution_refs"] == []
+        # New business/model basis invalidates the body, not this same actor's
+        # real reads of the unchanged original source version.
+        assert calls[-1]["reusable_read_execution_refs"]
         assert calls[-1]["retained_artifact_ref"] is None
 
 

@@ -121,6 +121,15 @@ class TeamChannel:
             )
             for m in self.messages()
         )
+        if (
+            not allowed
+            and self.task.get("team_contract") == "role-team/v1"
+            and self.actor in self.members
+        ):
+            plan = self.repository.get("run:" + self.task["run_id"] + ":work-plan")
+            # The exact current public goal is an explicit input, including when
+            # it was published during source intake before notifications began.
+            allowed = bool(plan and reference == plan["content"].get("public_cq_material_ref"))
         if not allowed:
             raise FrameworkError("handoff_material_forbidden")
         return row

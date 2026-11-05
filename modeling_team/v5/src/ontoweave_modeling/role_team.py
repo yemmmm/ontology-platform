@@ -216,7 +216,7 @@ INTEGRATION = object_schema(
 INTEGRATION["properties"]["coordination_refs"] = REFS
 
 
-def result_schema(binding, phase):
+def result_schema(binding, phase, *, guidance=False):
     artifact = (
         INTAKE
         if phase == "source_intake"
@@ -228,6 +228,76 @@ def result_schema(binding, phase):
         if binding.role == "competency-question"
         else CONTRIBUTION
     )
+    if (
+        guidance
+        and binding.role == "modeling"
+        and phase != "source_intake"
+        and binding.data["role_packages"][binding.role].get("artifact_submission")
+    ):
+        # A forgiving decoder is not an authoring contract. Show the actual wire
+        # shape before generation while retaining aggregate canonical feedback.
+        artifact = copy.deepcopy(CONTRIBUTION)
+        item = object_schema(
+            {
+                "item_id": STR,
+                "item_kind": {
+                    "enum": [
+                        "entity",
+                        "property",
+                        "relation",
+                        "table_mapping",
+                        "join_mapping",
+                        "enum_meaning",
+                        "metric_definition",
+                    ]
+                },
+                "business_meaning": STR,
+                "value": {
+                    "type": "object",
+                    "description": "Semantic creation fields for this item_kind; use the attached representation contract.",
+                },
+                "relation_endpoints": {"type": ["object", "null"]},
+                "slice_ids": STRINGS,
+                "shared_scope": {"type": ["string", "null"]},
+                "unknowns": {"type": "array"},
+            }
+        )
+        for field in ("semantic_definition", "action_definition", "parameter_definition"):
+            item["properties"][field] = {}
+        candidate = object_schema(
+            {
+                "schema_version": {"const": "r3-0-009-unified-graph/v2"},
+                "scenario_id": STR,
+                "candidate_id": STR,
+                "revision": {"type": "integer", "minimum": 1},
+                "items": {"type": "array", "minItems": 1, "items": item},
+                "explicit_unknowns": {"type": "array"},
+            }
+        )
+        candidate["type"] = ["object", "null"]
+        artifact["properties"]["candidate"] = candidate
+        changes = object_schema(
+            {
+                "schema_version": {"const": "r4-3-025-model-changes/v1"},
+                "candidate_ref": {
+                    "type": "null",
+                    "description": "Host binds the staged candidate.",
+                },
+                "changes": {
+                    "type": "array",
+                    "items": object_schema(
+                        {
+                            **copy.deepcopy(
+                                MODEL_CHANGES["properties"]["changes"]["items"]["properties"]
+                            ),
+                            "target_ref": {"type": ["object", "null"]},
+                        }
+                    ),
+                },
+            }
+        )
+        changes["type"] = ["object", "null"]
+        artifact["properties"]["changes"] = changes
     return object_schema(
         {
             "schema_version": {"const": "role-work-result/v1"},
@@ -286,6 +356,20 @@ def freeze_team(data, task_instructions):
             "instructions": instructions,
             "tools": list(production_tools(data, role)),
         }
+        if role == "modeling":
+            package["artifact_submission"] = "tool/v1"
+            package["phase_instructions"] = {
+                "propose": instructions,
+                **{
+                    phase: (directory / filename).read_text()
+                    + "\n\nTask-specific instructions:\n"
+                    + task_instructions
+                    for phase, filename in (
+                        ("source_intake", "modeler-intake.md"),
+                        ("self_check", "modeler-self-check.md"),
+                    )
+                },
+            }
         packages[role] = {**package, "sha256": digest(package)}
     units = data.get("work_units", [])
     for unit in units:
@@ -352,6 +436,8 @@ def production_tools(task, role):
     tools += WORK_TOOLS
     if task.get("semantic_workspace"):
         tools += WORKSPACE_TOOLS
+    if role == "modeling":
+        tools += ("submit_role_artifact",)
     return tools
 
 

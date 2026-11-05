@@ -86,6 +86,14 @@ class CodexAgent:
             (Path(__file__).parent, "/agent/runtime/ontoweave_modeling"),
             (self.materials, "/agent/materials"),
         ]
+        if "submit_role_artifact" in self.allowed_tools:
+            # Only the pure validator and its direct dependency cross this boundary;
+            # never mount the repository, production inputs or legacy Runner.
+            contracts = Path(__file__).resolve().parents[3]
+            mounts.extend(
+                (contracts / filename, "/agent/runtime/modeling_team/" + filename)
+                for filename in ("__init__.py", "scenario_map.py", "staged_decisions.py")
+            )
         if self.workspace_config is not None:
             args.extend(("--workspace-config", "/agent/workspace.json"))
             mounts.append((self.workspace_config, "/agent/workspace.json"))
