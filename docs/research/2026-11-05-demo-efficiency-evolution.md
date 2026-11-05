@@ -1,6 +1,9 @@
 # 完整 Demo 建模效率阶段
 
-日期：2026-11-05。状态：执行中，尚未形成效率或语义结论。
+日期：2026-11-05，更新至2026-11-06。状态：阶段执行中，半小时效率目标REVISE。
+正式独立结果：start2为REVISE（26/36），start3为PARTIAL（34/36），两者读取覆盖完整；
+目前无完整业务语义PASS；公开诊断后原作者已补两条连接映射（revision5），
+正在同冻结36项复验，继续沿原15元预算。
 
 本轮用户要求先提交并推送工作区，然后以 project-evolution 推进项目；短期目标为 Demo 半小时内完成，总预算15元。初始工作区7个文档已提交797cfe0并推送origin/main。
 
@@ -127,3 +130,31 @@ start3已实际handoff_ready，独立efficiency-low-start3-36已启动（同36�
 start3评价efficiency-low-start3-36返回PARTIAL，34/36，revision4，whole_model读取complete=true、三类未读计数均0。保留PARTIAL，不放宽36题或以34项替代完整通过。start2原Modeler公开汇总复核返回no_change，仅因历史消息ID夹带而先被消费校验拒绝，纠正后仍无新修改；旧run沿自然边界暂缓，防止无新因果证据的重复整合/验收。
 
 为取得不含隐藏题的有据诊断，start3复用现有ProcessEvaluation integration一次。绑定全部批准公开原文、当前精确work_plan及真实revision4，独立只读context不挂隐藏包/答案/个案反馈；检查六类视角、必要数据/接口映射、条件例外、共享及跨切片约束。仅为诊断，不替代正式独立验收、不新增完成门/评分框架；原初过程评价关闭的配置变动及额外成本单列，费用继续同15元。最新已知账本12.51324720 CNY，余额2.48675280 CNY。尚未启动预备的start4冷启动文件。
+
+## 19:49 UTC 公开诊断发现可验证缺口
+
+同一诊断首回合因漏读api/public-cq/stage-artifact被拒，不采纳其报告；沿原记录report纠错后completed、coverage.complete=true，保留原失败。正式36项隐藏材料/个案均未进入诊断。公开有据发现：calls.model_id→models.id及model_grants.model_id→models.id目前仅由共享business_key属性关联，未见显式治理关系/连接映射；诊断列为低优先级整体连接表达缺口，未称与原文矛盾。其余条件/例外及不可回答的来源未知保留；仍有抽样/未执行行为等边界，不是正式语义PASS。
+
+验证后的完整公开报告保存[运行报告](../../workspaces/v5-runs/demo-efficiency-20261105-inputs/public-integration-diagnostic-public-report.json)。已关闭可选过程评价，防止继续自动扩展；完整公开诊断交回原start3 Modeler，由其依据原文及实际模型判断是否需要最小修复或提供等价表达证据。沿既有WorkPlan重开原单元/祖先并resume-low-cq-first-9，不由Host代写关系或改业务未知。预计后续实际模型变更仍须新独立评价，不能重用revision4的34/36。
+
+## 19:55 UTC 原作者最小修模已应用
+
+start3原Modeler对公开诊断核对后确认映射缺口成立：已有targetsModel/grantedTo谓词和实体，无需新增业务定义，仅新增model_grants.model_id→models.id、calls.model_id→models.id两个join_mapping，复用实际existing_resource_ref，不重放原35项create。原作者保留原业务未知与其他已验证表达。Coordinator实际接纳并沿apply-00029原子应用2项：completed、errors=[]、pending_changes=[]，模型revision4→5。后继CQ刷新、原作者和整体治理自查进行中。revision4的34/36不得作为revision5的最终结论，新实际目标仍需同冻结36项独立评价。
+
+## 20:11 UTC revision5交接及独立复验
+
+原CQ首回合缺实际治理读取、原Modeler首回合只读最新CQ材料12000/14443字符，均保留真实拒绝并沿原角色/准确反馈纠正，未改平台完成门。最终start3在revision5完成原作者与整体治理自查，实际handoff_ready（20:10:58Z观察），无在途。已启动新独立efficiency-low-start3-rev5-36，同原冻结36题、原来源和原15元预算，不复用旧revision4结论。
+
+为防公开诊断已证实的同类表达缺口，在权威modeler.md增加通用自查：源支持的跨表/跨切片问题应核对必要join路径、端点和基数的实际治理关系/映射；共享business_key属性不能单独证明join mapping已存在；先读已有等价表达、只补最小缺口、不从FK编造业务含义。只影响后续新冻结包，现有run沿原绑定。此为prompt-contract方法补充，不添加平台硬门、领域特例或新业务事实，实际效率效果仍待新冷启动证据。
+
+## 首次独立结果计时口径（截至revision4）
+
+| Run | 首次实际Modeler原生回合（UTC+8） | 首次独立回合完成（UTC+8） | 至首次独立结果墙钟 | 独立回合本身 | 结果 |
+| --- | --- | --- | --- | --- | --- |
+| high-start1 | 11-05 22:03:59 | 未执行 | 超30分钟仍未应用 | 未执行 | 效率REVISE，停稳 |
+| low-start2 | 11-05 22:37:37 | 11-06 03:29:18 | 4小时51分41秒 | 7分58秒 | 26/36 REVISE |
+| low-start3 | 11-06 00:58:59 | 11-06 03:35:34 | 2小时36分35秒 | 5分31秒 | 34/36 PARTIAL |
+
+起点为原生回合起点，并核对该Modeler实际来源分析/命题，不以prepare或新线程重置旧任务计时；独立结果非业务接受，因此表中耗时不叫“完整闭环通过耗时”。技术修复、失败、等待都保留在墙钟。high/low effort、流程提示、工程代码及模型表达均有变化，不能从表中直接归因某项优化或宣称净降耗。revision5修模及其复验继续计入start3，未另起时钟。
+
+单次原生回合窗口仍含模型推理、网络、工具和提供商等待，不等于有效语义劳动。真实有效语义劳动/外部Host工程劳动未做精确工时埋点，保留unknown；可观察的原生窗口及窗口外时间另存[first-independent-timing.json](../../workspaces/v5-runs/demo-efficiency-20261105-inputs/first-independent-timing.json)。当前显著延迟来自机械错误纠正、交接/重复读回、Host/platform准备与技术修复；现阶段不再扩展平台/harness，只完成原模型的有据修复和独立验证。此证据不构成模型质量稳定性或全任务净降耗证明。

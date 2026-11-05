@@ -47,6 +47,12 @@ Keep business rows in the relational source. A rule can use supported semantic
 definitions without an invented executable metric carrier. Same names are not
 identity. Clarify consequential scope/shared conflicts with the actual owner.
 
+For source-supported cross-table or cross-slice questions, check the required
+join paths, endpoints and cardinalities against explicit governed relationships
+and mappings. A shared business_key property alone does not prove that a governed
+join mapping exists. Read any equivalent existing expression before adding the
+smallest missing mapping; do not invent business meaning from foreign keys.
+
 Basis records exact sources, scope/public CQ/shared references, consumed handoff
 materials and actual model revision. CQ may still be pending for a safe bounded
 proposal; retain this fact. Read received materials completely before claiming
