@@ -1,9 +1,10 @@
 # 完整 Demo 建模效率阶段
 
-日期：2026-11-05，更新至2026-11-06。状态：阶段执行中，半小时效率目标REVISE。
-正式独立结果：start2为REVISE（26/36），start3为PARTIAL（34/36），两者读取覆盖完整；
-目前无完整业务语义PASS；公开诊断后原作者已补两条连接映射（revision5），
-正在同冻结36项复验，继续沿原15元预算。
+日期：2026-11-05，更新至2026-11-06。状态：原15元预算耗尽，建模阶段BLOCKED，半小时效率目标未达成。
+正式独立结果：start2为REVISE（26/36），start3 revision4为PARTIAL（34/36）；
+公开诊断后原作者已补两条连接映射，start3 revision5独立PASS（36/36），读取覆盖完整。
+末轮冷启动start4约20分34秒时因预算停稳，尚未应用，未证明半小时完整闭环。
+通过模型与失败证据已保存，所有run停止、临时凭据撤销；最终v5全量回归516 passed。
 
 本轮用户要求先提交并推送工作区，然后以 project-evolution 推进项目；短期目标为 Demo 半小时内完成，总预算15元。初始工作区7个文档已提交797cfe0并推送origin/main。
 
@@ -158,3 +159,39 @@ start3原Modeler对公开诊断核对后确认映射缺口成立：已有targets
 起点为原生回合起点，并核对该Modeler实际来源分析/命题，不以prepare或新线程重置旧任务计时；独立结果非业务接受，因此表中耗时不叫“完整闭环通过耗时”。技术修复、失败、等待都保留在墙钟。high/low effort、流程提示、工程代码及模型表达均有变化，不能从表中直接归因某项优化或宣称净降耗。revision5修模及其复验继续计入start3，未另起时钟。
 
 单次原生回合窗口仍含模型推理、网络、工具和提供商等待，不等于有效语义劳动。真实有效语义劳动/外部Host工程劳动未做精确工时埋点，保留unknown；可观察的原生窗口及窗口外时间另存[first-independent-timing.json](../../workspaces/v5-runs/demo-efficiency-20261105-inputs/first-independent-timing.json)。当前显著延迟来自机械错误纠正、交接/重复读回、Host/platform准备与技术修复；现阶段不再扩展平台/harness，只完成原模型的有据修复和独立验证。此证据不构成模型质量稳定性或全任务净降耗证明。
+
+## 20:17 UTC revision5正式独立PASS及新冷启动
+
+start3新评价efficiency-low-start3-rev5-36正式返回PASS，36/36，实际revision5、同原freeze_id/36题，whole_model读取complete=true且三类未读计数均0。公开诊断只作为原作者有据修模反馈；最终评价由新的独立只读上下文读当前真实模型，未参与生产或修复，未改原私有标准。L1在该目标上通过；start3自00:58:59 UTC+8起的累计墙钟远超30分钟，不能重置为最后两条映射的用时，阶段效率仍REVISE、L2未执行。
+
+确认原账本open、coverage未知数0、余额1.10619984 CNY后，启动一次修复后的完整冷启动demo-efficiency-20261106-low-start4（scope=create）。同task_ref及原15元budget_ref，不创建/追加预算；完整原文/公开draft CQ、low、并发2、原36题不变，采用当前3f1a366代码/提示，不继承旧模型/候选/隐藏答案。此轮用于观察修复后完整链路是否能半小时内闭环；若预算先关闭则沿自然回合停稳，仍不声称效率达标。
+
+## 修复后冷启动计时与配置实际采用
+
+start4首次实际Modeler来源分析原生回合为2026-11-05T20:17:56Z（11-06 04:17:56 UTC+8），半小时观察点为20:47:56Z。首版范围已由Coordinator形成，实际分为两个Modeler职责，CQ独立、并发仍2；这是Agent按本次来源做出的编排差异，不据此作纯代码单因素比较。新binding与start3的来源摘要、模型绑定和冻结评价完全相同，通用join自查提示已实际冻结；scope全新，无旧模型/候选复制。计时原件[start4-timing.json](../../workspaces/v5-runs/demo-efficiency-20261105-inputs/start4-timing.json)。
+
+约6分钟时尚未应用：CQ返回了published handoff material而非正式artifact_ref，得到精确可恢复role_artifact_reuse_forbidden（expected=null，提示首次正文inline）；原Modeler也处于可恢复纠错。原CLI已自然返回，沿原run resume接收准确反馈，不追加预算/重置时钟。最新账本14.16552828 CNY，余额0.83447172 CNY。不能将此前提示/元数据修复单测或上一模型36/36升级为本次冷启动半小时通过。
+
+## 20:39 UTC 原预算耗尽与资源收口
+
+原账本在20:38:08.914691Z请求budget_exhausted，后已paused_confirmed，最终估算15.02399132 CNY（授权15元，原生在途尾差0.02399132元）；没有新增授权或追加调用。registered usage coverage=complete（157个已知单位，unknown=0、ambiguous=0），inflight=0、pending_settlement=0。按角色已知金额：Modeling 7.99728044、Coordinator 4.93414152、CQ 1.50423412、Acceptance/独立诊断0.58833524 CNY。外部Host与未接线辅助金额仍unknown，Host按用户约定不扣任务账本；不能将托管覆盖完整宣称为全任务费用无缺测。
+
+start4预算停稳观察点约20:38:30Z，距首次semantic native start约20分34秒，尚未应用（实际模型revision0、resource_bindings=0），未启动独立验收。最后阻塞为contribution_not_consumed；前序还包括CQ published handoff/正式artifact引用混用、proposed却changes=null、过期贡献与历史consumed_ids混入。保留第一层platform-contract与collaboration/routing事实，不据此判定未写入模型的业务质量，也不称为半小时E2E完成。阶段因原授权预算耗尽BLOCKED；先前完整L1=36/36 PASS有效，效率目标尚未达成。
+
+四个run均经现有stop控制停稳，预算关闭已投影到全部run（stopped/settled、active={}、budget_open=false）。全部临时读/协议/管理员密钥实际撤销，sessions_terminal/no_in_flight_attempts/aggregate_keys_non_active均true。两个已写入scope保留（含36/36模型及26/36失败模型），high-start1及start4空scope已删除；失败workspace、原事件、候选、报告与平台快照保留。已删除的空scope不能称可直接resume。
+
+通过模型快照：950437af74f947a6a2de504661d8ebfa；末轮预算关闭快照：9899f7755d3042b393d66456984bb78f；两次include-platform均无model_read_error。末轮配置/消费反馈与实际未写入证据见运行目录；本轮不再启动付费动作。
+
+当前托管原件的已知tokens：输入74,533,051（含缓存64,878,016）、输出1,017,849（含reasoning 222,178），合计75,550,900；缓存和reasoning不重复加总。start2 sandbox加载失败的modeler--role-00019原生用量缺项仍单列，不以0补齐；账本覆盖与原生token原件覆盖分开。[最终汇总](../../workspaces/v5-runs/demo-efficiency-20261105-inputs/final-summary.json)包含预算、结果、快照、角色费用及控制状态。最终共享核心全量回归正在运行，仅为工程收尾，不是新建模/独立语义评价。
+
+## 最终时间与外部Host单列
+
+start3从首次实际semantic native 16:58:59Z至revision5独立36/36回合完成20:15:48Z，共3小时16分49秒；最后独立回合4分22秒。来源与标准未变，公开修模及所有技术等待计入原run，不以最后两条映射或新evaluation-id重置计时；因此L1 PASS不能升级为半小时目标PASS。精确窗口见[winning-model-timing.json](../../workspaces/v5-runs/demo-efficiency-20261105-inputs/winning-model-timing.json)。
+
+外部Host主线程截至2026-11-05T21:07:27.078Z的已知原始用量：输入155,914,148（含缓存154,916,608）、输出396,081（含reasoning 275,710）；仅本主线程，不含其他Host/辅助总量。金额unknown，按用户约定不计15元账本，未把unknown当0。数值快照见[external-host-main-usage.json](../../workspaces/v5-runs/demo-efficiency-20261105-inputs/external-host-main-usage.json)。托管和Host的来源、任务内容及计时不同，不作模型能力或纯解码速率比较，也不据此声称全任务净降耗。
+
+## 最终工程验证与本轮总墙钟
+
+最终当前代码（3f1a366）全v5回归：**516 passed，1 warning，1108.38秒（18分28秒）**，见运行目录final-full-v5-regression.log。警告为既有第三方pydantic_settings的lifespan前向引用IncompleteFieldDefinitionWarning。它不是失败，也不替代独立语义验收。此前450 passed/2 failed的原件保留，最终当前代码完整回归已通过，不用历史分段结果拼称PASS。仅modeling_team与提示/文档变更，未更改backend/frontend，无应用服务重启；所有真实采用均通过新CLI/Host子进程取证。
+
+截至2026-11-05T21:07:27.795407+00:00，从记录的用户指令时间2026-11-05T14:01:10.415Z计，本轮总墙钟约7小时6分，包含建模、工程修复、等待、诊断及回归，不能当作有效语义劳动。建模资源已在预算边界停止，回归未改变任务金额。最终结论：L1在start3 revision5为36/36 PASS；完整冷启动半小时目标仍未达成；阶段因原预算耗尽BLOCKED，L2和全任务净降耗均未证明。后续付费建模/验证需要新的真实额度授权，不能自行恢复或追加。
