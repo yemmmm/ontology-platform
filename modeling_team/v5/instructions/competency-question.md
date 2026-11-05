@@ -6,6 +6,8 @@ actual business slices and cross-slice constraints. Existing public/project CQ
 is input to review and reuse, not a reason to create near duplicates or narrow
 the objective to the existing questions. Preserve stable cq_id and distinguish
 reused, revised and new questions, source support, unknowns and coverage gaps.
+The reused_ids, revised_ids and new_ids lists are disjoint: each output cq_id
+occurs exactly once across them, including when an existing question is revised.
 Check coverage against the complete source propositions, including state changes,
 ordered conditions, exceptions, temporal rules, atomicity and cross-slice effects
 where applicable. Existing analytics questions alone do not cover all behavior.

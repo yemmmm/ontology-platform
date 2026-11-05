@@ -4,7 +4,12 @@ import json
 
 import pytest
 import yaml
-from modeling_team.direct_modeling import model_change_item_schema, validate_model_change_request
+from jsonschema import validate
+from modeling_team.direct_modeling import (
+    compile_model_changes,
+    model_change_item_schema,
+    validate_model_change_request,
+)
 
 from ontoweave_modeling.contracts import FrameworkError, TaskBinding
 from ontoweave_modeling.role_artifacts import submit_role_artifact
@@ -33,6 +38,28 @@ def _candidate(items):
         "items": items,
         "explicit_unknowns": [],
     }
+
+
+def _relation_candidate():
+    return _candidate(
+        [
+            _item("source", "entity", {"label": "Source"}),
+            _item("target", "entity", {"label": "Target"}),
+            _item(
+                "predicate",
+                "property",
+                {"name": "links to", "predicate_kind": "relation"},
+            ),
+            {
+                **_item(
+                    "link",
+                    "relation",
+                    {"predicate": {"definition_ref": "predicate"}},
+                ),
+                "relation_endpoints": {"from_item_id": "source", "to_item_id": "target"},
+            },
+        ]
+    )
 
 
 @pytest.fixture
@@ -91,7 +118,12 @@ def test_modeler_guidance_reuses_supported_value_and_semantic_fields(
     supported = model_change_item_schema()["properties"]["fields"]
 
     assert item["properties"]["value"]["type"] == "object"
-    assert item["properties"]["value"]["properties"] == supported["properties"]
+    assert all(
+        item["properties"]["value"]["properties"][key] == value
+        for key, value in supported["properties"].items()
+    )
+    assert "predicate" in item["properties"]["value"]["properties"]
+    assert item["properties"]["value"]["additionalProperties"] is True
     assert "entity" not in item["properties"]["value"]["properties"]
     assert "iri_local" not in item["properties"]["value"]["properties"]
 
@@ -99,6 +131,65 @@ def test_modeler_guidance_reuses_supported_value_and_semantic_fields(
     assert "business_meaning" in semantic["properties"]
     assert "name" not in semantic["properties"]
     assert "notes" not in semantic["properties"]
+
+
+def test_modeler_guidance_accepts_neutral_relation_value_and_endpoints(
+    professional_model_binding,
+):
+    candidate = _relation_candidate()
+    batches, _ = compile_model_changes(
+        _request(
+            [
+                {
+                    "change_id": f"create-{item['item_id']}",
+                    "action": "create",
+                    "resource_kind": item["item_kind"],
+                    "item_id": item["item_id"],
+                    "target_ref": None,
+                    "fields": None,
+                }
+                for item in candidate["items"]
+            ],
+            candidate_ref="candidate.json",
+        ),
+        candidate=candidate,
+        ontology_by_item={item["item_id"]: "ontology-1" for item in candidate["items"]},
+        resolve_binding=lambda _ref: None,
+    )
+    relation = next(item for item in batches[0]["items"] if item["client_item_id"] == "link")
+    assert relation["command_kind"] == "create_relation"
+    assert relation["payload"] == {
+        "source_entity_iri": {
+            "item_ref": {"client_item_id": "source", "output": "resource_iri"}
+        },
+        "relation_type_iri": {
+            "item_ref": {"client_item_id": "predicate", "output": "resource_iri"}
+        },
+        "target_entity_iri": {
+            "item_ref": {"client_item_id": "target", "output": "resource_iri"}
+        },
+    }
+
+    schema = result_schema(professional_model_binding, "propose", guidance=True)
+    artifact_schema = schema["properties"]["artifact"]["anyOf"][0]
+    artifact = {
+        "candidate": candidate,
+        "changes": None,
+        "ontology_targets": {},
+        "review_units": [],
+        "shared_conflicts": [],
+        "public_cq_disposition": "Draft goals reviewed; support remains unverified.",
+    }
+
+    validate(instance=artifact, schema=artifact_schema)
+
+    value = artifact_schema["properties"]["candidate"]["properties"]["items"]["items"][
+        "properties"
+    ]["value"]
+    assert "predicate" in value["properties"]
+    assert "relation_endpoints" in artifact_schema["properties"]["candidate"]["properties"][
+        "items"
+    ]["items"]["properties"]
 
 
 def test_preflight_keeps_fields_only_creation_valid_without_candidate_ref():

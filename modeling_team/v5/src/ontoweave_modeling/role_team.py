@@ -258,9 +258,26 @@ def result_schema(binding, phase, *, guidance=False):
             # uses fields=null for a candidate-selected change; that null does
             # not apply to the candidate item's value.
             candidate_value["type"] = "object"
+            # The native fields schema is an operation-field union, not a
+            # closed schema for every neutral candidate value. In particular,
+            # relation candidates carry the neutral ``predicate`` wrapper and
+            # put their directed endpoints beside value. Keep this guidance
+            # permissive; the canonical candidate validator and Host compiler
+            # remain the authoring and execution contracts.
+            candidate_value["additionalProperties"] = True
+            candidate_value.setdefault("properties", {})["predicate"] = {
+                "type": "object",
+                "description": (
+                    "Relation predicate reference: use definition_ref for a candidate "
+                    "item or existing_resource_ref for an authorized receipt."
+                ),
+            }
             candidate_value["description"] = (
-                "Semantic creation fields for this candidate item; use the attached "
-                "representation contract."
+                "Candidate value guidance: entities use label and optional "
+                "class_iri_or_legacy_id; properties use name, class_id and "
+                "predicate_kind; relations use predicate. Relation direction is "
+                "expressed by the item's relation_endpoints. Use the attached "
+                "representation contract; the Host validates operation-specific fields."
             )
             semantic_definition = copy.deepcopy(
                 candidate_value["properties"]["semantic_definition"]
@@ -281,7 +298,13 @@ def result_schema(binding, phase, *, guidance=False):
                 },
                 "business_meaning": STR,
                 "value": candidate_value,
-                "relation_endpoints": {"type": ["object", "null"]},
+                "relation_endpoints": {
+                    "type": ["object", "null"],
+                    "description": (
+                        "For relation items, use {from_item_id, to_item_id} to preserve "
+                        "the explicit direction; otherwise use null."
+                    ),
+                },
                 "slice_ids": STRINGS,
                 "shared_scope": {"type": ["string", "null"]},
                 "unknowns": {"type": "array"},

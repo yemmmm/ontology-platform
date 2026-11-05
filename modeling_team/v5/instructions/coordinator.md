@@ -36,6 +36,12 @@ owner/generation/result/candidate/changes references and selected_change_ids=[].
 Copy null only where that retained result actually has null; do not replace an
 existing reference to an empty changes object. check_units names the original
 owners; CQ is separate.
+Distinguish an unfinished child from a ready contribution awaiting integration.
+If the current child work is proposal_ready at the assigned generation,
+pending_units may mean its latest no_change result has not yet been selected.
+The plan unit's active status describes its lifecycle, not unfinished work.
+Read that exact result and integrate it as needed; an empty Queued inputs list
+is not itself a reason to wait when child_results already supplies ready work.
 Select only reference-closed safe groups; defer unresolved dependencies with the
 actual owner/reason. A needed unmaterialized reference waits for the actual Host
 receipt, then its Modeler continues. Never guess native IDs or IRI suffixes.

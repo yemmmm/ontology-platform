@@ -58,3 +58,15 @@ low原子apply实际completed，无错误，revision1／55项绑定。CQ治理�
 Coordinator首次仅重开单元未传具体7项发现，Modeler错误返回no_change；后继具体工作请求促成6项更新。权威Coordinator提示补充发送精确来源/实际表达/自查引用并核对后继贡献，不把单纯reopen视为交接完成。当前仍为原任务生产闭环，累计托管估算6.26715600 CNY，剩余8.73284400 CNY。
 
 预算中内部辅助调用尚有unwired_auxiliary=unknown，外部Host token同为unknown且排除任务金额；不能将托管账本估算或缓存率当作完整全任务成本或净降耗证据。
+
+## 17:52 UTC 更新
+
+修复后冷启动demo-efficiency-20261106-low-start3于2026-11-05T16:58:59.624259Z实际开始，原完整材料、low、36题及同15元预算。实际scope-plan已采用Modeler正式提案依赖cq-public，CQ无反向依赖；但先遇CQ Q8/Q9同时列入复用/修订、changes.schema_version错误、Coordinator shared_refs漏填及正文编译错误，超过30分钟仍未完成应用，效率REVISE。没有用缩小范围或旧模型替代冷启动。
+
+CQ分类拒绝现补充重复/缺失/多余的确切ID反馈，保留原唯一身份与完整分类校验；真实失败包确定重复仅Q8/Q9，定向验证仍拒绝原错误，既有角色流程2 passed/58.86秒。
+
+本轮工具指导还发现工程回归：将底层operation字段并集用作封闭candidate.value白名单遗漏合法relation.value.predicate。已改成开放的生成指导、显式predicate与各类型关键字段/端点说明，保留实际候选/编译校验。新增合法property谓词+关系的同一正例通过真实compile_model_changes和guidance JSON Schema，5项通过；扩展角色测试113 passed/464.88秒。不能将该指导缺陷归为模型质量问题。
+
+旧run收口并非预算/锁故障：Coordinator收到proposal_ready的no_change结果，却将“尚未纳入current contribution_refs”误判为Modeler仍pending，并因无新队列消息等待。保留精确贡献与材料消费门，通过技术工作提示解锁；权威Coordinator提示补充生命周期active与工作ready、待整合与未完成的区别，不新增平台硬门。
+
+运行控制已交单一trial_runtime_owner，父Host仅做只读核对和工程修复；其独占两个在途run的CLI控制，继续沿原授权到真实handoff与原生独立评价。当前L1尚未执行，已知托管估算约8.35/15 CNY；Host与未接线辅助用量边界保持。

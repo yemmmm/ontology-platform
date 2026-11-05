@@ -455,7 +455,18 @@ def _validate_public_cq(flow, result, plan):
         or len(set(dispositions)) != len(dispositions)
         or set(dispositions) != set(ids)
     ):
-        raise FrameworkError("public_cq_identity_or_disposition_invalid")
+        raise FrameworkError(
+            "public_cq_identity_or_disposition_invalid",
+            duplicate_question_ids=sorted(i for i in set(ids) if ids.count(i) > 1),
+            duplicate_disposition_ids=sorted(
+                i for i in set(dispositions) if dispositions.count(i) > 1
+            ),
+            missing_disposition_ids=sorted(set(ids) - set(dispositions)),
+            unexpected_disposition_ids=sorted(set(dispositions) - set(ids)),
+            instruction="Each question cq_id must occur once across reused_ids, revised_ids "
+            "and new_ids together. Choose one disposition, not both reused and revised. "
+            "Preserve the questions and correct only the classification lists.",
+        )
     prior = (
         flow.repository.read_reference(plan["public_cq_ref"])
         if plan.get("public_cq_ref")
