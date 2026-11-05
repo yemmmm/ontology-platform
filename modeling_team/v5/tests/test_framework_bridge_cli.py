@@ -109,7 +109,7 @@ print("configured-tools-only")
     assert process.stdout.strip() == "configured-tools-only"
 
 
-@pytest.mark.parametrize("first_status", ["completed", "not_written"])
+@pytest.mark.parametrize("first_status", ["completed", "not_written", "partial"])
 def test_host_closes_prior_apply_session_before_followup_and_preserves_unknown_outcomes(
     task_file, tmp_path, first_status
 ):
@@ -149,7 +149,10 @@ class Executor:
 worker.executor=lambda scope,root,*args,**kwargs:Executor(root)
 first=worker.root/"operations/first"
 write_json(first/"compiled.json",{})
-write_json(first/"result.json",{"status":sys.argv[2],"batches":[]})
+write_json(first/"result.json",{"status":sys.argv[2],"batches":[
+    {"write_state":"applied","attempt_status":"applied"},
+    {"write_state":"not_written","attempt_status":"validation_failed"},
+] if sys.argv[2]=="partial" else []})
 rejected=worker.root/"operations/rejected"
 write_json(rejected/"compiled.json",{})
 write_json(rejected/"result.json",{"status":"not_written","errors":[{"code":"ontology_lease_conflict"}]})
@@ -161,8 +164,14 @@ assert result["status"]=="completed"
 assert worker.finalize()=={"model_revisions":{"ontology":2}}
 assert events==["close:first","apply:second","close:second"]
 write_json(worker.root/"operations/unknown/compiled.json",{})
-for status in ("unknown", "partial_success"):
-    write_json(worker.root/"operations/unknown/result.json",{"status":status})
+for result in (
+    {"status":"unknown"},
+    {"status":"partial_success"},
+    {"status":"partial","batches":[]},
+    {"status":"partial","batches":[{"write_state":"uncertain"}]},
+    {"status":"partial","batches":[{"write_state":"applied","attempt_status":"partially_applied"}]},
+):
+    write_json(worker.root/"operations/unknown/result.json",result)
     try: worker.finalize()
     except FrameworkError as error: assert error.code=="application_incomplete"
     else: raise AssertionError("an incomplete write must remain unresolved")

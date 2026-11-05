@@ -570,7 +570,14 @@ class PlatformWorker:
                 raise FrameworkError("application_outcome_unknown")
             result = json.loads((root / "result.json").read_text())
             # A rejected submission can still own a Build Session and its lease.
-            if result.get("status") not in {"completed", "not_written"}:
+            settled_partial = result.get("status") == "partial" and bool(
+                result.get("batches")
+            ) and all(
+                batch.get("write_state") in {"applied", "not_written"}
+                and batch.get("attempt_status") != "partially_applied"
+                for batch in result["batches"]
+            )
+            if result.get("status") not in {"completed", "not_written"} and not settled_partial:
                 raise FrameworkError("application_incomplete")
             completion = root / "session-completion.json"
             if completion.exists() and json.loads(completion.read_text())["closed"]:
