@@ -18,6 +18,8 @@ delivery evidence. Use the following locations for new documentation.
 | [`delivery/records/`](delivery/records/) | Append-only requirement delivery records. |
 | [`delivery/modeling-retrospectives/`](delivery/modeling-retrospectives/) | Modeling-workflow retrospectives and the [confirmed optimization tracker](delivery/modeling-retrospectives/optimization-tracker.md). |
 
+Focused research: [Microsoft GraphRAG graph construction and maintenance (2026-10-26)](research/2026-10-26-microsoft-graphrag-graph-construction-maintenance.md).
+
 ## Current requirement entry points
 
 - [v5.0 modeling Team rewrite and semantic workspace methodology](requirements/requirements-v5.0.md):
