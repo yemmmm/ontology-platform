@@ -1060,7 +1060,7 @@ def application_receipts(flow, state):
 
 def application_failure(flow, state):
     receipt = flow.repository.read_reference(state["operation_ref"])
-    if receipt.get("status") != "not_written":
+    if receipt.get("status") not in {"not_written", "partial"}:
         return
     candidate = flow.repository.read_reference(state["candidate_ref"])
     material = flow.team.publish(
@@ -1081,6 +1081,13 @@ def application_failure(flow, state):
             [error["change_id"]] if error.get("change_id") else error.get("change_ids", [])
         )
     }
+    if receipt["status"] == "partial":
+        failed.update(
+            identity
+            for batch in receipt.get("batches", [])
+            if batch.get("write_state") == "not_written"
+            for identity in batch.get("change_ids", [])
+        )
     owners = {
         origin["owner_work_id"]
         for identity, origin in candidate["origins"].items()
@@ -1090,7 +1097,13 @@ def application_failure(flow, state):
     for owner in owners:
         flow.team.send(
             owner,
-            "The Host confirmed not_written. Correct your own contribution; preserve semantic meaning and actual receipts.",
+            (
+                "The Host confirmed partial application. Read the complete receipt and correct "
+                "your unwritten contribution; do not replay already applied changes. "
+                "Preserve semantic meaning and actual receipts."
+                if receipt["status"] == "partial"
+                else "The Host confirmed not_written. Correct your own contribution; preserve semantic meaning and actual receipts."
+            ),
             "not-written-" + digest([state["operation_ref"], owner])[:24],
             material_refs=[material],
         )
@@ -1179,6 +1192,10 @@ def pending_units(flow, plan):
             pending.append(unit["unit_id"])
             continue
         result = flow.repository.read_reference(ref)
+        if result.get("status") == "no_change":
+            if ref not in current.get("contribution_refs", []):
+                pending.append(unit["unit_id"])
+            continue
         request = (
             flow.repository.read_reference(result["changes_ref"])
             if result.get("changes_ref")
