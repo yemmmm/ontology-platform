@@ -88,3 +88,30 @@ Modeler changes归一化只深拷贝技术envelope：缺schema_version填冻结v
 Coordinator把Modeler team_material误放coordination_refs还触发KeyError；已收窄为coordination_reference_kind_invalid，准确给出实际/预期kind与合法contributions路径。新增负例1 passed/0.81秒，合法嵌套Coordinator及公开CQ路径2 passed/47.70秒，Ruff和diff检查通过；提交779fd22。GitNexus detect_changes本轮返回0 symbols（索引未覆盖这些新模块），影响范围使用源码调用点和对应测试核对。
 
 上述开发证据未建立独立L1、半小时闭环或净降耗结论。当前完整阶段仍REVISE，原有36题及来源范围不变。
+
+## 18:54 UTC 两项恢复实现及实际采用
+
+修复已提交e5384bd：pending_units按当前no_change语义核对精确贡献已整合，不把其复用工件的历史changes当作新写入；真实proposed待应用、未整合no_change、非ready和旧generation仍pending。application_failure支持确定性partial：完整保留receipt/origins，以not_written批次change_ids补全原子失败批的责任人，准确提示只修未写入部分，uncertain/completed不交接、不新增写入。
+
+先复现3 failed/11 passed；修后新增14项通过（11.80秒），既有role_flow_corrections/role_team_flow 15项通过（108.24秒）；Ruff及diff检查通过。实际复用helper向start3交接原apply-00018回执，未调用apply，Modeler重开generation7；两个run由新CLI接续，start3 modeler--role-00023已开始。旧run补充host-technical恢复说明，不引入业务事实。一次误发重复resume在初始化锁等待时已终止，仅原控制进程继续，无新增原生执行/模型写入。
+
+对应PG测试及只读实据见运行输入目录role-application-progress-{red,green,regression}.log、role-application-receipt-read.log及partial-receipt-redelivery.json；这些是窄合同修复/采用证据，不是独立36项语义PASS。未修改backend/frontend，无应用服务重启；真实建模CLI已使用新进程。
+
+## 19:17 UTC 后续两处实际恢复边界
+
+旧run自查49-001真实返回全模型51项正文和四份来源，漏公开CQ；002只补CQ后又缺前四份来源，暴露每次单execution覆盖校验的重复读取。初版只合并同线程proof的单测通过，但实际001/002/003/004均fresh thread，不足以证明真实续接；已保留该实际差异，未把初版单测升级为采用PASS。最终dfd6769复用既有_correction_invocation：调用前筛选同作者/phase/generation/round/精确target及来源manifest/candidate基线的完成执行，校本地thread binding后沿最新原生上下文接续；调用后仍只合并相同真实thread的实际读取。当前turn仍必须governed read，来源全文/模型正文/关系完整门不变，旧无基线执行不追溯补证。两项局部checkpoint字段仅服务同基线纠错，不改公共execution/acceptance/evaluate合同。
+
+- 初版新增13项/22.10秒及既有自查/角色生命周期7项/38.06秒通过；实际native接线修前2 failed/21 passed、修后23 passed/39.35秒。后者包含原13项和新增10项，不能重复计成36个唯一用例；实际CodexInvocation+mock transport覆盖resume_from、最新完成turn、usage baseline与缺/错binding及无效proof。原日志self-check-read-reuse-*保留。
+- 旧CLI在相同缺口重复出现后沿自然边界暂缓、确认active为空再用新进程恢复；最后两项修复后已启动resume-low-18，仍待真实线程/交接取证。
+
+新run原apply-00025在执行前被_close_applied_sessions拒绝旧apply18的确定性partial，目录仅intent/candidate/compiled，无execution/新提交。T0：收尾守卫保护未知写入及lease必要，但各批已明确applied/not_written且无批内partially_applied时，原executor可按原记录安全关闭session。5282ae4只放行该确定性情况，unknown/uncertain/批内部分写入/空partial继续拒绝；全bridge/CLI文件19 passed/9.92秒，原失败1项先复现。
+
+随后实际resume仍被MultiUnitFlow的platform active门跳过：活动标记正是当前原apply ID。dd3f4c2沿已有原生执行对账模式，仅允许当前activity=apply、同unit、同round原apply ID进入原flow续接；不同ID/其它活动仍等待，不清控制状态、不新造操作。复现1 failed/2 passed，修后新增3项及既有multi_unit共8 passed/37.18秒。两个修复均Ruff/diff检查通过，调用点仅apply/finalize与CLI多单元调度；GitNexus未覆盖当前符号，未声称图谱覆盖。新run已沿原apply25通过resume-low-cq-first-8接续，实际结果待补。
+
+本轮未改backend/frontend，无应用服务重启；必要新CLI/Host子进程承担实际采用。最新账本快照11.50911960 CNY，余额3.49088040 CNY；完整36题和半小时标准不变。
+
+## 19:21 UTC 实际采用与首个独立评价启动
+
+- start3原apply-00025实际completed，7项全部applied、errors=[]、pending_changes=[]；旧28项未重放。原CQ已刷新，Modeler消费实际回执中，仍属生产闭环。
+- start2自查49-006实际沿49-005同thread `01a1ad1f-34ce-7aa2-bd32-eb65e24604fa`续接，native-usage-baseline明确source_execution=49-005及原累计用量；不是新thread冒称续接。随后实际handoff_ready、无在途（19:20:44Z观察）。这是原纠错读取循环解除及生产交接证据，不是独立语义结论。
+- 已启动原生独立评价efficiency-low-start2-36，仍绑定同36题冻结包、实际模型revision4及原15 CNY预算；生产侧不读隐藏题/答案。最新已知计价11.67995592 CNY，剩余3.32004408 CNY。
