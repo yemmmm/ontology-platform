@@ -64,6 +64,8 @@ class FlowState(TypedDict, total=False):
     read_execution_refs: list[dict]
     retained_artifact_ref: dict | None
     rejected_result_material_ref: dict | None
+    self_check_read_basis: dict
+    self_check_read_execution_refs: list[dict]
 
 
 class WorkUnitFlow:
@@ -794,6 +796,44 @@ class WorkUnitFlow:
             target,
             0,
         )
+        read_basis = (
+            {
+                "phase": "self_check",
+                "actor_id": self.binding.actor,
+                "generation": self.binding.data.get("work_generation", 0),
+                "round": state["round"],
+                "candidate_ref": state["candidate_ref"],
+                "source_manifest_digest": digest(self.binding.data["source_manifest"]),
+                "target_ref": target_ref,
+            }
+            if not self.binding.is_child
+            and self.binding.data["evaluation"].get("model_read_scope") == "whole_model"
+            else None
+        )
+        read_refs = (
+            state.get("self_check_read_execution_refs", [])
+            if read_basis
+            and state.get("self_check_read_basis") == read_basis
+            and state.get("issue", {}).get("code") == "self_check_needs_correction"
+            else []
+        )
+        read_proofs = []
+        for old_ref in read_refs:
+            old = self.repository.read_reference(old_ref)
+            old_id = old["intent"]["execution_id"]
+            if (
+                old_ref["object_id"] != self.binding.identity + ":execution:" + old_id
+                or not old_id.startswith(f"self-check-{state['round']:05d}-")
+                or old["intent"]["purpose"] != "self_check"
+                or old["intent"].get("actor_id", self.binding.actor) != self.binding.actor
+                or old["intent"].get("generation", 0) != read_basis["generation"]
+                or old["result"]["status"] != "completed"
+                or not old["result"].get("thread_id")
+                or json.loads(old["prompt"]).get("self_check_read_basis") != read_basis
+            ):
+                continue
+            read_proofs.append((old_ref, old_id, old["result"]["thread_id"]))
+        read_refs = [old_ref for old_ref, _, _ in read_proofs]
         prompt = json.dumps(
             {
                 "objective": self.binding.data["objective"],
@@ -821,6 +861,11 @@ class WorkUnitFlow:
                     )
                     and row["content"].get("check_material_ref")
                 ],
+                **(
+                    {"self_check_read_basis": read_basis, "reusable_read_execution_refs": read_refs}
+                    if read_basis
+                    else {}
+                ),
                 "feedback": state.get("issue"),
                 "instruction": "Read the actual model with query_semantic_context. Check business meaning "
                 "against approved sources; a candidate or successful application is not proof. "
@@ -862,6 +907,9 @@ class WorkUnitFlow:
                 "next_offset, resource-list without resource_iri, every returned definition body "
                 "and nested mapping, and the complete resource-relations graph. Reuse known IRIs "
                 "for exact reads when search is incomplete or degraded. "
+                "On a technical correction in the same native context and unchanged self-check "
+                "read basis, reuse the listed executions' actual reads and finish the feedback gaps. "
+                "This turn must still query the actual governed model at the supplied versions. "
                 "When semantic workspace is enabled, revisit your relevant coverage/open records "
                 "after the actual read: update the same record IDs with actual expression destinations "
                 "and remaining gaps. Repair invalid references using returned versioned refs, "
@@ -882,8 +930,13 @@ class WorkUnitFlow:
             }
         )
         execution_id = f"self-check-{state['round']:05d}-{state.get('check_round', 0):03d}"
+        invoke = self.invoke
+        if read_refs:
+            from .role_work import _correction_invocation
+
+            invoke = _correction_invocation(self, read_refs)
         ref = self.executions.run(
-            execution_id, "self_check", prompt, self.invoke, resume_original=True
+            execution_id, "self_check", prompt, invoke, resume_original=True
         )
         native = self.repository.read_reference(ref)["result"]
         if native["status"] != "completed":
@@ -895,13 +948,30 @@ class WorkUnitFlow:
                     "issue": {"code": "self_check_turn_failed", "execution_ref": ref},
                 }
             )
+        current_events = (
+            self.binding.root
+            / "executions"
+            / self.binding.execution_id(execution_id)
+            / "agent/events.jsonl"
+        )
+        read_events, reusable = [], []
+        for old_ref, old_id, thread_id in read_proofs:
+            if thread_id != native.get("thread_id"):
+                continue
+            read_events.append(self.binding.root / "executions" / old_id / "agent/events.jsonl")
+            reusable.append(old_ref)
+        read_correction = (
+            {
+                "self_check_read_basis": read_basis,
+                "self_check_read_execution_refs": [*reusable, ref] if native.get("thread_id") else [],
+            }
+            if read_basis
+            else {}
+        )
         try:
             result = decode_json_result(native["final_response"], SELF_CHECK_SCHEMA)
             require_governed_read(
-                self.binding.root
-                / "executions"
-                / self.binding.execution_id(execution_id)
-                / "agent/events.jsonl",
+                current_events,
                 target["model_revisions"],
             )
             if (
@@ -911,10 +981,7 @@ class WorkUnitFlow:
                 and self.binding.data["evaluation"].get("model_read_scope") == "whole_model"
             ):
                 coverage = read_coverage(
-                    self.binding.root
-                    / "executions"
-                    / self.binding.execution_id(execution_id)
-                    / "agent/events.jsonl",
+                    [*read_events, current_events],
                     {
                         key: value["sha256"]
                         for key, value in self.binding.data["source_manifest"].items()
@@ -933,6 +1000,7 @@ class WorkUnitFlow:
             return self._save(
                 {
                     **state,
+                    **read_correction,
                     "check_round": state.get("check_round", 0) + 1,
                     "issue": {
                         "code": "self_check_needs_correction",
