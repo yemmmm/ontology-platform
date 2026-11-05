@@ -115,3 +115,15 @@ Coordinator把Modeler team_material误放coordination_refs还触发KeyError；�
 - start3原apply-00025实际completed，7项全部applied、errors=[]、pending_changes=[]；旧28项未重放。原CQ已刷新，Modeler消费实际回执中，仍属生产闭环。
 - start2自查49-006实际沿49-005同thread `01a1ad1f-34ce-7aa2-bd32-eb65e24604fa`续接，native-usage-baseline明确source_execution=49-005及原累计用量；不是新thread冒称续接。随后实际handoff_ready、无在途（19:20:44Z观察）。这是原纠错读取循环解除及生产交接证据，不是独立语义结论。
 - 已启动原生独立评价efficiency-low-start2-36，仍绑定同36题冻结包、实际模型revision4及原15 CNY预算；生产侧不读隐藏题/答案。最新已知计价11.67995592 CNY，剩余3.32004408 CNY。
+
+## 19:30 UTC 首次独立结果：REVISE
+
+start2评价efficiency-low-start2-36返回REVISE，26/36，目标revision4；whole_model读取complete=true，unread_materials/unread_resources/incomplete_model_scopes均0。生产ready不等于独立通过，不能再把这份结果称作只有机械阻塞。保留原冻结题集、private报告及原评价，不读取隐藏内容指导修模。
+
+start3已实际handoff_ready，独立efficiency-low-start3-36已启动（同36题及原15元）。start2仅将public-feedback.json的公开汇总交回原Modeler，沿WorkPlan.reopen重开原单元和祖先，要求依全部批准原文/六类视角/接口与数据映射复核；没有传隐藏题/答案或暗改分母，没有重放原创建。由原作者判断是否存在可证据支持的最小修模；未找到则报告，不为得分盲改。该实际语义复核/修模轮次另记，仍沿原金额授权。
+
+## 19:39 UTC 第二份独立结果与一次公开诊断
+
+start3评价efficiency-low-start3-36返回PARTIAL，34/36，revision4，whole_model读取complete=true、三类未读计数均0。保留PARTIAL，不放宽36题或以34项替代完整通过。start2原Modeler公开汇总复核返回no_change，仅因历史消息ID夹带而先被消费校验拒绝，纠正后仍无新修改；旧run沿自然边界暂缓，防止无新因果证据的重复整合/验收。
+
+为取得不含隐藏题的有据诊断，start3复用现有ProcessEvaluation integration一次。绑定全部批准公开原文、当前精确work_plan及真实revision4，独立只读context不挂隐藏包/答案/个案反馈；检查六类视角、必要数据/接口映射、条件例外、共享及跨切片约束。仅为诊断，不替代正式独立验收、不新增完成门/评分框架；原初过程评价关闭的配置变动及额外成本单列，费用继续同15元。最新已知账本12.51324720 CNY，余额2.48675280 CNY。尚未启动预备的start4冷启动文件。
