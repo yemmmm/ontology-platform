@@ -80,3 +80,11 @@ Modeler changes归一化只深拷贝技术envelope：缺schema_version填冻结v
 新增18项真实PG RoleActors/WorkUnitFlow正反测试；最终定向组合79 passed/243.29秒，1条第三方warning，Ruff/diff检查通过。另两项stale-feedback测试及15项相关角色测试证明仅刷新已消费的model_input_pending提示、不改历史state。代码源调用点核对；GitNexus没有当前符号，不宣称图谱覆盖。
 
 此前单执行者交接没有持续按任务执行并返回“未收到任务”，已保留协作失败，父Host核对无在途后收回唯一控制；没有声称仍在后台推进。两个原run均已用新CLI进程续接以核对真实采用，应用/读回/独立L1仍分别取证，未将测试或审阅升级为业务PASS。
+
+## 18:48 UTC 新回执与协作阻塞
+
+两个续接进程均自然返回，预算在途/待结算均为0，累计计价10.23153800 CNY，余额4.76846200 CNY。旧run原Modeler最新no_change已被Coordinator准确纳入composition，但pending_units仍读取复用工件的旧changes_ref（上次已应用的两个update），将新no_change的result_ref与历史application origins比较，误报unfinished。新run apply-00018为确定性部分应用：前三批28项applied、第四批7项not_written；application_failure只认整体not_written而未交接实际回执，原Modeler两回合waiting_peer索取同一回执。两项均为platform-contract/collaboration反馈缺口，不能归因于模型质量，计划只修当前状态判断/原作者回执交接，不重放已应用批次。
+
+Coordinator把Modeler team_material误放coordination_refs还触发KeyError；已收窄为coordination_reference_kind_invalid，准确给出实际/预期kind与合法contributions路径。新增负例1 passed/0.81秒，合法嵌套Coordinator及公开CQ路径2 passed/47.70秒，Ruff和diff检查通过；提交779fd22。GitNexus detect_changes本轮返回0 symbols（索引未覆盖这些新模块），影响范围使用源码调用点和对应测试核对。
+
+上述开发证据未建立独立L1、半小时闭环或净降耗结论。当前完整阶段仍REVISE，原有36题及来源范围不变。
