@@ -55,7 +55,7 @@ def submit_role_artifact(binding, repository, context, artifact=None, *, artifac
             "role_artifact_invalid", path=list(error.absolute_path), message=error.message[:600]
         ) from None
     if binding.role == "modeling" and context["phase"] != "source_intake":
-        from .role_candidates import normalize_model_candidate
+        from .role_candidates import normalize_model_candidate, normalize_model_changes
 
         try:
             artifact["candidate"] = normalize_model_candidate(artifact["candidate"])
@@ -65,7 +65,7 @@ def submit_role_artifact(binding, repository, context, artifact=None, *, artifac
                 layer="runtime/infrastructure",
                 dependency=error.name,
             ) from None
-        change_request = artifact.get("changes")
+        change_request = artifact["changes"] = normalize_model_changes(artifact.get("changes"))
         if isinstance(change_request, dict) and change_request.get("changes"):
             from modeling_team.direct_modeling import validate_model_change_request
 

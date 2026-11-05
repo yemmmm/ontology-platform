@@ -189,6 +189,19 @@ def _continued_reads(flow, state, basis):
     return result
 
 
+def _prompt_feedback(flow, state):
+    """Refresh only stale model-input ownership before building the role prompt."""
+
+    feedback = state.get("issue")
+    if not isinstance(feedback, dict) or feedback.get("code") != "model_input_pending":
+        return feedback
+    owners = feedback.get("owner_work_ids")
+    if not isinstance(owners, list):
+        return feedback
+    current = [owner for owner in owners if flow.team.pending(owner)]
+    return {**feedback, "owner_work_ids": current} if current else None
+
+
 def _correction_invocation(flow, execution_refs):
     from .execution import CodexInvocation
 
@@ -612,7 +625,7 @@ def model(flow, state):
             "instruction": "With one authorized Ontology, ontology_targets={} reuses its Host default. "
             "check_units selects original Modeling owners, including no_change contributions; CQ is separate.",
         },
-        "feedback": state.get("issue"),
+        "feedback": _prompt_feedback(flow, state),
         "result_schema": result_schema(binding, phase, guidance=True),
         "contract": "Return one professional result. Authorship is program-bound. Echo the exact actual basis used. "
         "consumed_refs names exact handoff materials completely read in this turn or in the explicitly "
@@ -771,18 +784,18 @@ def model(flow, state):
             old_reads = successful_reads(old_events)
             for ref in result["source_refs"]:
                 entry = binding.data["source_manifest"].get(ref["material_id"])
-                if not entry or entry["sha256"] != ref["sha256"]:
+                if not entry:
                     raise FrameworkError(
                         "source_reference_mismatch", material_id=ref["material_id"]
                     )
                 if not (
                     _source_was_read(
-                        current_reads, ref["material_id"], ref["sha256"], complete=False
+                        current_reads, ref["material_id"], entry["sha256"], complete=False
                     )
                     or _source_was_read(
                         [*old_reads, *current_reads],
                         ref["material_id"],
-                        ref["sha256"],
+                        entry["sha256"],
                         complete=True,
                     )
                 ):
@@ -793,12 +806,15 @@ def model(flow, state):
                         "from the explicitly listed completed executions. "
                         "Follow next_offset; an old reference alone is not reading proof.",
                     )
+                # The observed approved read establishes the version, not an LLM echo.
+                ref["sha256"] = entry["sha256"]
             if binding.role == "modeling" and phase != "source_intake":
-                from .role_candidates import normalize_model_candidate
+                from .role_candidates import normalize_model_candidate, normalize_model_changes
 
                 result["artifact"]["candidate"] = normalize_model_candidate(
                     result["artifact"]["candidate"]
                 )
+                result["artifact"]["changes"] = normalize_model_changes(result["artifact"]["changes"])
                 result.pop("artifact_ref", None)
                 decode_work_result(
                     json.dumps({**result, **result["artifact"]}), binding.data["source_manifest"]

@@ -70,3 +70,13 @@ CQ分类拒绝现补充重复/缺失/多余的确切ID反馈，保留原唯一�
 旧run收口并非预算/锁故障：Coordinator收到proposal_ready的no_change结果，却将“尚未纳入current contribution_refs”误判为Modeler仍pending，并因无新队列消息等待。保留精确贡献与材料消费门，通过技术工作提示解锁；权威Coordinator提示补充生命周期active与工作ready、待整合与未完成的区别，不新增平台硬门。
 
 运行控制已交单一trial_runtime_owner，父Host仅做只读核对和工程修复；其独占两个在途run的CLI控制，继续沿原授权到真实handoff与原生独立评价。当前L1尚未执行，已知托管估算约8.35/15 CNY；Host与未接线辅助用量边界保持。
+
+## 18:23 UTC 元数据复核与恢复
+
+独立只读方案审阅PASS、无Critical/High及关键未决假设后，执行两项T0窄修复：源版本不变量继续由read_material实际SHA校验和既有_source_was_read证明保护；只有批准material ID的当前版本读取成立，才将LLM回填SHA校准为真实manifest SHA，未读/错版/未知ID仍拒绝。RawNative与原读取事件不改。旧执行的作者、完成状态及同基线复用筛选不扩大。
+
+Modeler changes归一化只深拷贝技术envelope：缺schema_version填冻结v1、缺candidate_ref填Host后填的null，去掉无执行效力的顶层request_id；显式错误版本、未知字段及业务value/item/target仍交原严格decoder/compiler拒绝。公共decoder与direct compiler未改，legacy路径未改。
+
+新增18项真实PG RoleActors/WorkUnitFlow正反测试；最终定向组合79 passed/243.29秒，1条第三方warning，Ruff/diff检查通过。另两项stale-feedback测试及15项相关角色测试证明仅刷新已消费的model_input_pending提示、不改历史state。代码源调用点核对；GitNexus没有当前符号，不宣称图谱覆盖。
+
+此前单执行者交接没有持续按任务执行并返回“未收到任务”，已保留协作失败，父Host核对无在途后收回唯一控制；没有声称仍在后台推进。两个原run均已用新CLI进程续接以核对真实采用，应用/读回/独立L1仍分别取证，未将测试或审阅升级为业务PASS。

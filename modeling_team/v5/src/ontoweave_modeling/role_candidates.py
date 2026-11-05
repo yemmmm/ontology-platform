@@ -1,4 +1,4 @@
-"""Neutral model-candidate normalization for the v5 role boundary."""
+"""Neutral candidate and technical change metadata alignment at the v5 role boundary."""
 
 from __future__ import annotations
 
@@ -7,6 +7,16 @@ from copy import deepcopy
 from typing import Any
 
 from .contracts import FrameworkError
+
+
+def normalize_model_changes(changes: Any) -> Any:
+    """Copy role-delivered changes, aligning only Host-owned technical metadata."""
+    normalized = deepcopy(changes)
+    if isinstance(normalized, dict):
+        normalized.setdefault("schema_version", "r4-3-025-model-changes/v1")
+        normalized.setdefault("candidate_ref", None)
+        normalized.pop("request_id", None)
+    return normalized
 
 
 def _item_id_for_path(candidate: Any, path: str) -> Any:
