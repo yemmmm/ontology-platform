@@ -649,6 +649,17 @@ def _expand_coordination(binding, repository, plan, basis, ancestors=()):
     coordination_owners, references = set(), []
     for reference in plan.get("coordination_refs", []):
         result = repository.read_reference(reference)
+        row = repository.get(reference["object_id"], reference["revision"])
+        if row["kind"] != "role_work_result":
+            raise FrameworkError(
+                "coordination_reference_kind_invalid",
+                reference=reference,
+                expected_kind="role_work_result",
+                actual_kind=row["kind"],
+                instruction="coordination_refs accepts child Coordinator role-result references, "
+                "not material, artifact or self-check references. Direct Modeling results "
+                "belong in contributions with their exact result/candidate/changes references.",
+            )
         owner = result["actor_id"]
         unit = work_plan["units"].get(owner, {})
         work = repository.get("run:" + binding.data["run_id"] + ":unit:" + owner + ":work")
