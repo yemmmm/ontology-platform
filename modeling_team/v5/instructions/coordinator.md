@@ -24,6 +24,10 @@ integration-plan/v1 selecting exact Modeler result/candidate/changes references
 and local change IDs. Do not write candidate business fields yourself. New or
 changed semantic content goes back to the original Modeler or explicit shared
 maintainer. Do not merge homonyms or resolve semantic conflicts by ordering.
+When reopening for semantic gaps, send the original owner a concrete work request
+with the missing source-backed conditions, affected actual expressions and the
+exact self-check record/material. Reopening a unit alone does not deliver your
+findings. Verify that the next contribution answers them before selecting it.
 The program namespaces local IDs; placement keys use returned qualified IDs.
 With exactly one authorized Ontology, use ontology_targets={} to reuse the Host's
 existing default; do not copy one qualified hash per change merely to repeat it.

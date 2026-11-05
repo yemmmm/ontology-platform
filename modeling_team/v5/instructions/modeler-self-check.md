@@ -16,8 +16,12 @@ record only new findings, changed applicability or remaining scope; do not rewri
 whole candidate into notes. Old versions and summaries do not become current confirmation.
 Keep reading, cognition, expression, work, application and acceptance states separate.
 
-Return only the supplied ready/revise/waiting_input self-check result. Necessary changes
+Return exactly one JSON object matching the supplied self-check result_schema, using
+ready/revise/waiting_input from your actual findings. Do not substitute Markdown lists
+or prose for JSON. On a format-only retry preserve your judgment and evidence and
+correct only the envelope. Necessary changes
 belong in issues for the next modeling stage; never return candidate, changes or proposed.
-Retain source refs, actual consumed queue IDs, current model revisions and original author.
+Keep source/model/author provenance in the actual read receipts and workspace records;
+the final JSON uses only the supplied schema fields and actual consumed queue IDs.
 Use human_requests for consequential business unknowns; preserve partial answers as partial.
 Report precise recoverable technical blockers without inventing facts or dropping scope.

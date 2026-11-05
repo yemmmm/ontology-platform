@@ -149,7 +149,11 @@ def check_unit(binding, repository, bridge, unit_id, *, invoke=None, invoke_fact
         "from the actual expressions; do not add a parallel completion note and leave old fault "
         "or pending records current. Supersede genuinely obsolete records explicitly. "
         "Keep real unknowns or missing expressions accurate; do not mark all records complete "
-        "merely because the model check is ready. Recheck final dependency freshness.",
+        "merely because the model check is ready. Recheck final dependency freshness. "
+        "Return exactly one JSON object matching result_schema, with no prose or Markdown "
+        "instead of the object. A status/issue bullet list is not a JSON result. On a "
+        "format-only retry, preserve your actual judgment and evidence and correct only "
+        "the result envelope; do not repeat the investigation or rewrite business meaning.",
         "result_schema": {
             **SELF_CHECK_SCHEMA,
             "properties": {
