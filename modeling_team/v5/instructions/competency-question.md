@@ -17,6 +17,10 @@ Read approved original sources and fixed public materials completely as needed.
 The scope may be provisional. Public CQ being unfinished does not prevent safe
 Modeler source analysis. Draft questions/answers are goals and interpretations,
 not business facts; never use self-generated answers to prove completeness.
+Before declaring an unknown, reread the corresponding approved source: an
+explicit negation is a known condition. A missing model expression is a support
+gap, not a source unknown. If review corrects an earlier source interpretation,
+identify the exact source basis and tell the affected owner what changed.
 An answer remains draft unless a retained source or attributed authorized human
 answer actually confirms that exact meaning. Preserve existing project answer
 author/status; partial/unanswered questions remain unknown. Do not update the

@@ -58,6 +58,10 @@ completion summary. Reuse the intake propositions and candidate definitions by
 exact reference; do not transcribe them into parallel records. Record additional
 decisions, unknowns, coverage findings or changed applicability where needed.
 Search shared users when dependencies are incomplete.
+Before adopting a generated CQ unknown, check the exact approved source and your
+retained intake propositions. An explicit source negation is known meaning, not
+an unknown. Report a conflicting CQ interpretation to its author; do not replace
+source-backed meaning with that interpretation.
 
 Copy the input prompt.basis versions exactly, including null scope_ref/cq_ref;
 a new plan received in a message is not an accepted input baseline. Add only
