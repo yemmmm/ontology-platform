@@ -74,7 +74,13 @@ same-basis submission receipt can reuse your exact body. Otherwise reassess its
 applicability and call submit_role_artifact(artifact_ref=your_own_ref); submit a
 corrected authored body when needed. A retained reference alone is not a receipt.
 Reuse propositions and analysis, not a rebuilt model.
-Return a completed intake or contribution with status=proposed. The installed
+If the applied model already satisfies this scope, status=no_change still needs
+a contribution artifact: candidate=null, changes=null, ontology_targets={},
+review_units=[], shared_conflicts=[], and public_cq_disposition explaining the
+actual support and remaining unknowns. Stage this small artifact and return its
+exact receipt; keep source_refs and actual governed-read evidence. Do not replay
+the old create changes or return artifact=null without an artifact_ref receipt.
+Return a completed intake or changed contribution with status=proposed. The installed
 scope and the supplied phase determine when to move from intake to propose;
 an ordinary request to start a later phase does not change that binding.
 
