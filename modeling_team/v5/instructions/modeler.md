@@ -62,7 +62,11 @@ Search shared users when dependencies are incomplete.
 Copy the input prompt.basis versions exactly, including null scope_ref/cq_ref;
 a new plan received in a message is not an accepted input baseline. Add only
 handoff references fully read in this turn or in the prompt's explicit same-basis
-reusable_read_execution_refs to consumed_refs. Every source_ref needs actual
+reusable_read_execution_refs to consumed_refs. previous_result_material_ref and
+rejected-result references are navigation, not required consumption declarations:
+omit an unread reference from consumed_refs, or read it completely with
+read_handoff_material and follow next_offset before declaring consumption.
+Every source_ref needs actual
 read_material evidence, following next_offset. A technical retry may use only
 those explicitly supplied observed reads, never an old summary or arbitrary ref.
 When only envelope fields need correction, a valid current or explicitly reusable

@@ -25,3 +25,22 @@
 开发验证：新增真实WorkUnitFlow/PostgreSQL回归先复现失败；修后test_output_contracts.py与test_role_team_flow.py共18 passed、1既有warning（96.94秒），Ruff检查/格式和git diff --check通过。仅修改modeling_team，无应用服务重启。GitNexus未找到当前model符号，detect_changes返回0符号；按直接调用点及差异/测试核对，不宣称图谱覆盖。
 
 诊断证据：并行CQ可在provisional scope启动，范围安装后按新basis重评；本轮确有新增问题/未知，不能全部判为无效重复。业务消息在最终信封接纳前也能触发其他角色重评。保留现有协作语义，不为本次效率目标引入事务消息或新编排框架。
+
+## 15:29 UTC 阶段更新
+
+- high已停稳，托管已知输入4,124,560、输出222,009（合计4,346,569，缓存含在输入，推理含在输出），无原生用量缺项；模型未应用，快照与失败保留。cleanup撤销全部临时钥匙并删除空scope，不能称可直接resume其已删除scope。
+- low同样超过半小时，阶段效率REVISE，L0/L1尚未闭环。已完成来源、公开CQ、候选整合尝试；apply均返回not_written。失败从选择字段、候选正文语法到材料消费信封分层记录，未当作模型质量结论。
+- 正在完成现有submit_role_artifact的静态请求预检，以及复用既有编译合同的候选value/semantic_definition工具指导。不执行新dry-run或平台调用，不放宽应用门；既有direct compiler 38项、受影响v5 34项及新增4项通过，完整v5回归进行中。
+- 回归暴露新增pure compiler导入缺少sandbox挂载，low Modeler00019已native_turn_failed且无在途。归因为本次工程修改的runtime/infrastructure缺口，待补齐明确文件并通过真实MCP加载后同run恢复；不能把此失败判为模型质量问题，也不能把普通单元通过当隔离通过。
+- 当前累计计价约2.82240544 CNY，余额约12.17759456 CNY。外部Host token unknown且不计任务金额。技术指导首次错误署名technical-host被原合同当业务答复纳入basis，原件保留；后继已使用约定host-technical，不改写历史。
+
+## 工程修复验证（15:43 UTC）
+
+静态请求预检复用direct_modeling原校验，允许v5候选待Host填candidate_ref；原compile默认严格要求不变。submit_role_artifact可在同一回合返回model_changes_invalid。工具指导复用现有fields/semantic_definition合同，宽松最终decoder仍保留聚合反馈。仅显式挂载pure compiler及两个必需合同JSON，不暴露整仓库或隐藏材料。
+
+- 初始全v5回归：450 passed、2 failed、1既有warning，978.40秒；两个失败均为新增导入缺失造成的真实隔离加载失败，原件full-v5-regression.log保留。
+- 补齐挂载后，原参数化test_candidate_validator_is_available_in_real_isolated_tool_process[False/True]均PASS，2 passed/4.71秒，见运行目录isolated-validator-final.log。
+- test_codex_agent.py：5 passed/4.91秒。新增静态预检/指导测试4 passed，既有direct compiler测试38 passed，相关输出/团队回归见同轮执行证据。没有把450+2拼称一次全套PASS；受影响原失败已复测。
+- Modeler新回合已实际启动，错误从数百项字段问题收敛至8处引用并完成新交付，Coordinator整合中；未取得应用/独立验收成功证据。原失败、修复与等待均计入本任务墙钟。
+
+授权收到时间采用宿主分钟级估计；精确效率计时使用原生semantic start记录，不拿prepare或新线程时间重置旧失败。

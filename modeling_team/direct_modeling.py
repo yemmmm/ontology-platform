@@ -2163,6 +2163,8 @@ def _validate_request(
     ontology_by_item: Any,
     resolve_binding: Any,
     result: dict[str, Any],
+    *,
+    require_candidate_ref: bool = True,
 ) -> _Context | None:
     errors = result["errors"]
     if not isinstance(request, Mapping) or set(request) != _REQUEST_FIELDS:
@@ -2243,7 +2245,7 @@ def _validate_request(
                 ctx.error("candidate_item_not_found", "item_id is not present in the immutable candidate", change=change, field="item_id")
             elif resource_kind != items[item_id].get("item_kind"):
                 ctx.error("resource_kind_mismatch", "resource_kind must equal the selected candidate item_kind", change=change, field="resource_kind", candidate_path=ctx.item_path(str(item_id), ".item_kind"))
-            if candidate_ref is None:
+            if candidate_ref is None and require_candidate_ref:
                 ctx.error("candidate_ref_required", "item_id requires a non-null candidate_ref", change=change, field="item_id")
         uses_item = item_id is not None
         uses_fields = fields is not None
@@ -2268,6 +2270,35 @@ def _validate_request(
     if errors:
         return ctx
     return ctx
+
+
+def validate_model_change_request(
+    request: Mapping[str, Any],
+    *,
+    candidate: Mapping[str, Any] | None,
+    allow_unbound_candidate_ref: bool = False,
+) -> list[dict[str, Any]]:
+    """Validate the static request/change contract without compiling or applying it.
+
+    v5 stages a candidate and its changes before the Host binds the candidate
+    reference.  Callers that have that staged candidate may explicitly allow a
+    null ``candidate_ref``; normal compilation retains the stricter default.
+    Trusted ontology placement and existing-resource bindings are intentionally
+    outside this early check and remain Host responsibilities.
+    """
+
+    result: dict[str, Any] = {"errors": []}
+    context = _validate_request(
+        request,
+        candidate,
+        {},
+        lambda _reference: None,
+        result,
+        require_candidate_ref=not allow_unbound_candidate_ref,
+    )
+    if context is not None:
+        result["errors"].extend(context.errors)
+    return deepcopy(result["errors"])
 
 
 def _topological_order(
@@ -2610,8 +2641,9 @@ def compile_model_changes(
     return result["batches"], result["source_map"]
 
 __all__ = [
-    "REQUEST_SCHEMA",
     "PLAN_SCHEMA",
+    "REQUEST_SCHEMA",
     "ModelChangeCompilationError",
     "compile_model_changes",
+    "validate_model_change_request",
 ]

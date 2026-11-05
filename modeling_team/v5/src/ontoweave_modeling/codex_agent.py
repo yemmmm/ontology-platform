@@ -92,7 +92,27 @@ class CodexAgent:
             contracts = Path(__file__).resolve().parents[3]
             mounts.extend(
                 (contracts / filename, "/agent/runtime/modeling_team/" + filename)
-                for filename in ("__init__.py", "scenario_map.py", "staged_decisions.py")
+                for filename in (
+                    "__init__.py",
+                    "scenario_map.py",
+                    "staged_decisions.py",
+                    "direct_modeling.py",
+                )
+            )
+            # direct_modeling derives its public field and semantic-definition
+            # shapes from these two immutable contract documents at import time.
+            # Mount only those files instead of the repository-wide references
+            # directory so the validator remains usable without exposing legacy
+            # Runner code or unrelated materials to the isolated agent.
+            mounts.extend(
+                (
+                    contracts / "references" / filename,
+                    "/agent/runtime/modeling_team/references/" + filename,
+                )
+                for filename in (
+                    "modeling-batch-item-contract.json",
+                    "platform-neutral-candidate-authoring.json",
+                )
             )
         if self.workspace_config is not None:
             args.extend(("--workspace-config", "/agent/workspace.json"))

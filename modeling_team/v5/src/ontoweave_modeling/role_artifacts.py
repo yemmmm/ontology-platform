@@ -65,6 +65,26 @@ def submit_role_artifact(binding, repository, context, artifact=None, *, artifac
                 layer="runtime/infrastructure",
                 dependency=error.name,
             ) from None
+        change_request = artifact.get("changes")
+        if isinstance(change_request, dict) and change_request.get("changes"):
+            from modeling_team.direct_modeling import validate_model_change_request
+
+            errors = validate_model_change_request(
+                change_request,
+                candidate=artifact.get("candidate"),
+                allow_unbound_candidate_ref=True,
+            )
+            if errors:
+                raise FrameworkError(
+                    "model_changes_invalid",
+                    errors=errors,
+                    instruction=(
+                        "Correct the listed request/change fields in this same turn. "
+                        "The Host will bind candidate_ref later; do not invent a reference. "
+                        "This preflight checks only the static request shape; application "
+                        "still performs trusted binding and semantic field validation."
+                    ),
+                )
     reference = repository.put_reference(
         binding.identity + ":role-artifact:" + digest(artifact), "role_artifact", artifact, 0
     )

@@ -237,6 +237,34 @@ def result_schema(binding, phase, *, guidance=False):
         # A forgiving decoder is not an authoring contract. Show the actual wire
         # shape before generation while retaining aggregate canonical feedback.
         artifact = copy.deepcopy(CONTRIBUTION)
+        try:
+            from modeling_team.direct_modeling import model_change_item_schema
+        except (ImportError, FileNotFoundError):
+            # The validator is deliberately optional in the isolated schema
+            # probe. Keep the MCP server startable so the tool can return its
+            # typed candidate_validator_unavailable feedback at call time.
+            candidate_value = {
+                "type": "object",
+                "description": (
+                    "Semantic creation fields for this candidate item; use the attached "
+                    "representation contract."
+                ),
+            }
+            semantic_definition = {}
+        else:
+            change_item = model_change_item_schema()
+            candidate_value = copy.deepcopy(change_item["properties"]["fields"])
+            # Candidate values are always semantic objects. The change envelope
+            # uses fields=null for a candidate-selected change; that null does
+            # not apply to the candidate item's value.
+            candidate_value["type"] = "object"
+            candidate_value["description"] = (
+                "Semantic creation fields for this candidate item; use the attached "
+                "representation contract."
+            )
+            semantic_definition = copy.deepcopy(
+                candidate_value["properties"]["semantic_definition"]
+            )
         item = object_schema(
             {
                 "item_id": STR,
@@ -252,17 +280,15 @@ def result_schema(binding, phase, *, guidance=False):
                     ]
                 },
                 "business_meaning": STR,
-                "value": {
-                    "type": "object",
-                    "description": "Semantic creation fields for this item_kind; use the attached representation contract.",
-                },
+                "value": candidate_value,
                 "relation_endpoints": {"type": ["object", "null"]},
                 "slice_ids": STRINGS,
                 "shared_scope": {"type": ["string", "null"]},
                 "unknowns": {"type": "array"},
             }
         )
-        for field in ("semantic_definition", "action_definition", "parameter_definition"):
+        item["properties"]["semantic_definition"] = semantic_definition
+        for field in ("action_definition", "parameter_definition"):
             item["properties"][field] = {}
         candidate = object_schema(
             {
