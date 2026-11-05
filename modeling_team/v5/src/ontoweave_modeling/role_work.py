@@ -693,9 +693,15 @@ def model(flow, state):
                 raise FrameworkError(
                     "role_artifact_reuse_forbidden",
                     expected=retained_artifact_ref,
-                    instruction="Tool-enabled packages must submit_role_artifact on the current basis "
-                    "and return its exact ref with artifact=null. Legacy packages may reuse only "
-                    "the supplied retained_artifact_ref on an unchanged correction basis.",
+                    instruction=(
+                        "Submit the body with submit_role_artifact on the current basis and return "
+                        "its exact ref with artifact=null."
+                        if tool_submission
+                        else "Return the complete artifact inline with artifact_ref=null, or reuse "
+                        "only the supplied non-null retained_artifact_ref with artifact=null on an "
+                        "unchanged correction basis. Published handoff material references are not "
+                        "retained role artifacts."
+                    ),
                 )
             result["artifact"] = (
                 submitted

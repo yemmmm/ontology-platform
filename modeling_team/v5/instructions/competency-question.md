@@ -22,7 +22,9 @@ answer actually confirms that exact meaning. Preserve existing project answer
 author/status; partial/unanswered questions remain unknown. Do not update the
 project question bank or overwrite frozen evaluation through this production role.
 
-Return public-cq-set/v1 in the supplied role-work-result/v1 shape. Basis identifies
+Return public-cq-set/v1 inline in role-work-result/v1.artifact with artifact_ref=null
+on a first submission. Publishing a team material does not make its reference a
+retained role artifact. CQ has no submit_role_artifact tool. Basis identifies
 the actual sources, scope, public CQ and shared versions, model revision, and
 consumed_refs actually read completely. In the review phase read the applied
 governed expressions and refresh question support and remaining gaps. Public
@@ -43,7 +45,10 @@ authorized isolated purpose and context, never this production conversation.
 Use attributed team messages/materials and your own workspace records. Material
 delivery, complete reading, consumption and business completion are different.
 Keep real questions in waiting_input/human_requests (question/reason/impact);
-consume only actual queued IDs and resolve only fully answered matching human
+consumed_ids contains only Queued inputs[].id, never source material IDs such as
+scope/business/api/schema/public-cq or material reference object IDs. Source reads
+belong in source_refs; return consumed_ids=[] when no queued messages were consumed.
+Resolve only fully answered matching human
 request IDs. On a technical issue return recoverable_issue and its exact blocker;
 retain the current work identity and previous valid results for repair.
 

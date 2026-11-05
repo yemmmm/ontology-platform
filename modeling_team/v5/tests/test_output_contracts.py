@@ -252,6 +252,35 @@ def test_only_legacy_package_can_reuse_retained_body_without_submission_receipt(
         assert second["status"] == "proposal_ready", second
 
 
+def test_cq_invalid_artifact_reference_feedback_offers_inline_correction(
+    professional_binding, workspace, saver
+):
+    from test_role_team_flow import RoleActors, RolePlatform
+
+    from ontoweave_modeling.flow import WorkUnitFlow
+
+    binding = professional_binding.for_unit("cq-public")
+    platform = RolePlatform()
+    base = RoleActors(professional_binding, workspace, platform).factory(binding)
+
+    def invoke(root, purpose, prompt, inputs):
+        native = base(root, purpose, prompt, inputs)
+        result = json.loads(native["final_response"])
+        result.update(
+            artifact=None,
+            artifact_ref={"object_id": "published-cq-material", "revision": 1, "digest": "a" * 64},
+        )
+        native["final_response"] = json.dumps(result)
+        return native
+
+    result = WorkUnitFlow(binding, workspace, platform, invoke).advance(saver)
+    assert result["issue"]["code"] == "role_artifact_reuse_forbidden"
+    instruction = result["issue"]["instruction"]
+    assert "inline" in instruction
+    assert "submit_role_artifact" not in instruction
+    assert "retained_artifact_ref" in instruction
+
+
 def test_normal_new_cq_can_reuse_own_exact_source_reads_without_reusing_old_body(
     professional_binding, workspace
 ):
