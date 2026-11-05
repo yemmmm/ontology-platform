@@ -137,6 +137,13 @@ class MultiUnitFlow:
                         reconcile_native = (
                             flow.binding.role_team and active_native == expected_native
                         )
+                        active_platform = control["active"].get(
+                            flow.binding.data["work_unit_id"] + ":platform"
+                        )
+                        reconcile_apply = (
+                            state["activity"] == "apply"
+                            and active_platform == f"apply-{state['round']:05d}"
+                        )
                         phase = state.get("resume_activity", "model")
                         incoming = {m["id"] for m in flow.human.pending(phase)}
                         marker = (flow.binding.data.get("work_generation", 0), frozenset(incoming))
@@ -144,8 +151,9 @@ class MultiUnitFlow:
                             actor in busy
                             or (active_native and not reconcile_native)
                             or (
-                                flow.binding.data["work_unit_id"] + ":platform" in control["active"]
+                                active_platform
                                 and state["status"] != "uncertain"
+                                and not reconcile_apply
                             )
                             or seen.get(actor) == marker
                             or state["status"] == "handoff_ready"
